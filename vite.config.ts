@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: '/PokeChess_1/', // Ensures assets load correctly on GitHub Pages
+    base: '/PokeChess/', // Updated to match your exact repo name
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
