@@ -25,6 +25,7 @@ interface StatsCardProps {
   skillMenuFor: number | null;
   onToggleSkillMenu: (id: number) => void;
   weather: string | null;
+  terrain: string | null;
   movePoints?: { [player: number]: number };
   hoveredCell: { col: number; row: number } | null;
   boardSize?: number;
@@ -46,6 +47,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   skillMenuFor,
   onToggleSkillMenu,
   weather,
+  terrain,
   movePoints,
   hoveredCell,
   boardSize = 11
@@ -71,7 +73,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
     const isSkill = skillIdx !== undefined;
     
     // Call predict damage
-    const pred = predictDamage(actor, target, skillIdx, pokemon, pedestals, weather);
+    const pred = predictDamage(actor, target, skillIdx, pokemon, pedestals, weather, terrain);
     const isDefendingPedestal = !('species' in target);
     const targetName = isDefendingPedestal ? `Player ${(target as Pedestal).player} Pedestal` : (target as PokemonEntity).species;
     const skillName = isSkill ? (DB[actor.species]?.skills?.[skillIdx]?.skillName || "Skill") : "Melee Attack";
@@ -366,8 +368,8 @@ export const StatsCard: React.FC<StatsCardProps> = ({
       : (!!db.evoCost && (pkMatch.exp || 0) < db.evoCost)
   );
 
-  const totalAtk = getModifiedStat(pkMatch, "atk", pokemon, { weather });
-  const totalDef = getModifiedStat(pkMatch, "def", pokemon, { weather });
+  const totalAtk = getModifiedStat(pkMatch, "atk", pokemon, { weather, terrain });
+  const totalDef = getModifiedStat(pkMatch, "def", pokemon, { weather, terrain });
 
   // Status visual map
   const getStatusName = (st: string, statusTurns?: number) => {

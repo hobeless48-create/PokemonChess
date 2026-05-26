@@ -32,7 +32,9 @@ import { SkillsAndLog } from "./components/SkillsAndLog";
 import { Modals } from "./components/Modals";
 import { Pokedex } from "./components/Pokedex";
 
-function canInflictStatus(p: PokemonEntity, status: string): boolean {
+function canInflictStatusBase(p: PokemonEntity, status: string, terrainType: string | null = null): boolean {
+  if (terrainType === "Misty") return false;
+  if (status === "sleep" && terrainType === "Electric") return false;
   const db = DB[p.species];
   if (!db) return true;
   if (db.ability === "Leaf Guard") return false;
@@ -88,6 +90,7 @@ export default function App() {
     movePoints: { 1: 3, 2: 3 },
     consumablesUsedThisTurn: { total: 0, powerHerb: 0 },
     weather: { type: null, duration: 0 },
+    terrain: { type: null, duration: 0 },
     pokemon: [],
     pedestals: [],
     logs: [],
@@ -104,6 +107,11 @@ export default function App() {
   const [shopOpen, setShopOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [weatherInfoOpen, setWeatherInfoOpen] = useState(false);
+  const [terrainInfoOpen, setTerrainInfoOpen] = useState(false);
+
+  const canInflictStatus = (p: PokemonEntity, status: string) => {
+    return canInflictStatusBase(p, status, gameState.terrain?.type);
+  };
   const [turnNotice, setTurnNotice] = useState<number | null>(null);
   const [hoveredCell, setHoveredCell] = useState<{ col: number; row: number } | null>(null);
   const [typeChartOpen, setTypeChartOpen] = useState<boolean>(false);
@@ -453,6 +461,7 @@ export default function App() {
         movePoints: { 1: 3, 2: 3 },
         consumablesUsedThisTurn: { total: 0, powerHerb: 0 },
         weather: { type: null, duration: 0 },
+        terrain: { type: null, duration: 0 },
         pokemon: initialPokemon,
         pedestals: startingPedestals,
         logs: [
@@ -693,6 +702,7 @@ export default function App() {
       movePoints: { 1: 3, 2: 3 },
       consumablesUsedThisTurn: { total: 0, powerHerb: 0 },
       weather: { type: null, duration: 0 },
+      terrain: { type: null, duration: 0 },
       pokemon: initialPokemon,
       pedestals: startingPedestals,
       logs: [
@@ -901,7 +911,12 @@ export default function App() {
 
         let cost = 1;
         let consumesMP = usesMP;
-        if (dbEntry && dbEntry.ability === "Swift Swim" && (gameState.weather.type === "Rain" || gameState.weather.type === "Heavy Rain")) {
+        if (gameState.terrain?.type === "Psychic") {
+          if (usesMP) {
+            cost = 0;
+          }
+          addLog(`🔮 Psychic Terrain active! Move cost-reducing items/abilities are disabled. Cost is fixed to 1.`, "sys");
+        } else if (dbEntry && dbEntry.ability === "Swift Swim" && (gameState.weather.type === "Rain" || gameState.weather.type === "Heavy Rain")) {
           cost = 0;
           consumesMP = false;
           addLog(`🌊 Swift Swim! ${actor.species} moved for 0 energy/MP cost in the rain.`, "heal");
@@ -1229,13 +1244,15 @@ export default function App() {
 
         let targetType = getSkillTargetType(skill, dbEntry);
         const isWeatherSkill = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(skill.skillName);
+        const isTerrainSkill = ["Electric Terrain", "Grassy Terrain", "Misty Terrain", "Psychic Terrain"].includes(skill.skillName);
         const isInstantSkill = (
           skill.skillDesc === "All" ||
           targetType === "self" ||
           targetType === "all_allies" ||
           targetType === "all_ice" ||
           skill.skillDesc?.toLowerCase() === "self" ||
-          isWeatherSkill
+          isWeatherSkill ||
+          isTerrainSkill
         ) && skill.skillName !== "Transform";
 
         if (isInstantSkill) {
@@ -2242,6 +2259,7 @@ export default function App() {
 
       const targetType = getSkillTargetType(skill, dbEntry);
 
+      const isTerrainSkill = ["Electric Terrain", "Grassy Terrain", "Misty Terrain", "Psychic Terrain"].includes(skill.skillName);
       const isWeatherSkill = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(skill.skillName);
       const isInstantSkill = (
         skill.skillDesc === "All" ||
@@ -2249,7 +2267,8 @@ export default function App() {
         targetType === "all_allies" ||
         targetType === "all_ice" ||
         skill.skillDesc?.toLowerCase() === "self" ||
-        isWeatherSkill
+        isWeatherSkill ||
+        isTerrainSkill
       ) && skill.skillName !== "Transform";
 
       if (isInstantSkill) {
@@ -2359,6 +2378,22 @@ export default function App() {
       } else {
         addLog(`❌ Weather change to ${wt} failed due to existing stronger weather!`, "sys");
       }
+    }
+
+    // Apply terrain configs
+    if (["Electric Terrain", "Grassy Terrain", "Misty Terrain", "Psychic Terrain"].includes(skill.skillName)) {
+      const terrainMap: Record<string, string> = {
+        "Electric Terrain": "Electric",
+        "Grassy Terrain": "Grassy",
+        "Misty Terrain": "Misty",
+        "Psychic Terrain": "Psychic"
+      };
+      const tt = terrainMap[skill.skillName];
+      setGameState(prev => ({
+        ...prev,
+        terrain: { type: tt, duration: 5 }
+      }));
+      addLog(`🔮 Terrain is now altered to ${tt} Terrain!`, "sys");
     }
 
     // Apply stat modifier buffs to matching allies
@@ -2911,6 +2946,30 @@ export default function App() {
       }
     }
 
+    // Terrain decay
+    const nextTerrain = { ...gameState.terrain };
+    if (nextTerrain && nextTerrain.type && nextTerrain.duration > 0) {
+      nextTerrain.duration -= 1;
+      
+      // Grassy Terrain healing: on turn 2 and 4 of its duration
+      if (nextTerrain.type === "Grassy" && (nextTerrain.duration === 3 || nextTerrain.duration === 1)) {
+        list.forEach(p => {
+          if (!p.fainted && !(p.banishedTurns && p.banishedTurns > 0) && p.species !== "Clear Bell" && p.species !== "Tidal Bell" && p.species !== "Tidal bell") {
+            p.hp = Math.min(p.maxHp, p.hp + 1);
+            addLog(`🌿 Grassy Terrain heals ${p.species} for +1 HP!`, "heal");
+          }
+        });
+      }
+
+      if (nextTerrain.duration <= 0) {
+        addLog(`🔮 Terrain returned to normal (${nextTerrain.type} Terrain has ended).`, "sys");
+        nextTerrain.type = null;
+        nextTerrain.duration = 0;
+      } else {
+        addLog(`🔮 Terrain ${nextTerrain.type} continues for ${nextTerrain.duration} more turns.`, "sys");
+      }
+    }
+
     const nextPokemonList = [...list];
     const nextPedestals = [...peds];
     checkWinner(nextPedestals, nextPokemonList);
@@ -2923,6 +2982,7 @@ export default function App() {
       pokemon: nextPokemonList,
       pedestals: nextPedestals,
       weather: nextWeather,
+      terrain: nextTerrain,
       players: updatedPlayers,
       selectedCell: null,
       highlightedCells: [],
@@ -3408,6 +3468,7 @@ export default function App() {
               )}
 
               {/* Weather status */}
+              {/* Weather status */}
               <div className="relative">
                 <button
                   onClick={() => setWeatherInfoOpen(!weatherInfoOpen)}
@@ -3462,6 +3523,52 @@ export default function App() {
                       <div className={`p-1.5 rounded text-xs ${gameState.weather.type === "Strong Winds" ? "bg-purple-955/40 border border-purple-500/30 text-purple-300 font-bold" : "text-gray-400"}`}>
                         <div className="font-bold text-[11px] text-purple-400">🌀 Strong Winds {gameState.weather.type === "Strong Winds" && " (Active)"}</div>
                         <div className="text-[10px] mt-0.5">Flying types immune to super-effective hits. Overrides all; cannot be overridden by Harsh Sunlight/Heavy Rain.</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Terrain status */}
+              <div className="relative">
+                <button
+                  onClick={() => setTerrainInfoOpen(!terrainInfoOpen)}
+                  className="terrain-badge bg-[#0f3460] hover:bg-[#1a4a7a] transition font-sans text-xs px-4 py-2 border border-slate-700/80 rounded-full font-bold cursor-pointer flex items-center gap-1.5 font-sans"
+                >
+                  🔮 Terrain System: <span className="text-indigo-300 font-black font-mono ml-0.5">{gameState.terrain?.type ? `${gameState.terrain.type}` : "Normal"}</span>
+                  <span>{terrainInfoOpen ? "▲" : "▼"}</span>
+                </button>
+
+                {terrainInfoOpen && (
+                  <div className="absolute top-[40px] left-1/2 -translate-x-1/2 bg-[#0f0f1a] border border-slate-700 rounded-xl p-4 w-[280px] shadow-2xl z-[1500] text-left">
+                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2 border-b border-slate-800 pb-1">
+                      Terrain System Diagnostics
+                    </h4>
+                    <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-1">
+                      {/* Normal Terrain */}
+                      <div className={`p-1.5 rounded text-xs ${!gameState.terrain?.type ? "bg-slate-800 border border-slate-700 text-white font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-gray-200">🔮 Normal Terrain {!gameState.terrain?.type && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">No effect.</div>
+                      </div>
+                      {/* Electric Terrain */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.terrain?.type === "Electric" ? "bg-yellow-955/40 border border-yellow-500/30 text-yellow-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-yellow-400">⚡ Electric Terrain {gameState.terrain?.type === "Electric" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Electric types +1 Atk. Any unit on the board cannot fall asleep.</div>
+                      </div>
+                      {/* Grassy Terrain */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.terrain?.type === "Grassy" ? "bg-emerald-955/40 border border-emerald-500/30 text-emerald-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-emerald-400">🌿 Grassy Terrain {gameState.terrain?.type === "Grassy" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Grass types +1 Atk. Every active target on the board heals 1 HP on turn 2 and 4 of the duration.</div>
+                      </div>
+                      {/* Misty Terrain */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.terrain?.type === "Misty" ? "bg-purple-955/40 border border-purple-500/30 text-purple-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-purple-400">🌫️ Misty Terrain {gameState.terrain?.type === "Misty" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Every unit on the board cannot get any status effects. Dragon type units Atk -1.</div>
+                      </div>
+                      {/* Psychic Terrain */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.terrain?.type === "Psychic" ? "bg-pink-955/40 border border-pink-500/30 text-pink-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-pink-400">👁️ Psychic Terrain {gameState.terrain?.type === "Psychic" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Psychic types +1 Atk. Move cost is fixed to 1; cost-reducing items/abilities are disabled.</div>
                       </div>
                     </div>
                   </div>
@@ -3589,6 +3696,7 @@ export default function App() {
                 onCellHoverEnd={() => setHoveredCell(null)}
                 actionMode={gameState.actionMode}
                 weather={gameState.weather.type}
+                terrain={gameState.terrain?.type}
                 hazards={gameState.hazards}
                 boardSize={gameConfig.boardSize}
               />
@@ -3612,6 +3720,7 @@ export default function App() {
                 skillMenuFor={gameState.skillMenuFor}
                 onToggleSkillMenu={(id) => setGameState(prev => ({ ...prev, skillMenuFor: prev.skillMenuFor === id ? null : id }))}
                 weather={gameState.weather.type}
+                terrain={gameState.terrain?.type}
                 movePoints={gameState.movePoints}
                 hoveredCell={hoveredCell}
                 boardSize={gameConfig.boardSize}

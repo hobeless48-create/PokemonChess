@@ -79,12 +79,14 @@ const savePokemonToLocalDB = (name: string, entry: any) => {
       hp: entry.hp,
       atk: entry.atk,
       def: entry.def,
+      cost: entry.cost,
       ability: entry.ability,
       abilityDesc: entry.abilityDesc,
       skills: entry.skills,
       skillName: entry.skillName,
       skillDesc: entry.skillDesc,
-      skillDmg: entry.skillDmg
+      skillDmg: entry.skillDmg,
+      customMoveOffsets: entry.customMoveOffsets
     };
     
     localStorage.setItem("pokemon_chess_custom_db", JSON.stringify(currentCustom));
@@ -111,8 +113,11 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
   const [editHp, setEditHp] = useState(0);
   const [editAtk, setEditAtk] = useState(0);
   const [editDef, setEditDef] = useState(0);
+  const [editCost, setEditCost] = useState(0);
   const [editAbility, setEditAbility] = useState("");
   const [editAbilityDesc, setEditAbilityDesc] = useState("");
+  const [customMoveOffsets, setCustomMoveOffsets] = useState<{ dc: number; dr: number }[]>([]);
+  const [activeEditTab, setActiveEditTab] = useState<"skills" | "movement">("skills");
 
   // Skills Editing state
   const [editSkills, setEditSkills] = useState<Skill[]>([]);
@@ -133,6 +138,7 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
   const [skillTargetChecked, setSkillTargetChecked] = useState(false);
   const [skillTargetCount, setSkillTargetCount] = useState(1); // 1 or 4
   const [customOffsets, setCustomOffsets] = useState<{ dc: number; dr: number }[]>([]);
+  const [skillCost, setSkillCost] = useState(2);
 
   // Collect all elemental types dynamically
   const allTypes = Array.from(
@@ -173,8 +179,11 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
       setEditHp(p.hp);
       setEditAtk(p.atk);
       setEditDef(p.def);
+      setEditCost(p.cost);
       setEditAbility(p.ability || "");
       setEditAbilityDesc(p.abilityDesc || "");
+      setCustomMoveOffsets(p.customMoveOffsets ? [...p.customMoveOffsets] : []);
+      setActiveEditTab("skills");
 
       // Deep copy skills
       const copySkills = p.skills ? JSON.parse(JSON.stringify(p.skills)) : [];
@@ -189,6 +198,7 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
       const sk = editSkills[activeSkillIdx];
       setSkillName(sk.skillName || "");
       setSkillEditChecked(sk.isCustom || false);
+      setSkillCost(sk.skillCost !== undefined ? sk.skillCost : 2);
 
       // Damage
       const hasDmg = sk.skillDmg !== undefined && sk.skillDmg !== 0 && sk.skillDmg !== "0" && sk.skillDmg !== "";
@@ -236,6 +246,7 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
     } else {
       setSkillName("");
       setSkillEditChecked(false);
+      setSkillCost(2);
       setSkillDmgChecked(false);
       setSkillStatusChecked(false);
       setSkillBuffChecked(false);
@@ -254,7 +265,18 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
       next = [...customOffsets, { dc, dr }];
     }
     setCustomOffsets(next);
+  };
 
+  // Toggle offset in the 9x9 editor grid for movement
+  const toggleMoveOffset = (dc: number, dr: number) => {
+    const exists = customMoveOffsets.some(o => o.dc === dc && o.dr === dr);
+    let next: { dc: number; dr: number }[] = [];
+    if (exists) {
+      next = customMoveOffsets.filter(o => !(o.dc === dc && o.dr === dr));
+    } else {
+      next = [...customMoveOffsets, { dc, dr }];
+    }
+    setCustomMoveOffsets(next);
   };
 
   // Update active skill fields in local state
@@ -279,6 +301,7 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
       const sk = nextSkills[activeSkillIdx];
       sk.skillName = skillName;
       sk.isCustom = skillEditChecked;
+      sk.skillCost = skillCost;
 
       // Damage
       if (skillDmgChecked) {
@@ -352,9 +375,11 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
     pkmn.hp = editHp;
     pkmn.atk = editAtk;
     pkmn.def = editDef;
+    pkmn.cost = editCost;
     pkmn.ability = editAbility;
     pkmn.abilityDesc = editAbilityDesc;
     pkmn.skills = nextSkills;
+    pkmn.customMoveOffsets = customMoveOffsets;
 
     // If name is edited, replace/rename in DB if needed (but key matches, so keep species name same to avoid breaking slots references, just change display)
     // Species name can be customized inside the entry
@@ -691,6 +716,34 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
                   <h3 className="text-2xl font-black text-white uppercase tracking-wider mb-2">{selectedPkmn}</h3>
                 )}
 
+                {isEditMode && (
+                  <div className="w-full flex flex-col gap-1.5 mb-4">
+                    <label className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block text-left">Edit Mode Tab</label>
+                    <div className="flex gap-1.5 bg-slate-950/60 p-1 border border-slate-900 rounded-xl">
+                      <button
+                        onClick={() => setActiveEditTab("skills")}
+                        className={`flex-1 py-2 text-center text-[10px] font-black rounded-lg cursor-pointer transition uppercase ${
+                          activeEditTab === "skills"
+                            ? "bg-cyan-500 text-[#0f0f1a] shadow-md shadow-cyan-500/20"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        ⚔️ Edit Skill Properties
+                      </button>
+                      <button
+                        onClick={() => setActiveEditTab("movement")}
+                        className={`flex-1 py-2 text-center text-[10px] font-black rounded-lg cursor-pointer transition uppercase ${
+                          activeEditTab === "movement"
+                            ? "bg-cyan-500 text-[#0f0f1a] shadow-md shadow-cyan-500/20"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        🏃 Edit Custom Movement
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-1.5 mb-6">
                   <span
                     className="text-[10px] font-extrabold px-3 py-1 rounded text-white tracking-widest uppercase"
@@ -765,6 +818,26 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
                   <div className="h-1.5 bg-[#0f0f1a] rounded-full overflow-hidden border border-slate-900/80">
                     <div className="h-full bg-cyan-500 rounded-full" style={{ width: `${Math.min(100, (editDef / 5) * 100)}%` }} />
                   </div>
+
+                  {/* Cost Stat */}
+                  <div className="flex justify-between items-center mt-1">
+                    <span className="text-xs text-gray-400 font-semibold">Cost (Gold)</span>
+                    {isEditMode ? (
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={editCost}
+                        onChange={e => setEditCost(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        className="w-16 bg-[#0f0f1a] border border-[#2a3a5a] text-xs text-white text-center rounded px-1 py-0.5"
+                      />
+                    ) : (
+                      <span className="text-xs text-gray-200 font-bold font-mono">{editCost}</span>
+                    )}
+                  </div>
+                  <div className="h-1.5 bg-[#0f0f1a] rounded-full overflow-hidden border border-slate-900/80">
+                    <div className="h-full bg-amber-500 rounded-full" style={{ width: `${Math.min(100, (editCost / 10) * 100)}%` }} />
+                  </div>
                 </div>
               </div>
 
@@ -806,300 +879,375 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
                 </div>
 
                 {/* 2. Skills & Editor Panel */}
-                <div className="bg-[#16213e]/30 border border-[#0f3460]/40 rounded-2xl p-5">
-                  <div className="flex justify-between items-center border-b border-[#0f3460]/40 pb-3 mb-4">
-                    <h4 className="text-[10px] font-black text-cyan-400 uppercase tracking-widest flex items-center gap-1.5">
-                      <span>⚔️</span> Pokémon Skill set Configurator
-                    </h4>
-                    
-                    {/* Skills index navigation tabs */}
-                    <div className="flex gap-1.5">
-                      {editSkills.map((sk, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => setActiveSkillIdx(idx)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-extrabold uppercase transition border cursor-pointer ${
-                            activeSkillIdx === idx
-                              ? "bg-cyan-500/10 text-cyan-400 border-cyan-400/50 shadow-md"
-                              : "bg-[#0f0f1a] text-gray-400 border-[#2a3a5a] hover:bg-[#16213e]"
-                          }`}
-                        >
-                          Skill #{idx + 1}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {editSkills[activeSkillIdx] ? (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {activeEditTab === "skills" || !isEditMode ? (
+                  <div className="bg-[#16213e]/30 border border-[#0f3460]/40 rounded-2xl p-5">
+                    <div className="flex justify-between items-center border-b border-[#0f3460]/40 pb-3 mb-4">
+                      <h4 className="text-[10px] font-black text-cyan-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <span>⚔️</span> Pokémon Skill set Configurator
+                      </h4>
                       
-                      {/* Skill properties input fields */}
-                      <div className="flex flex-col gap-4">
-                        
-                        {/* Custom skill checkbox (only active in Edit Mode) */}
-                        {isEditMode && (
-                          <div className="flex items-center gap-2 bg-[#0f0f1a] p-3 border border-slate-900 rounded-xl">
-                            <input
-                              type="checkbox"
-                              id="skillEditChecked"
-                              checked={skillEditChecked}
-                              onChange={e => setSkillEditChecked(e.target.checked)}
-                              className="w-4 h-4 text-cyan-500 accent-cyan-500 border-[#2a3a5a]"
-                            />
-                            <label htmlFor="skillEditChecked" className="text-xs text-gray-300 font-bold uppercase tracking-wider cursor-pointer">
-                              Customize Skill Mechanics
-                            </label>
-                          </div>
-                        )}
-
-                        {/* Skill Name */}
-                        <div>
-                          <label className="text-[10px] text-gray-400 font-black uppercase tracking-wider block mb-1">Skill Name</label>
-                          <input
-                            type="text"
-                            disabled={!isEditMode || !skillEditChecked}
-                            value={skillName}
-                            onChange={e => setSkillName(e.target.value)}
-                            className={`w-full bg-[#0f0f1a] border border-[#2a3a5a] text-xs text-white px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-cyan-400 ${
-                              (!isEditMode || !skillEditChecked) ? "opacity-60 cursor-not-allowed" : ""
+                      {/* Skills index navigation tabs */}
+                      <div className="flex gap-1.5">
+                        {editSkills.map((sk, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => setActiveSkillIdx(idx)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold uppercase transition border cursor-pointer ${
+                              activeSkillIdx === idx
+                                ? "bg-cyan-500/10 text-cyan-400 border-cyan-400/50 shadow-md"
+                                : "bg-[#0f0f1a] text-gray-400 border-[#2a3a5a] hover:bg-[#16213e]"
                             }`}
-                          />
-                        </div>
+                          >
+                            Skill #{idx + 1}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-                        {/* Damage Parameter */}
-                        <div className="flex flex-col gap-1.5 bg-[#0f0f1a] p-3 rounded-xl border border-slate-900">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id="skillDmgChecked"
-                              disabled={!isEditMode || !skillEditChecked}
-                              checked={skillDmgChecked}
-                              onChange={e => setSkillDmgChecked(e.target.checked)}
-                              className="w-4 h-4 text-cyan-500 accent-cyan-500"
-                            />
-                            <label htmlFor="skillDmgChecked" className="text-xs text-gray-300 font-bold uppercase tracking-wider cursor-pointer">
-                              Damaging Skill
-                            </label>
-                          </div>
-                          {skillDmgChecked && (
-                            <div className="mt-2 pl-6">
-                              <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Damage value (e.g. "Atk" or a number)</label>
+                    {editSkills[activeSkillIdx] ? (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        
+                        {/* Skill properties input fields */}
+                        <div className="flex flex-col gap-4">
+                          
+                          {/* Custom skill checkbox (only active in Edit Mode) */}
+                          {isEditMode && (
+                            <div className="flex items-center gap-2 bg-[#0f0f1a] p-3 border border-slate-900 rounded-xl">
+                              <input
+                                type="checkbox"
+                                id="skillEditChecked"
+                                checked={skillEditChecked}
+                                onChange={e => setSkillEditChecked(e.target.checked)}
+                                className="w-4 h-4 text-cyan-500 accent-cyan-500 border-[#2a3a5a]"
+                              />
+                              <label htmlFor="skillEditChecked" className="text-xs text-gray-300 font-bold uppercase tracking-wider cursor-pointer">
+                                Customize Skill Mechanics
+                              </label>
+                            </div>
+                          )}
+
+                          {/* Skill Name & Cost */}
+                          <div className="grid grid-cols-2 gap-3 font-sans">
+                            <div>
+                              <label className="text-[10px] text-gray-400 font-black uppercase tracking-wider block mb-1">Skill Name</label>
                               <input
                                 type="text"
                                 disabled={!isEditMode || !skillEditChecked}
-                                value={skillDmgVal}
-                                onChange={e => setSkillDmgVal(e.target.value)}
-                                className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2.5 py-1 rounded"
+                                value={skillName}
+                                onChange={e => setSkillName(e.target.value)}
+                                className={`w-full bg-[#0f0f1a] border border-[#2a3a5a] text-xs text-white px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-cyan-400 ${
+                                  (!isEditMode || !skillEditChecked) ? "opacity-60 cursor-not-allowed" : ""
+                                }`}
                               />
                             </div>
-                          )}
-                        </div>
-
-                        {/* Status inflict Parameter */}
-                        <div className="flex flex-col gap-1.5 bg-[#0f0f1a] p-3 rounded-xl border border-slate-900">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id="skillStatusChecked"
-                              disabled={!isEditMode || !skillEditChecked}
-                              checked={skillStatusChecked}
-                              onChange={e => setSkillStatusChecked(e.target.checked)}
-                              className="w-4 h-4 text-cyan-500 accent-cyan-500"
-                            />
-                            <label htmlFor="skillStatusChecked" className="text-xs text-gray-300 font-bold uppercase tracking-wider cursor-pointer">
-                              Inflicts Status Condition
-                            </label>
-                          </div>
-                          {skillStatusChecked && (
-                            <div className="mt-2 pl-6 grid grid-cols-2 gap-2">
-                              <div>
-                                <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Chance d20 (1-20)</label>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={20}
-                                  disabled={!isEditMode || !skillEditChecked}
-                                  value={skillStatusChance}
-                                  onChange={e => setSkillStatusChance(Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 10)))}
-                                  className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1 text-center rounded"
-                                />
-                                <span className="text-[8px] text-cyan-400 mt-1 block">Chance: {skillStatusChance * 5}%</span>
-                              </div>
-                              <div>
-                                <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Status Type</label>
-                                <select
-                                  disabled={!isEditMode || !skillEditChecked}
-                                  value={skillStatusType}
-                                  onChange={e => setSkillStatusType(e.target.value)}
-                                  className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1.5 rounded"
-                                >
-                                  <option value="burn">Burn</option>
-                                  <option value="paralysis">Paralysis</option>
-                                  <option value="sleep">Sleep</option>
-                                  <option value="freeze">Freeze</option>
-                                  <option value="poison">Poison</option>
-                                  <option value="confuse">Confuse</option>
-                                  <option value="toxic">Toxic</option>
-                                </select>
-                              </div>
+                            <div>
+                              <label className="text-[10px] text-gray-400 font-black uppercase tracking-wider block mb-1">Energy Cost</label>
+                              <input
+                                type="number"
+                                min={0}
+                                max={10}
+                                disabled={!isEditMode || !skillEditChecked}
+                                value={skillCost}
+                                onChange={e => setSkillCost(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                className={`w-full bg-[#0f0f1a] border border-[#2a3a5a] text-xs text-white px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-cyan-400 ${
+                                  (!isEditMode || !skillEditChecked) ? "opacity-60 cursor-not-allowed" : ""
+                                }`}
+                              />
                             </div>
-                          )}
-                        </div>
-
-                        {/* Buff/Debuff Parameter */}
-                        <div className="flex flex-col gap-1.5 bg-[#0f0f1a] p-3 rounded-xl border border-slate-900">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id="skillBuffChecked"
-                              disabled={!isEditMode || !skillEditChecked}
-                              checked={skillBuffChecked}
-                              onChange={e => setSkillBuffChecked(e.target.checked)}
-                              className="w-4 h-4 text-cyan-500 accent-cyan-500"
-                            />
-                            <label htmlFor="skillBuffChecked" className="text-xs text-gray-300 font-bold uppercase tracking-wider cursor-pointer">
-                              Applies Buff/Debuff/Heal
-                            </label>
                           </div>
-                          {skillBuffChecked && (
-                            <div className="mt-2 pl-6 flex flex-col gap-2">
-                              <div>
-                                <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Effect Category</label>
-                                <select
+
+                          {/* Damage Parameter */}
+                          <div className="flex flex-col gap-1.5 bg-[#0f0f1a] p-3 rounded-xl border border-slate-900">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                id="skillDmgChecked"
+                                disabled={!isEditMode || !skillEditChecked}
+                                checked={skillDmgChecked}
+                                onChange={e => setSkillDmgChecked(e.target.checked)}
+                                className="w-4 h-4 text-cyan-500 accent-cyan-500"
+                              />
+                              <label htmlFor="skillDmgChecked" className="text-xs text-gray-300 font-bold uppercase tracking-wider cursor-pointer">
+                                Damaging Skill
+                              </label>
+                            </div>
+                            {skillDmgChecked && (
+                              <div className="mt-2 pl-6">
+                                <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Damage value (e.g. "Atk" or a number)</label>
+                                <input
+                                  type="text"
                                   disabled={!isEditMode || !skillEditChecked}
-                                  value={skillBuffType}
-                                  onChange={e => setSkillBuffType(e.target.value)}
-                                  className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1.5 rounded"
-                                >
-                                  <option value="Atk">Atk Buff</option>
-                                  <option value="Def">Def Buff</option>
-                                  <option value="Heal">Heal target</option>
-                                </select>
+                                  value={skillDmgVal}
+                                  onChange={e => setSkillDmgVal(e.target.value)}
+                                  className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2.5 py-1 rounded"
+                                />
                               </div>
-                              <div className="grid grid-cols-2 gap-2">
+                            )}
+                          </div>
+
+                          {/* Status inflict Parameter */}
+                          <div className="flex flex-col gap-1.5 bg-[#0f0f1a] p-3 rounded-xl border border-slate-900">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                id="skillStatusChecked"
+                                disabled={!isEditMode || !skillEditChecked}
+                                checked={skillStatusChecked}
+                                onChange={e => setSkillStatusChecked(e.target.checked)}
+                                className="w-4 h-4 text-cyan-500 accent-cyan-500"
+                              />
+                              <label htmlFor="skillStatusChecked" className="text-xs text-gray-300 font-bold uppercase tracking-wider cursor-pointer">
+                                Inflicts Status Condition
+                              </label>
+                            </div>
+                            {skillStatusChecked && (
+                              <div className="mt-2 pl-6 grid grid-cols-2 gap-2">
                                 <div>
-                                  <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Amount</label>
+                                  <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Chance d20 (1-20)</label>
                                   <input
                                     type="number"
+                                    min={1}
+                                    max={20}
                                     disabled={!isEditMode || !skillEditChecked}
-                                    value={skillBuffAmt}
-                                    onChange={e => setSkillBuffAmt(parseInt(e.target.value, 10) || 1)}
+                                    value={skillStatusChance}
+                                    onChange={e => setSkillStatusChance(Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 10)))}
                                     className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1 text-center rounded"
                                   />
+                                  <span className="text-[8px] text-cyan-400 mt-1 block">Chance: {skillStatusChance * 5}%</span>
                                 </div>
-                                {skillBuffType !== "Heal" && (
+                                <div>
+                                  <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Status Type</label>
+                                  <select
+                                    disabled={!isEditMode || !skillEditChecked}
+                                    value={skillStatusType}
+                                    onChange={e => setSkillStatusType(e.target.value)}
+                                    className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1.5 rounded"
+                                  >
+                                    <option value="burn">Burn</option>
+                                    <option value="paralysis">Paralysis</option>
+                                    <option value="sleep">Sleep</option>
+                                    <option value="freeze">Freeze</option>
+                                    <option value="poison">Poison</option>
+                                    <option value="confuse">Confuse</option>
+                                    <option value="toxic">Toxic</option>
+                                  </select>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Buff/Debuff Parameter */}
+                          <div className="flex flex-col gap-1.5 bg-[#0f0f1a] p-3 rounded-xl border border-slate-900">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                id="skillBuffChecked"
+                                disabled={!isEditMode || !skillEditChecked}
+                                checked={skillBuffChecked}
+                                onChange={e => setSkillBuffChecked(e.target.checked)}
+                                className="w-4 h-4 text-cyan-500 accent-cyan-500"
+                              />
+                              <label htmlFor="skillBuffChecked" className="text-xs text-gray-300 font-bold uppercase tracking-wider cursor-pointer">
+                                Applies Buff/Debuff/Heal
+                              </label>
+                            </div>
+                            {skillBuffChecked && (
+                              <div className="mt-2 pl-6 flex flex-col gap-2">
+                                <div>
+                                  <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Effect Category</label>
+                                  <select
+                                    disabled={!isEditMode || !skillEditChecked}
+                                    value={skillBuffType}
+                                    onChange={e => setSkillBuffType(e.target.value)}
+                                    className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1.5 rounded"
+                                  >
+                                    <option value="Atk">Atk Buff</option>
+                                    <option value="Def">Def Buff</option>
+                                    <option value="Heal">Heal target</option>
+                                  </select>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
                                   <div>
-                                    <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Duration (turns)</label>
+                                    <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Amount</label>
                                     <input
                                       type="number"
                                       disabled={!isEditMode || !skillEditChecked}
-                                      value={skillBuffTurns}
-                                      onChange={e => setSkillBuffTurns(Math.max(1, parseInt(e.target.value, 10) || 2))}
+                                      value={skillBuffAmt}
+                                      onChange={e => setSkillBuffAmt(parseInt(e.target.value, 10) || 1)}
                                       className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1 text-center rounded"
                                     />
                                   </div>
-                                )}
+                                  {skillBuffType !== "Heal" && (
+                                    <div>
+                                      <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Duration (turns)</label>
+                                      <input
+                                        type="number"
+                                        disabled={!isEditMode || !skillEditChecked}
+                                        value={skillBuffTurns}
+                                        onChange={e => setSkillBuffTurns(Math.max(1, parseInt(e.target.value, 10) || 2))}
+                                        className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1 text-center rounded"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Target Parameter */}
-                        <div className="flex flex-col gap-1.5 bg-[#0f0f1a] p-3 rounded-xl border border-slate-900">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id="skillTargetChecked"
-                              disabled={!isEditMode || !skillEditChecked}
-                              checked={skillTargetChecked}
-                              onChange={e => setSkillTargetChecked(e.target.checked)}
-                              className="w-4 h-4 text-cyan-500 accent-cyan-500"
-                            />
-                            <label htmlFor="skillTargetChecked" className="text-xs text-gray-300 font-bold uppercase tracking-wider cursor-pointer">
-                              Target skill
-                            </label>
+                            )}
                           </div>
-                          {skillTargetChecked && (
-                            <div className="mt-2 pl-6">
-                              <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">How many targets to choose?</label>
-                              <select
+
+                          {/* Target Parameter */}
+                          <div className="flex flex-col gap-1.5 bg-[#0f0f1a] p-3 rounded-xl border border-slate-900">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                id="skillTargetChecked"
                                 disabled={!isEditMode || !skillEditChecked}
-                                value={skillTargetCount}
-                                onChange={e => setSkillTargetCount(Number(e.target.value))}
-                                className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1.5 rounded"
-                              >
-                                <option value={1}>1 Target</option>
-                                <option value={4}>4 Targets</option>
-                              </select>
+                                checked={skillTargetChecked}
+                                onChange={e => setSkillTargetChecked(e.target.checked)}
+                                className="w-4 h-4 text-cyan-500 accent-cyan-500"
+                              />
+                              <label htmlFor="skillTargetChecked" className="text-xs text-gray-300 font-bold uppercase tracking-wider cursor-pointer">
+                                Target skill
+                              </label>
+                            </div>
+                            {skillTargetChecked && (
+                              <div className="mt-2 pl-6">
+                                <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">How many targets to choose?</label>
+                                <select
+                                  disabled={!isEditMode || !skillEditChecked}
+                                  value={skillTargetCount}
+                                  onChange={e => setSkillTargetCount(Number(e.target.value))}
+                                  className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1.5 rounded"
+                                >
+                                  <option value={1}>1 Target</option>
+                                  <option value={2}>2 Targets</option>
+                                  <option value={3}>3 Targets</option>
+                                  <option value={4}>4 Targets</option>
+                                </select>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Right panel: 9x9 Skill range designer grid */}
+                        <div className="flex flex-col items-center">
+                          <label className="text-[10px] text-gray-400 font-black uppercase tracking-wider text-center block mb-2">
+                            Skill Area Coverage Editor (9x9)
+                          </label>
+                          <p className="text-[9px] text-gray-400 text-center mb-4">
+                            Orange represents caster. Click tiles to toggle target area (Blue tiles).
+                          </p>
+
+                          <div className="grid gap-[2px] bg-slate-950 p-2 rounded-2xl border border-slate-900" style={{ gridTemplateColumns: "repeat(9, 28px)" }}>
+                            {Array.from({ length: 9 }, (_, rIdx) => (
+                              <React.Fragment key={rIdx}>
+                                {Array.from({ length: 9 }, (_, cIdx) => {
+                                  const isCaster = cIdx === 4 && rIdx === 4;
+                                  const dc = cIdx - 4;
+                                  const dr = rIdx - 4;
+                                  const isActive = customOffsets.some(o => o.dc === dc && o.dr === dr);
+
+                                  return (
+                                    <div
+                                      key={cIdx}
+                                      onClick={() => {
+                                        if (isEditMode && skillEditChecked && !isCaster) {
+                                          toggleOffset(dc, dr);
+                                        }
+                                      }}
+                                      className={`w-[28px] h-[28px] rounded flex items-center justify-center text-[7px] font-mono border ${
+                                        isCaster
+                                          ? "bg-amber-500 border-amber-300 text-[#0f0f1a] font-extrabold shadow-md shadow-amber-500/20"
+                                          : isActive
+                                          ? "bg-indigo-600 border-indigo-400 text-white cursor-pointer shadow-md shadow-indigo-500/10"
+                                          : `bg-slate-800 border-slate-700/60 text-slate-500 ${
+                                              (isEditMode && skillEditChecked) ? "hover:bg-slate-700 cursor-pointer" : ""
+                                            }`
+                                      }`}
+                                      title={`Offset: (${dc}, ${dr})`}
+                                    >
+                                      {isCaster ? "C" : isActive ? "★" : ""}
+                                    </div>
+                                  );
+                                })}
+                              </React.Fragment>
+                            ))}
+                          </div>
+
+                          {/* Normal / read-only description */}
+                          {!isEditMode && (
+                            <div className="w-full bg-[#0f0f1a] p-3 border border-slate-900 rounded-xl mt-6">
+                              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">
+                                Original Skill Description
+                              </span>
+                              <p className="text-xs text-gray-200 font-medium">
+                                {editSkills[activeSkillIdx].skillDesc || "No skill description."}
+                              </p>
                             </div>
                           )}
                         </div>
+
                       </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 text-center py-6">Skill detail unavailable.</p>
+                    )}
 
-                      {/* Right panel: 9x9 Skill range designer grid */}
-                      <div className="flex flex-col items-center">
-                        <label className="text-[10px] text-gray-400 font-black uppercase tracking-wider text-center block mb-2">
-                          Skill Area Coverage Editor (9x9)
-                        </label>
-                        <p className="text-[9px] text-gray-400 text-center mb-4">
-                          Orange represents caster. Click tiles to toggle target area (Blue tiles).
-                        </p>
-
-                        <div className="grid gap-[2px] bg-slate-950 p-2 rounded-2xl border border-slate-900" style={{ gridTemplateColumns: "repeat(9, 28px)" }}>
-                          {Array.from({ length: 9 }, (_, rIdx) => (
-                            <React.Fragment key={rIdx}>
-                              {Array.from({ length: 9 }, (_, cIdx) => {
-                                const isCaster = cIdx === 4 && rIdx === 4;
-                                const dc = cIdx - 4;
-                                const dr = rIdx - 4;
-                                const isActive = customOffsets.some(o => o.dc === dc && o.dr === dr);
-
-                                return (
-                                  <div
-                                    key={cIdx}
-                                    onClick={() => {
-                                      if (isEditMode && skillEditChecked && !isCaster) {
-                                        toggleOffset(dc, dr);
-                                      }
-                                    }}
-                                    className={`w-[28px] h-[28px] rounded flex items-center justify-center text-[7px] font-mono border ${
-                                      isCaster
-                                        ? "bg-amber-500 border-amber-300 text-[#0f0f1a] font-extrabold shadow-md shadow-amber-500/20"
-                                        : isActive
-                                        ? "bg-indigo-600 border-indigo-400 text-white cursor-pointer shadow-md shadow-indigo-500/10"
-                                        : `bg-slate-800 border-slate-700/60 text-slate-500 ${
-                                            (isEditMode && skillEditChecked) ? "hover:bg-slate-700 cursor-pointer" : ""
-                                          }`
-                                    }`}
-                                    title={`Offset: (${dc}, ${dr})`}
-                                  >
-                                    {isCaster ? "C" : isActive ? "★" : ""}
-                                  </div>
-                                );
-                              })}
-                            </React.Fragment>
-                          ))}
-                        </div>
-
-                        {/* Normal / read-only description */}
-                        {!isEditMode && (
-                          <div className="w-full bg-[#0f0f1a] p-3 border border-slate-900 rounded-xl mt-6">
-                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">
-                              Original Skill Description
-                            </span>
-                            <p className="text-xs text-gray-200 font-medium">
-                              {editSkills[activeSkillIdx].skillDesc || "No skill description."}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
+                  </div>
+                ) : (
+                  <div className="bg-[#16213e]/30 border border-[#0f3460]/40 rounded-2xl p-5">
+                    <div className="flex justify-between items-center border-b border-[#0f3460]/40 pb-3 mb-4">
+                      <h4 className="text-[10px] font-black text-cyan-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <span>🏃</span> Pokémon Custom Movement Configurator
+                      </h4>
+                      <button
+                        onClick={() => setCustomMoveOffsets([])}
+                        className="px-3 py-1 bg-red-950/60 hover:bg-red-950 border border-red-500/40 text-red-200 text-[10px] font-bold rounded-lg transition cursor-pointer"
+                      >
+                        Reset to Default Movement
+                      </button>
                     </div>
-                  ) : (
-                    <p className="text-xs text-gray-400 text-center py-6">Skill detail unavailable.</p>
-                  )}
 
-                </div>
+                    <div className="flex flex-col items-center">
+                      <p className="text-xs text-gray-300 text-center mb-4 max-w-md font-sans">
+                        Configure custom movement offsets for <strong>{selectedPkmn}</strong>. Yellow (U) represents the unit at center (0,0). Blue (★) represents allowed movement tiles. Click tiles to toggle custom movement offsets.
+                      </p>
+
+                      <div className="grid gap-[2px] bg-slate-950 p-2 rounded-2xl border border-slate-900" style={{ gridTemplateColumns: "repeat(9, 28px)" }}>
+                        {Array.from({ length: 9 }, (_, rIdx) => (
+                          <React.Fragment key={rIdx}>
+                            {Array.from({ length: 9 }, (_, cIdx) => {
+                              const isCaster = cIdx === 4 && rIdx === 4;
+                              const dc = cIdx - 4;
+                              const dr = rIdx - 4;
+                              const isActive = customMoveOffsets.some(o => o.dc === dc && o.dr === dr);
+
+                              return (
+                                <div
+                                  key={cIdx}
+                                  onClick={() => {
+                                    if (!isCaster) {
+                                      toggleMoveOffset(dc, dr);
+                                    }
+                                  }}
+                                  className={`w-[28px] h-[28px] rounded flex items-center justify-center text-[7px] font-mono border ${
+                                    isCaster
+                                      ? "bg-yellow-500 border-yellow-300 text-[#0f0f1a] font-extrabold shadow-md shadow-yellow-500/20"
+                                      : isActive
+                                      ? "bg-cyan-600 border-cyan-400 text-white cursor-pointer shadow-md shadow-cyan-500/10"
+                                      : "bg-slate-800 border-slate-700/60 text-slate-500 hover:bg-slate-700 cursor-pointer"
+                                  }`}
+                                  title={`Offset: (${dc}, ${dr})`}
+                                >
+                                  {isCaster ? "U" : isActive ? "★" : ""}
+                                </div>
+                              );
+                            })}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               </div>
 
             </div>

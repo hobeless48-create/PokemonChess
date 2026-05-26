@@ -15,6 +15,7 @@ interface BoardProps {
   onCellHoverEnd?: () => void;
   actionMode?: any;
   weather?: string | null;
+  terrain?: string | null;
   hazards?: any[];
   boardSize?: number;
 }
@@ -30,6 +31,7 @@ export const Board: React.FC<BoardProps> = ({
   onCellHoverEnd,
   actionMode,
   weather = null,
+  terrain = null,
   hazards = [],
   boardSize = 11
 }) => {
@@ -120,7 +122,7 @@ export const Board: React.FC<BoardProps> = ({
                     const target = pkMatch || pedMatch;
                     if (actor && target) {
                       const skillIdx = actionMode?.type === "skill" ? actionMode.skillIdx : undefined;
-                      const prediction = predictDamage(actor, target, skillIdx, pokemon, pedestals, weather);
+                      const prediction = predictDamage(actor, target, skillIdx, pokemon, pedestals, weather, terrain);
                       if (prediction.damage < 0) {
                         return (
                           <div className="absolute top-0 left-0 right-0 bg-emerald-950/90 text-emerald-300 text-[8px] font-black py-[1px] text-center border-b border-emerald-500/30 z-20 pointer-events-none rounded-t select-none leading-none">

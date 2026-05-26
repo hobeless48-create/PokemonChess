@@ -176,6 +176,42 @@ export function getConeCells(col: number, row: number, range: number, dir: numbe
   return out;
 }
 
+export function getEvolutionLineStages(species: string): { totalStages: number; currentStage: number } {
+  const db = DB[species];
+  if (!db) return { totalStages: 1, currentStage: 1 };
+
+  // Find the base species by climbing up evoFrom
+  let baseName = species;
+  let baseDb = db;
+  while (baseDb.evoFrom && DB[baseDb.evoFrom]) {
+    baseName = baseDb.evoFrom;
+    baseDb = DB[baseName];
+  }
+
+  // Count total stages climbing down evoTo
+  let totalStages = 1;
+  let currentDb = baseDb;
+  let currentStage = (species === baseName) ? 1 : 2;
+  
+  if (currentDb.evoTo && DB[currentDb.evoTo]) {
+    totalStages = 2;
+    const secondName = currentDb.evoTo;
+    const secondDb = DB[secondName];
+    if (species === secondName) {
+      currentStage = 2;
+    }
+    if (secondDb.evoTo && DB[secondDb.evoTo]) {
+      totalStages = 3;
+      const thirdName = secondDb.evoTo;
+      if (species === thirdName) {
+        currentStage = 3;
+      }
+    }
+  }
+
+  return { totalStages, currentStage };
+}
+
 export function getSpeciesStage(species: string): number {
   const db = DB[species];
   if (!db) return 1;
@@ -225,14 +261,99 @@ export function getRoleBasedMoves(p: PokemonEntity, pokemonList: PokemonEntity[]
   };
 
   const cls = (db && db.cls) || 'Attack';
-  const stage = getSpeciesStage(p.species);
-  const patternSet = MOVE_PATTERNS[cls] || MOVE_PATTERNS['Attack'];
-  const pattern = patternSet[stage] || patternSet[1];
+  
+  let pattern: { dc: number; dr: number }[] = [];
+  if (db && db.customMoveOffsets && db.customMoveOffsets.length > 0) {
+    pattern = db.customMoveOffsets;
+  } else {
+    const evoInfo = getEvolutionLineStages(p.species);
+    const isLegendary = db?.legendary;
+    
+    if (evoInfo.totalStages === 1 && !isLegendary && p.species !== "Aerodactyl") {
+      // No evolution mon (every role) - 1 tile omnidirectional (3x3)
+      pattern = [
+        { dc: -1, dr: -1 }, { dc: 0, dr: -1 }, { dc: 1, dr: -1 },
+        { dc: -1, dr: 0 },                      { dc: 1, dr: 0 },
+        { dc: -1, dr: 1 },  { dc: 0, dr: 1 },  { dc: 1, dr: 1 }
+      ];
+    } else if (evoInfo.totalStages === 2 && !isLegendary) {
+      // 2-stage evolution
+      const role = db?.cls || "Attack";
+      if (role === "Attack") {
+        if (evoInfo.currentStage === 1) {
+          pattern = [
+            { dc: -1, dr: -1 }, { dc: 1, dr: -1 },
+            { dc: -1, dr: 1 },  { dc: 1, dr: 1 }
+          ];
+        } else {
+          pattern = [
+            { dc: -1, dr: -1 }, { dc: 0, dr: -1 }, { dc: 1, dr: -1 },
+            { dc: -1, dr: 0 },                      { dc: 1, dr: 0 },
+            { dc: -1, dr: 1 },  { dc: 0, dr: 1 },  { dc: 1, dr: 1 },
+            { dc: -2, dr: -2 }, { dc: 2, dr: -2 }, { dc: -2, dr: 2 }, { dc: 2, dr: 2 }
+          ];
+        }
+      } else if (role === "Defense") {
+        if (evoInfo.currentStage === 1) {
+          pattern = [
+            { dc: 0, dr: -1 },
+            { dc: -1, dr: 0 }, { dc: 1, dr: 0 },
+            { dc: 0, dr: 1 }
+          ];
+        } else {
+          pattern = [
+            { dc: 0, dr: -2 }, { dc: 0, dr: -1 },
+            { dc: -1, dr: -1 }, { dc: 1, dr: -1 },
+            { dc: -1, dr: 0 },                      { dc: 1, dr: 0 },
+            { dc: -1, dr: 1 },  { dc: 1, dr: 1 },
+            { dc: 0, dr: 1 },  { dc: 0, dr: 2 }
+          ];
+        }
+      } else if (role === "Support") {
+        if (evoInfo.currentStage === 1) {
+          pattern = [
+            { dc: 0, dr: -1 },
+            { dc: -1, dr: 0 }, { dc: 1, dr: 0 },
+            { dc: 0, dr: 1 }
+          ];
+        } else {
+          pattern = [
+            { dc: 0, dr: -2 }, { dc: 0, dr: -1 },
+            { dc: -2, dr: 0 }, { dc: -1, dr: 0 }, { dc: 1, dr: 0 }, { dc: 2, dr: 0 },
+            { dc: 0, dr: 1 },  { dc: 0, dr: 2 },
+            { dc: -2, dr: -2 }, { dc: 2, dr: -2 }, { dc: -2, dr: 2 }, { dc: 2, dr: 2 }
+          ];
+        }
+      } else if (role === "Assassin") {
+        if (evoInfo.currentStage === 1) {
+          pattern = [
+            { dc: -1, dr: -1 }, { dc: 1, dr: -1 },
+            { dc: -1, dr: 1 },  { dc: 1, dr: 1 }
+          ];
+        } else {
+          pattern = [
+            { dc: -1, dr: -1 }, { dc: 1, dr: -1 },
+            { dc: -1, dr: 1 },  { dc: 1, dr: 1 },
+            { dc: -2, dr: -2 }, { dc: 2, dr: -2 },
+            { dc: -2, dr: 2 },  { dc: 2, dr: 2 },
+            { dc: -3, dr: -3 }, { dc: 3, dr: -3 },
+            { dc: -3, dr: 3 },  { dc: 3, dr: 3 }
+          ];
+        }
+      }
+    } else {
+      const stage = getSpeciesStage(p.species);
+      const patternSet = MOVE_PATTERNS[cls] || MOVE_PATTERNS['Attack'];
+      pattern = patternSet[stage] || patternSet[1];
+    }
+  }
+
   pattern.forEach(off => {
     const nc = col + off.dc;
     const nr = row + off.dr * fwd;
     addIfValid(nc, nr);
   });
+
   return out;
 }
 
@@ -610,6 +731,28 @@ export function getModifiedStat(p: PokemonEntity, stat: "atk" | "def", pokemonLi
     if (isSandstorm && context.isSkill) {
       base = Math.max(0, base - 1);
     }
+    
+    // Active Terrain adjustments
+    if (context.terrain) {
+      const activeType = p.reflectedType || db.t1;
+      const isElectric = activeType === "Electric" || db.t2 === "Electric";
+      const isGrass = activeType === "Grass" || db.t2 === "Grass";
+      const isPsychic = activeType === "Psychic" || db.t2 === "Psychic";
+      const isDragon = activeType === "Dragon" || db.t2 === "Dragon";
+
+      if (context.terrain === "Electric" && isElectric) {
+        base += 1;
+      }
+      if (context.terrain === "Grassy" && isGrass) {
+        base += 1;
+      }
+      if (context.terrain === "Misty" && isDragon) {
+        base = Math.max(0, base - 1);
+      }
+      if (context.terrain === "Psychic" && isPsychic) {
+        base += 1;
+      }
+    }
   }
 
   // Check adjacent Intimidate opponents
@@ -932,7 +1075,8 @@ export function predictDamage(
   skillIdx: number | undefined,
   pokemonList: PokemonEntity[],
   pedestals: Pedestal[],
-  weather: string | null
+  weather: string | null,
+  terrain?: string | null
 ): {
   damage: number;
   baseAtk: number;
@@ -951,7 +1095,7 @@ export function predictDamage(
   
   if (isPedestal) {
     const ped = target as Pedestal;
-    let rawAtk = getModifiedStat(actor, "atk", pokemonList, { action: skillIdx === undefined ? "melee" : "skill", isSkill: skillIdx !== undefined, weather });
+    let rawAtk = getModifiedStat(actor, "atk", pokemonList, { action: skillIdx === undefined ? "melee" : "skill", isSkill: skillIdx !== undefined, weather, terrain });
     if (actor.status === "burn") rawAtk = Math.max(0, rawAtk - 1);
     
     let pedDmg = 0;
@@ -1026,8 +1170,8 @@ export function predictDamage(
 
   if (skillIdx === undefined) {
     typeMult = typeBonus(actor, tg, weather);
-    baseAtk = getModifiedStat(actor, "atk", pokemonList, { action: "melee", isSkill: false, target: tg, weather });
-    targetDef = getModifiedStat(tg, "def", pokemonList, { weather });
+    baseAtk = getModifiedStat(actor, "atk", pokemonList, { action: "melee", isSkill: false, target: tg, weather, terrain });
+    targetDef = getModifiedStat(tg, "def", pokemonList, { weather, terrain });
 
     if (actor.hp <= actor.maxHp * 0.5) {
       if (actorDb.ability === "Overgrow" && (actorDb.t1 === "Grass" || actorDb.t2 === "Grass")) abilityBonus += 1;
@@ -1068,7 +1212,7 @@ export function predictDamage(
     const isAtkBase = typeof skill.skillDmg === 'string' && skill.skillDmg.toLowerCase() === 'atk';
 
     if (isAtkBase) {
-      const baseAtk = getModifiedStat(actor, "atk", pokemonList, { isSkill: true, weather });
+      const baseAtk = getModifiedStat(actor, "atk", pokemonList, { isSkill: true, weather, terrain });
       if (skill.statusChance) {
         rawDmg = Math.max(0, baseAtk - 1);
       } else {
@@ -1077,7 +1221,7 @@ export function predictDamage(
     } else {
       if (skillIdx === 0) {
         if (skill.skillDmg && skill.skillDmg !== 0 && skill.skillDmg !== "0" && skill.skillDmg !== "") {
-          const baseAtk = getModifiedStat(actor, "atk", pokemonList, { isSkill: true, weather });
+          const baseAtk = getModifiedStat(actor, "atk", pokemonList, { isSkill: true, weather, terrain });
           if (skill.statusChance) {
             rawDmg = Math.max(0, baseAtk - 1);
           } else {
@@ -1092,7 +1236,7 @@ export function predictDamage(
     }
 
     if (skill.skillName === "Foul Play") {
-      rawDmg = getModifiedStat(tg, "atk", pokemonList, { weather });
+      rawDmg = getModifiedStat(tg, "atk", pokemonList, { weather, terrain });
     }
 
     if (skill.skillName === "Sucker Punch") {
@@ -1170,7 +1314,7 @@ export function predictDamage(
     }
 
     typeMult = typeBonus(actor, tg, weather);
-    targetDef = getModifiedStat(tg, "def", pokemonList, { bySkill: true, weather });
+    targetDef = getModifiedStat(tg, "def", pokemonList, { bySkill: true, weather, terrain });
     damage = rawDmg + typeMult + abilityBonus - targetDef;
 
     if (skill.skillName === "Sonic Boom") damage = 2;

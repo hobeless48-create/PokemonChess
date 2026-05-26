@@ -47,6 +47,7 @@ export interface PokemonDBEntry {
   abilityDesc: string;
   img: string;
   skills: Skill[];
+  customMoveOffsets?: { dc: number; dr: number }[];
   skillName?: string;
   skillDesc?: string;
   skillDmg?: number | string;
@@ -190,6 +191,10 @@ export interface GameState {
   movePoints?: { [player: number]: number };
   consumablesUsedThisTurn?: { total: number; powerHerb: number; };
   weather: {
+    type: string | null;
+    duration: number;
+  };
+  terrain: {
     type: string | null;
     duration: number;
   };
