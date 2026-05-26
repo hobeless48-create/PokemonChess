@@ -30,6 +30,7 @@ import { FieldTrackers } from "./components/FieldTrackers";
 import { StatsCard } from "./components/StatsCard";
 import { SkillsAndLog } from "./components/SkillsAndLog";
 import { Modals } from "./components/Modals";
+import { Pokedex } from "./components/Pokedex";
 
 function canInflictStatus(p: PokemonEntity, status: string): boolean {
   const db = DB[p.species];
@@ -67,8 +68,15 @@ function canOverrideWeather(current: string | null, next: string): boolean {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<"setup" | "game" | "end">("setup");
+  const [screen, setScreen] = useState<"landing" | "preparation" | "pokedex" | "setup" | "game" | "end">("landing");
   const [winner, setWinner] = useState<{ player: number; reason: string } | null>(null);
+
+  const [gameConfig, setGameConfig] = useState({
+    boardSize: 11,
+    maxUnits: 6,
+    maxCost: 15,
+    maxLegendary: 1
+  });
 
   // Core game states
   const [gameState, setGameState] = useState<GameState>({
@@ -96,6 +104,9 @@ export default function App() {
   const [shopOpen, setShopOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [weatherInfoOpen, setWeatherInfoOpen] = useState(false);
+  const [turnNotice, setTurnNotice] = useState<number | null>(null);
+  const [hoveredCell, setHoveredCell] = useState<{ col: number; row: number } | null>(null);
+  const [typeChartOpen, setTypeChartOpen] = useState<boolean>(false);
 
   // Chance popup visual state
   const [chancePopup, setChancePopup] = useState<{
@@ -121,6 +132,14 @@ export default function App() {
   const [localP2Placements, setLocalP2Placements] = useState<{ col: number; row: number }[]>(
     Array.from({ length: 6 }, (_, i) => ({ col: i + 1, row: 9 }))
   );
+
+  // React useEffect to keep local setup placements and slot states updated when gameConfig changes
+  React.useEffect(() => {
+    setLocalP1Slots(Array(gameConfig.maxUnits).fill(""));
+    setLocalP2Slots(Array(gameConfig.maxUnits).fill(""));
+    setLocalP1Placements(Array.from({ length: gameConfig.maxUnits }, (_, i) => ({ col: i % gameConfig.boardSize, row: 1 + Math.floor(i / gameConfig.boardSize) })));
+    setLocalP2Placements(Array.from({ length: gameConfig.maxUnits }, (_, i) => ({ col: (i + 1) % gameConfig.boardSize, row: gameConfig.boardSize - 2 - Math.floor(i / gameConfig.boardSize) })));
+  }, [gameConfig]);
 
   // Incoming peer roster sync data (passed down to SetupScreen)
   const [peerP1Slots, setPeerP1Slots] = useState<string[] | undefined>(undefined);
@@ -317,11 +336,17 @@ export default function App() {
         isSyncingRef.current = true;
         setGameState(data.gameState);
         setScreen("game");
+        setTurnNotice(1);
         break;
 
       case "game_state_sync":
         isSyncingRef.current = true;
+        const prevPlayer = gameState.currentPlayer;
+        const nextPlayer = data.gameState.currentPlayer;
         setGameState(data.gameState);
+        if (prevPlayer !== nextPlayer) {
+          setTurnNotice(nextPlayer);
+        }
         break;
 
       case "chance_popup":
@@ -451,10 +476,20 @@ export default function App() {
       setWinner(null);
       setGameState(initialGameState);
       setScreen("game");
+      setTurnNotice(1);
 
       sendP2PMessage({ type: "start_game", gameState: initialGameState });
     }
   }, [p1Ready, p2Ready, p2pStatus, myPlayerNumber]);
+
+  React.useEffect(() => {
+    if (turnNotice !== null) {
+      const timer = setTimeout(() => {
+        setTurnNotice(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [turnNotice]);
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -468,12 +503,19 @@ export default function App() {
 
       if (screen !== "game") return;
 
+      const key = e.key.toLowerCase();
+
+      // CLOSE TURN NOTICE (Q)
+      if (key === "q" && turnNotice !== null) {
+        e.preventDefault();
+        setTurnNotice(null);
+        return;
+      }
+
       // Block keyboard hotkeys when it is the opponent's turn in P2P mode
       if (p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber) {
         return;
       }
-
-      const key = e.key.toLowerCase();
 
       // END TURN (E)
       if (key === "e") {
@@ -516,6 +558,13 @@ export default function App() {
         return;
       }
 
+      // TYPE CHART (C)
+      if (key === "c") {
+        e.preventDefault();
+        setTypeChartOpen(prev => !prev);
+        return;
+      }
+
       // Hotkeys 1-6 fast selection
       if (key >= "1" && key <= "6") {
         const idx = parseInt(key, 10) - 1;
@@ -543,7 +592,7 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [screen, gameState, inventoryOpen, shopOpen]);
+  }, [screen, gameState, inventoryOpen, shopOpen, turnNotice, p2pStatus, myPlayerNumber]);
 
   // Log logger Helper
   const addLog = (msg: string, type: "sys" | "atk" | "heal" | "combat" | "" = "") => {
@@ -630,8 +679,8 @@ export default function App() {
     p2Team.forEach(item => initialPokemon.push(buildEntity(item.species, 2, item.col, item.row)));
 
     const startingPedestals: Pedestal[] = [
-      { player: 1, col: 5, row: 0, hp: 10, maxHp: 10 },
-      { player: 2, col: 5, row: 10, hp: 10, maxHp: 10 }
+      { player: 1, col: Math.floor(gameConfig.boardSize / 2), row: 0, hp: 10, maxHp: 10 },
+      { player: 2, col: Math.floor(gameConfig.boardSize / 2), row: gameConfig.boardSize - 1, hp: 10, maxHp: 10 }
     ];
 
     setWinner(null);
@@ -665,6 +714,7 @@ export default function App() {
     });
 
     setScreen("game");
+    setTurnNotice(1);
   };
 
   const getAliveCount = (player: number, list: PokemonEntity[]) => {
@@ -826,6 +876,7 @@ export default function App() {
       const activeId = mode.pokeId!;
       const actor = list.find(pk => pk.id === activeId);
       if (!actor) return;
+      const dbEntry = DB[actor.species];
 
       if (actor.isEgg && !actor.hasHatched) {
         addLog("Dormant eggs cannot perform actions!", "sys");
@@ -849,7 +900,20 @@ export default function App() {
         }
 
         let cost = 1;
-        if (usesMP) {
+        let consumesMP = usesMP;
+        if (dbEntry && dbEntry.ability === "Swift Swim" && (gameState.weather.type === "Rain" || gameState.weather.type === "Heavy Rain")) {
+          cost = 0;
+          consumesMP = false;
+          addLog(`🌊 Swift Swim! ${actor.species} moved for 0 energy/MP cost in the rain.`, "heal");
+        } else if (dbEntry && dbEntry.ability === "Chlorophyll" && (gameState.weather.type === "Sunlight" || gameState.weather.type === "Harsh Sunlight")) {
+          cost = 0;
+          consumesMP = false;
+          addLog(`☀️ Chlorophyll! ${actor.species} moved for 0 energy/MP cost in the sun.`, "heal");
+        } else if (actor.heldItem === "Smoke Ball" && actor.hasAttacked) {
+          cost = 0;
+          consumesMP = false;
+          addLog(`💨 Smoke Ball triggered! ${actor.species} retreated for 0 energy/MP cost.`, "heal");
+        } else if (usesMP) {
           cost = 0;
         } else if (actor.heldItem === "Quick Claw" && !actor.hasMovedEver) {
           cost = 0;
@@ -860,15 +924,39 @@ export default function App() {
         actor.col = col;
         actor.row = row;
         actor.hasMoved = true;
-        if (usesMP) {
+        if (consumesMP) {
           actor.hasUsedMP = true;
         }
 
-        addLog(`${actor.species} moved to ${String.fromCharCode(65 + col)}${row + 1} (${usesMP ? "used 1 MP" : `cost ${cost} Energy`})`, "sys");
+        if (dbEntry && dbEntry.ability === "Speed Boost") {
+          if (!actor.modifiers) actor.modifiers = [];
+          actor.modifiers.push({ stat: "atk", amount: 1, duration: 1, source: "Speed Boost" });
+          addLog(`⚡ Speed Boost! ${actor.species} gained +1 Atk for 1 turn after moving!`, "heal");
+        }
+
+        // Stepped on hazards check
+        if (gameState.hazards && gameState.hazards.length > 0) {
+          const activeHazards = gameState.hazards.filter(h => h.col === col && h.row === row && h.player !== actor.player && h.duration > 0);
+          if (activeHazards.length > 0 && dbEntry && dbEntry.ability !== "Levitate") {
+            let hazardDmg = 0;
+            activeHazards.forEach(h => {
+              hazardDmg += 2;
+              addLog(`💥 Hazard! ${actor.species} stepped on enemy ${h.type === "spikes" ? "Spikes" : "Stealth Rock"} and took 2 damage!`, "combat");
+            });
+            actor.hp = Math.max(0, actor.hp - hazardDmg);
+            actor.damageReceivedThisTurn = (actor.damageReceivedThisTurn || 0) + hazardDmg;
+            if (actor.hp <= 0) {
+              actor.fainted = true;
+              addLog(`💀 ${actor.species} fainted to battlefield hazards!`, "sys");
+            }
+          }
+        }
+
+        addLog(`${actor.species} moved to ${String.fromCharCode(65 + col)}${row + 1} (${consumesMP ? "used 1 MP" : `cost ${cost} Energy`})`, "sys");
 
         setGameState(prev => {
           const nextMP = { ...(prev.movePoints || { 1: 3, 2: 3 }) };
-          if (usesMP) {
+          if (consumesMP) {
             nextMP[gameState.currentPlayer] = Math.max(0, nextMP[gameState.currentPlayer] - 1);
           }
           return {
@@ -940,6 +1028,7 @@ export default function App() {
 
           const startingHp = target.hp;
           target.hp = Math.max(0, target.hp - netDmg);
+          target.damageReceivedThisTurn = (target.damageReceivedThisTurn || 0) + netDmg;
           addLog(`⚔️ ${actor.species} attacked ${target.species} for ${netDmg} damage!`, "combat");
 
           if (target.hp <= 0 && targetDb && targetDb.ability === "Sturdy" && startingHp === target.maxHp) {
@@ -948,6 +1037,19 @@ export default function App() {
           }
 
           if (targetDb) {
+            // Gengar Cursed Body контакт
+            if (targetDb.ability === "Cursed Body" && !actor.fainted) {
+              if (Math.random() < 0.3) {
+                const actorDb = DB[actor.species];
+                const skillToDisable = actorDb?.skills?.[0]?.skillName;
+                if (skillToDisable) {
+                  if (!actor.skillCooldowns) actor.skillCooldowns = {};
+                  actor.skillCooldowns[skillToDisable] = 2;
+                  addLog(`👻 Cursed Body! ${target.species} disabled ${actor.species}'s ${skillToDisable} for 2 turns!`, "combat");
+                }
+              }
+            }
+
             // Static contact paralyze
             if (targetDb.ability === "Static" && !actor.fainted) {
               if (Math.random() < 0.3 && actor.status !== "paralysis" && canInflictStatus(actor, "paralysis")) {
@@ -1112,6 +1214,12 @@ export default function App() {
         const dbEntry = DB[actor.species];
         let skill = getSkillData(dbEntry, mode.skillIdx);
 
+        if (actor.species === "Celebi") {
+          if (!actor.modifiers) actor.modifiers = [];
+          actor.modifiers.push({ stat: "atk", amount: -2, duration: 1, source: "Celebi backlash" });
+          addLog(`🍃 Celebi suffered a -2 ATK debuff for this turn!`, "sys");
+        }
+
         if (!actor.skillUses) actor.skillUses = {};
         if ((actor.skillUses[skill.skillName] || 0) > 0) {
           addLog(`❌ ${actor.species} has already used ${skill.skillName} this turn!`, "sys");
@@ -1174,13 +1282,38 @@ export default function App() {
         let affectedCells: { col: number; row: number }[] = [];
         if (isAoE) {
           if (shape.type === "aoe" && shape.range) {
-            affectedCells = adjCells(col, row, shape.radius || 1, true);
+            affectedCells = adjCells(col, row, shape.radius || 1, true, gameConfig.boardSize);
             affectedCells.push({ col, row });
           } else {
-            affectedCells = getSkillShapeCells(actor, list, peds, mode.skillIdx);
+            affectedCells = getSkillShapeCells(actor, list, peds, mode.skillIdx, gameConfig.boardSize);
           }
         } else {
           affectedCells = [{ col, row }];
+        }
+
+        const pressureUnit = list.find(p => {
+          if (p.player === actor.player || p.fainted) return false;
+          const pDb = DB[p.species];
+          if (!pDb || pDb.ability !== "Pressure" || p.pressureTriggered) return false;
+          return affectedCells.some(c => c.col === p.col && c.row === p.row);
+        });
+
+        if (pressureUnit) {
+          scCost += 1;
+        }
+
+        if (gameState.energy[gameState.currentPlayer] < scCost) {
+          addLog("❌ Not enough energy to cast this skill!", "sys");
+          setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+          return;
+        }
+
+        if (pressureUnit) {
+          const match = list.find(p => p.id === pressureUnit.id);
+          if (match) {
+            match.pressureTriggered = true;
+          }
+          addLog(`💥 Pressure! ${pressureUnit.species}'s presence increases skill cost by +1!`, "sys");
         }
 
         // Special Skill Intercept: Clear Bell / Tidal Bell / Tidal bell
@@ -1193,8 +1326,16 @@ export default function App() {
             return;
           }
 
-          const nextId = Math.max(...list.map(p => p.id), 0) + 1;
           const isClearBell = skill.skillName === "Clear Bell";
+          const bellSpecies = isClearBell ? "Clear Bell" : "Tidal Bell";
+          const existingBell = list.find(p => p.player === actor.player && !p.fainted && (isClearBell ? (p.species === "Clear Bell" || p.species === "Clear bell") : (p.species === "Tidal Bell" || p.species === "Tidal bell")));
+          if (existingBell) {
+            addLog(`❌ Summon failed! You already have an active ${bellSpecies} on the board.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const nextId = Math.max(...list.map(p => p.id), 0) + 1;
 
           const bellEntity: PokemonEntity = {
             id: nextId,
@@ -1480,6 +1621,153 @@ export default function App() {
           }
         }
 
+        // Special Skill Intercept: Baton Pass
+        if (skill.skillName === "Baton Pass") {
+          const targetPk = pkAt(col, row, list);
+          if (!targetPk) {
+            addLog(`❌ Baton Pass failed! Choose an ally to swap position with.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          if (targetPk.player !== actor.player) {
+            addLog(`❌ Baton Pass failed! Cannot swap with an opponent's Pokémon.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          if (targetPk.id === actor.id) {
+            addLog(`❌ Baton Pass failed! Cannot swap with yourself.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const oldCol = actor.col;
+          const oldRow = actor.row;
+          actor.col = targetPk.col;
+          actor.row = targetPk.row;
+          targetPk.col = oldCol;
+          targetPk.row = oldRow;
+
+          addLog(`🔄 Baton Pass! ${actor.species} swapped positions with ally ${targetPk.species}!`, "heal");
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Special Skill Intercept: Sketch
+        if (skill.skillName === "Sketch") {
+          const targetPk = pkAt(col, row, list);
+          if (!targetPk) {
+            addLog(`❌ Sketch failed! You must target a pokemon.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          if (targetPk.player === actor.player) {
+            addLog(`❌ Sketch failed! Cannot sketch an ally's skill.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const targetDb = DB[targetPk.species];
+          const targetSkills = targetPk.customSkills || (targetDb ? targetDb.skills : []);
+          if (!targetSkills || targetSkills.length === 0) {
+            addLog(`❌ Sketch failed! Target has no sketchable skills.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const randomSkill = targetSkills[Math.floor(Math.random() * targetSkills.length)];
+          actor.customSkills = [randomSkill];
+          addLog(`🎨 Sketch! ${actor.species} permanently copied ${targetPk.species}'s skill: ${randomSkill.skillName}!`, "heal");
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Special Skill Intercept: Spikes / Stealth Rock
+        if (skill.skillName === "Spikes" || skill.skillName === "Stealth Rock") {
+          if (!gameState.hazards) gameState.hazards = [];
+          const nextHazards = [...(gameState.hazards || [])];
+
+          affectedCells.forEach(cell => {
+            const type = skill.skillName === "Spikes" ? "spikes" : "stealthRock";
+            const existingIdx = nextHazards.findIndex(h => h.col === cell.col && h.row === cell.row && h.type === type && h.player === actor.player);
+            if (existingIdx !== -1) {
+              nextHazards[existingIdx].duration = 3;
+            } else {
+              nextHazards.push({
+                col: cell.col,
+                row: cell.row,
+                type,
+                duration: 3,
+                player: actor.player
+              });
+            }
+          });
+
+          addLog(`🕸️ ${actor.species} set ${skill.skillName} hazards in the targeted area for 3 turns!`, "heal");
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            hazards: nextHazards,
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
         // Special Skill Accuracy Roll checking: Guillotine (50%) & High Jump Kick (85%)
         let isHit = true;
         if (skill.skillName === "Guillotine") {
@@ -1523,17 +1811,37 @@ export default function App() {
         }
 
         // Compute raw damage:
-        // Skill 1 (index 0) damage must dynamically match the Pokémon's ATK stat exactly if it's a damaging skill.
-        // Skills 2 and 3 use their specific fixed descriptions and cannot be buffed by ATK modifiers.
         let rawDmg = 0;
-        if (mode.skillIdx === 0) {
-          if (skill.skillDmg && skill.skillDmg > 0) {
-            rawDmg = getModifiedStat(actor, "atk", list, { isSkill: true, weather: gameState.weather.type });
+        const isAtkBase = typeof skill.skillDmg === 'string' && skill.skillDmg.toLowerCase() === 'atk';
+
+        if (isAtkBase) {
+          const baseAtk = getModifiedStat(actor, "atk", list, { isSkill: true, weather: gameState.weather.type });
+          if (skill.statusChance) {
+            rawDmg = Math.max(0, baseAtk - 1);
           } else {
-            rawDmg = 0;
+            rawDmg = baseAtk;
           }
         } else {
-          rawDmg = skill.skillDmg || 0;
+          if (mode.skillIdx === 0) {
+            if (skill.skillDmg && skill.skillDmg !== 0 && skill.skillDmg !== "0" && skill.skillDmg !== "") {
+              const baseAtk = getModifiedStat(actor, "atk", list, { isSkill: true, weather: gameState.weather.type });
+              if (skill.statusChance) {
+                rawDmg = Math.max(0, baseAtk - 1);
+              } else {
+                rawDmg = baseAtk;
+              }
+            } else {
+              rawDmg = 0;
+            }
+          } else {
+            rawDmg = typeof skill.skillDmg === 'number' ? skill.skillDmg : (parseInt(skill.skillDmg || '0', 10) || 0);
+          }
+        }
+
+        if (skill.skillName === "Sucker Punch") {
+          if (actor.damageReceivedLastTurn && actor.damageReceivedLastTurn > 0) {
+            rawDmg += 2;
+          }
         }
 
         if (actor.status === "burn") {
@@ -1560,14 +1868,16 @@ export default function App() {
         const triggerSkillsEffect = (tg: PokemonEntity) => {
           const eff = skill.skillEffect;
           if (eff) {
-            if (eff.target === "enemy" && tg.player !== actor.player) {
+            const isTargetAlly = eff.target === "ally" || eff.target === "self" || eff.target === "all_allies";
+            const isTargetMatch = (isTargetAlly && tg.player === actor.player) || (!isTargetAlly && tg.player !== actor.player);
+            if (isTargetMatch) {
               tg.modifiers.push({
                 stat: eff.stat,
                 amount: eff.amount,
                 duration: eff.duration,
                 source: skill.skillName
               });
-              addLog(`${tg.species} afflicted by debuff ${eff.stat.toUpperCase()}: ${eff.amount} for ${eff.duration} turns`, "atk");
+              addLog(`${tg.species} received ${eff.amount >= 0 ? "buff" : "debuff"} ${eff.stat.toUpperCase()}: ${eff.amount} for ${eff.duration} turns`, eff.amount >= 0 ? "heal" : "atk");
             }
           }
           // status inflict chance
@@ -1651,25 +1961,36 @@ export default function App() {
                 targetsHit++;
                 const typeMult = typeBonus(actor, target);
                 const adb = DB[actor.species];
-                let netDmg = Math.max(0, rawDmg + typeMult + skillAbilityBonus - getModifiedStat(target, "def", list, { bySkill: true, weather: gameState.weather.type }));
-
-                // Volt Absorb / Water Absorb checks
-                if (adb) {
-                  const isElectricHit = adb.t1 === "Electric" || adb.t2 === "Electric" || skill.skillName.toLowerCase().includes("thunder") || skill.skillName.toLowerCase().includes("shock") || skill.skillName.toLowerCase().includes("electro") || skill.skillName.toLowerCase().includes("discharge");
-                  const isWaterHit = adb.t1 === "Water" || adb.t2 === "Water" || skill.skillName.toLowerCase().includes("water") || skill.skillName.toLowerCase().includes("hydro") || skill.skillName.toLowerCase().includes("bubble") || skill.skillName.toLowerCase().includes("scald") || skill.skillName.toLowerCase().includes("surf");
-
-                  if (targetDb && targetDb.ability === "Volt Absorb" && isElectricHit) {
-                    target.hp = Math.min(target.maxHp, target.hp + 3);
-                    addLog(`⚡ Volt Absorb! ${target.species} absorbed the electric attack and restored +3 HP!`, "heal");
-                    netDmg = 0;
-                  } else if (targetDb && targetDb.ability === "Water Absorb" && isWaterHit) {
-                    target.hp = Math.min(target.maxHp, target.hp + 3);
-                    addLog(`🌊 Water Absorb! ${target.species} absorbed the water attack and restored +3 HP!`, "heal");
-                    netDmg = 0;
+                
+                const isDamaging = skill.skillDmg !== undefined && skill.skillDmg !== 0 && skill.skillDmg !== "0" && skill.skillDmg !== "";
+                let netDmg = 0;
+                
+                if (isDamaging) {
+                  let targetRawDmg = rawDmg;
+                  if (skill.skillName === "Foul Play") {
+                    const targetAtkVal = getModifiedStat(target, "atk", list, { weather: gameState.weather.type });
+                    targetRawDmg = targetAtkVal;
+                    if (actor.status === "burn") targetRawDmg = Math.max(0, targetRawDmg - 1);
                   }
-                }
+                  
+                  netDmg = Math.max(0, targetRawDmg + typeMult + skillAbilityBonus - getModifiedStat(target, "def", list, { bySkill: true, weather: gameState.weather.type }));
 
-                if (netDmg > 0) {
+                  // Volt Absorb / Water Absorb checks
+                  if (adb) {
+                    const isElectricHit = adb.t1 === "Electric" || adb.t2 === "Electric" || skill.skillName.toLowerCase().includes("thunder") || skill.skillName.toLowerCase().includes("shock") || skill.skillName.toLowerCase().includes("electro") || skill.skillName.toLowerCase().includes("discharge");
+                    const isWaterHit = adb.t1 === "Water" || adb.t2 === "Water" || skill.skillName.toLowerCase().includes("water") || skill.skillName.toLowerCase().includes("hydro") || skill.skillName.toLowerCase().includes("bubble") || skill.skillName.toLowerCase().includes("scald") || skill.skillName.toLowerCase().includes("surf");
+
+                    if (targetDb && targetDb.ability === "Volt Absorb" && isElectricHit) {
+                      target.hp = Math.min(target.maxHp, target.hp + 3);
+                      addLog(`⚡ Volt Absorb! ${target.species} absorbed the electric attack and restored +3 HP!`, "heal");
+                      netDmg = 0;
+                    } else if (targetDb && targetDb.ability === "Water Absorb" && isWaterHit) {
+                      target.hp = Math.min(target.maxHp, target.hp + 3);
+                      addLog(`🌊 Water Absorb! ${target.species} absorbed the water attack and restored +3 HP!`, "heal");
+                      netDmg = 0;
+                    }
+                  }
+
                   // Custom Unique Skill Behavior: Dream Eater
                   if (skill.skillName === "Dream Eater") {
                     if (target.status !== "sleep") {
@@ -1691,6 +2012,12 @@ export default function App() {
                   if (skill.skillName === "Psycutter") {
                     const targetDefVal = getModifiedStat(target, "def", list, { bySkill: true, weather: gameState.weather.type });
                     netDmg = Math.max(0, netDmg + targetDefVal);
+                  }
+
+                  // Custom Unique Skill Behavior: Counter
+                  if (skill.skillName === "Counter") {
+                    const dmgReceived = actor.damageReceivedLastTurn || 0;
+                    netDmg = dmgReceived > 0 ? (dmgReceived + 1) : 0;
                   }
 
                   // Multiscale / Sheer Force / Shield / Levitate checks
@@ -1716,18 +2043,22 @@ export default function App() {
                     netDmg = 0;
                     addLog(`☁️ Levitate! ${target.species} completely ignored the Ground-type skill ${skill.skillName}!`, "combat");
                   }
-                }
 
-                netDmg = applyTidalBellReduction(target, netDmg, list);
+                  netDmg = applyTidalBellReduction(target, netDmg, list);
 
-                const startingHp = target.hp;
-                target.hp = Math.max(0, target.hp - netDmg);
-                addLog(`✨ ${actor.species} casted ${skill.skillName} at ${target.species} for ${netDmg} damage!`, "combat");
+                  const startingHp = target.hp;
+                  target.hp = Math.max(0, target.hp - netDmg);
+                  target.damageReceivedThisTurn = (target.damageReceivedThisTurn || 0) + netDmg;
+                  addLog(`✨ ${actor.species} casted ${skill.skillName} at ${target.species} for ${netDmg} damage!`, "combat");
 
-                // Check Sturdy for skill damage
-                if (target.hp <= 0 && targetDb && targetDb.ability === "Sturdy" && startingHp === target.maxHp) {
-                  target.hp = 1;
-                  addLog(`🛡️ Sturdy! ${target.species} survived the lethal blow with 1 HP!`, "combat");
+                  // Check Sturdy for skill damage
+                  if (target.hp <= 0 && targetDb && targetDb.ability === "Sturdy" && startingHp === target.maxHp) {
+                    target.hp = 1;
+                    addLog(`🛡️ Sturdy! ${target.species} survived the lethal blow with 1 HP!`, "combat");
+                  }
+                } else {
+                  // Non-damaging cast
+                  addLog(`✨ ${actor.species} casted ${skill.skillName} at ${target.species}!`, "combat");
                 }
 
                 // Custom Unique Skill Behavior: Roar
@@ -1754,6 +2085,15 @@ export default function App() {
 
                 triggerSkillsEffect(target);
 
+                // Gengar Cursed Body on skill hit
+                if (targetDb && targetDb.ability === "Cursed Body" && !actor.fainted) {
+                  if (Math.random() < 0.3) {
+                    if (!actor.skillCooldowns) actor.skillCooldowns = {};
+                    actor.skillCooldowns[skill.skillName] = 2;
+                    addLog(`👻 Cursed Body! ${target.species} disabled ${actor.species}'s ${skill.skillName} for 2 turns!`, "combat");
+                  }
+                }
+
                 if (target.hp <= 0) {
                   target.fainted = true;
                   addLog(`💀 ${target.species} fainted!`, "sys");
@@ -1771,6 +2111,20 @@ export default function App() {
             }
           }
         });
+
+        // Custom Unique Skill Behavior: Hidden Power
+        if (skill.skillName === "Hidden Power") {
+          const adjacentAllies = list.filter(other => {
+            if (other.player !== actor.player || other.fainted || other.id === actor.id) return false;
+            const dist = Math.max(Math.abs(other.col - actor.col), Math.abs(other.row - actor.row));
+            return dist === 1;
+          });
+          adjacentAllies.forEach(ally => {
+            if (!ally.modifiers) ally.modifiers = [];
+            ally.modifiers.push({ stat: "atk", amount: 1, duration: 2, source: "Hidden Power" });
+            addLog(`✨ Hidden Power boosted ${ally.species}'s Atk by 1 for 2 turns!`, "heal");
+          });
+        }
 
         // Global skills effects like self heals, Sunny day, Snowscape
         if (skill.skillHeal && skill.skillHealTarget === "self") {
@@ -1790,6 +2144,11 @@ export default function App() {
         actor.hasUsedSkill = true;
         if (!actor.skillUses) actor.skillUses = {};
         actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+        if (skill.cooldown && skill.cooldown > 0) {
+          if (!actor.skillCooldowns) actor.skillCooldowns = {};
+          actor.skillCooldowns[skill.skillName] = skill.cooldown;
+        }
 
         const nextPokemon = [...list];
         const nextPedestals = [...peds];
@@ -1850,14 +2209,14 @@ export default function App() {
     }
 
     if (type === "move") {
-      const cells = getRoleBasedMoves(actor, gameState.pokemon, gameState.pedestals);
+      const cells = getRoleBasedMoves(actor, gameState.pokemon, gameState.pedestals, gameConfig.boardSize);
       setGameState(prev => ({
         ...prev,
         actionMode: { type, pokeId: id },
         highlightedCells: cells.map(c => ({ col: c.col, row: c.row, type: "move" as const }))
       }));
     } else if (type === "attack") {
-      const cells = getAtkCells(actor, gameState.pokemon, gameState.pedestals);
+      const cells = getAtkCells(actor, gameState.pokemon, gameState.pedestals, gameConfig.boardSize);
       setGameState(prev => ({
         ...prev,
         actionMode: { type, pokeId: id },
@@ -1865,11 +2224,19 @@ export default function App() {
       }));
     } else {
       // SKILL TRIGGER MODE
+      if (!verifyActionStatus(actor)) {
+        return;
+      }
       const activeSkillIdx = typeof skillIdx !== "undefined" ? skillIdx : 0;
       const skill = getSkillData(dbEntry, activeSkillIdx);
 
       if (actor.skillUses?.[skill.skillName] && actor.skillUses[skill.skillName] > 0) {
         addLog(`❌ ${actor.species} has already used ${skill.skillName} this turn!`, "sys");
+        return;
+      }
+
+      if (actor.skillCooldowns?.[skill.skillName] && actor.skillCooldowns[skill.skillName] > 0) {
+        addLog(`❌ ${skill.skillName} is on cooldown for ${actor.skillCooldowns[skill.skillName]} more turns!`, "sys");
         return;
       }
 
@@ -1901,7 +2268,7 @@ export default function App() {
               .filter(p => !p.fainted && p.player === actor.player)
               .map(p => ({ col: p.col, row: p.row, type: "atk" as const }));
           } else {
-            showCells = getSkillShapeCells(actor, gameState.pokemon, gameState.pedestals, activeSkillIdx).map(c => ({ col: c.col, row: c.row, type: "atk" as const }));
+            showCells = getSkillShapeCells(actor, gameState.pokemon, gameState.pedestals, activeSkillIdx, gameConfig.boardSize).map(c => ({ col: c.col, row: c.row, type: "atk" as const }));
           }
 
           setGameState(prev => ({
@@ -1914,7 +2281,7 @@ export default function App() {
         }
       } else {
         // Targeted standard skills
-        const cells = getSkillCells(actor, gameState.pokemon, gameState.pedestals, activeSkillIdx);
+        const cells = getSkillCells(actor, gameState.pokemon, gameState.pedestals, activeSkillIdx, gameConfig.boardSize);
         setGameState(prev => ({
           ...prev,
           actionMode: { type: "skill", pokeId: id, skillIdx: activeSkillIdx, confirmingIdx: null },
@@ -1928,16 +2295,44 @@ export default function App() {
     const list = [...gameState.pokemon];
     const peds = [...gameState.pedestals];
     const dbEntry = DB[actor.species];
+
+    if (actor.species === "Celebi") {
+      if (!actor.modifiers) actor.modifiers = [];
+      actor.modifiers.push({ stat: "atk", amount: -2, duration: 1, source: "Celebi backlash" });
+      addLog(`🍃 Celebi suffered a -2 ATK debuff for this turn!`, "sys");
+    }
+
     let scCost = skill.skillCost || dbEntry.skillCost || 2;
 
     if (actor.heldItem === "Miracle Seed" && !actor.hasUsedSkill) {
       scCost = Math.max(0, scCost - 1);
     }
 
+    const isPowderSnow = skill.skillName === "Powder Snow";
+    let pressureUnit: PokemonEntity | undefined = undefined;
+    if (isPowderSnow) {
+      pressureUnit = list.find(p => {
+        if (p.player === actor.player || p.fainted) return false;
+        const pDb = DB[p.species];
+        return pDb && pDb.ability === "Pressure" && !p.pressureTriggered;
+      });
+      if (pressureUnit) {
+        scCost += 1;
+      }
+    }
+
     if (gameState.energy[gameState.currentPlayer] < scCost) {
       addLog("Not enough energy to cast this skill!", "sys");
       setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
       return;
+    }
+
+    if (pressureUnit) {
+      const match = list.find(p => p.id === pressureUnit!.id);
+      if (match) {
+        match.pressureTriggered = true;
+      }
+      addLog(`💥 Pressure! ${pressureUnit.species}'s presence increases skill cost by +1!`, "sys");
     }
 
     // Apply self heals
@@ -2044,6 +2439,11 @@ export default function App() {
     if (!actor.skillUses) actor.skillUses = {};
     actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
 
+    if (skill.cooldown && skill.cooldown > 0) {
+      if (!actor.skillCooldowns) actor.skillCooldowns = {};
+      actor.skillCooldowns[skill.skillName] = skill.cooldown;
+    }
+
     setGameState(prev => ({
       ...prev,
       pokemon: list,
@@ -2104,7 +2504,12 @@ export default function App() {
         }
       }
     });
-
+    // Reset pressure and rotate damageReceived for all units
+    list.forEach(p => {
+      p.pressureTriggered = false;
+      p.damageReceivedLastTurn = p.damageReceivedThisTurn || 0;
+      p.damageReceivedThisTurn = 0;
+    });
     // Resolve Future Sight countdown and banishment ticking
     list.forEach(p => {
       if (p.fainted) return;
@@ -2249,6 +2654,48 @@ export default function App() {
         }
       }
 
+      // Freeze status ticking (only reduces if player with status ends turn)
+      if (p.status === "freeze" && !p.fainted) {
+        p.statusTurns = (p.statusTurns || 0) + 1;
+        if (p.statusTurns >= 1) {
+          p.status = null;
+          p.statusTurns = 0;
+          addLog(`❄️ ${p.species} thawed out!`, "heal");
+        }
+      }
+
+      // Moody ability for Smeargle
+      if (dbEntry && dbEntry.ability === "Moody" && !p.fainted) {
+        const roll = Math.floor(Math.random() * 20) + 1;
+        let stat = "";
+        let change = 0;
+        if (roll >= 10) {
+          if (roll % 2 === 0) {
+            stat = "def";
+            change = 1;
+          } else {
+            stat = "atk";
+            change = 1;
+          }
+        } else {
+          if (roll % 2 === 0) {
+            stat = "def";
+            change = -1;
+          } else {
+            stat = "atk";
+            change = -1;
+          }
+        }
+        if (!p.modifiers) p.modifiers = [];
+        p.modifiers.push({
+          stat,
+          amount: change,
+          duration: 9999, // Permanent
+          source: "Moody"
+        });
+        addLog(`🎲 Moody! Smeargle rolled ${roll} on d20. ${stat.toUpperCase()} modified by ${change >= 0 ? "+" : ""}${change}!`, "heal");
+      }
+
       // EXP passive checks
       if (p.heldItem === "EXP Share" && !p.hasMoved && !p.hasAttacked && !p.hasUsedSkill) {
         p.exp += 1;
@@ -2326,6 +2773,20 @@ export default function App() {
           }
           return { ...m, duration: nextDur };
         }).filter(m => m.duration > 0);
+      }
+
+      // Decrement skill cooldowns
+      if (p.skillCooldowns) {
+        const nextCooldowns: { [key: string]: number } = {};
+        Object.keys(p.skillCooldowns).forEach(name => {
+          const cd = p.skillCooldowns![name];
+          if (cd > 1) {
+            nextCooldowns[name] = cd - 1;
+          } else if (cd === 1) {
+            addLog(`⏳ ${p.species}'s skill ${name} is off cooldown.`, "sys");
+          }
+        });
+        p.skillCooldowns = nextCooldowns;
       }
 
       // Clear trackers flags
@@ -2482,6 +2943,7 @@ export default function App() {
     }));
 
     addLog(`--- Player ${nextPlayer}'s Turn (Turn ${nextTurn} - Phase ${nextPhase}) ---`, "sys");
+    setTurnNotice(nextPlayer);
   };
 
   // Rotate Skill helper
@@ -2529,10 +2991,10 @@ export default function App() {
               .filter(p => !p.fainted && p.player === tempActor.player)
               .map(p => ({ col: p.col, row: p.row, type: "atk" as const }));
           } else {
-            nextHighlighted = getSkillShapeCells(tempActor, tempPokemonList, prev.pedestals, activeSkillIdx).map(c => ({ col: c.col, row: c.row, type: "atk" as const }));
+            nextHighlighted = getSkillShapeCells(tempActor, tempPokemonList, prev.pedestals, activeSkillIdx, gameConfig.boardSize).map(c => ({ col: c.col, row: c.row, type: "atk" as const }));
           }
         } else {
-          nextHighlighted = getSkillCells(tempActor, tempPokemonList, prev.pedestals, activeSkillIdx);
+          nextHighlighted = getSkillCells(tempActor, tempPokemonList, prev.pedestals, activeSkillIdx, gameConfig.boardSize);
         }
       }
 
@@ -2702,12 +3164,182 @@ export default function App() {
       setPeerP2Slots(undefined);
       setPeerP2Placements(undefined);
     }
-    setScreen("setup");
+    setScreen("landing");
   };
 
   return (
     <main className="min-h-vh w-full flex flex-col p-4 md:p-6 bg-[#0b0f19] select-none text-slate-100 font-sans antialiased overflow-x-hidden relative">
       {/* 1. SETUP SCREEN VIEW */}
+      {/* 0a. LANDING PAGE VIEW */}
+      {screen === "landing" && (
+        <div 
+          className="flex-grow flex flex-col items-center justify-center min-h-[calc(100vh-3rem)] relative p-6 bg-cover bg-center bg-no-repeat"
+          style={{
+            backgroundImage: `url("blob:https://gemini.google.com/da24b70d-a3cc-481a-8ac6-ca20bdca051e"), radial-gradient(circle, #1a1a3a 0%, #06060f 100%)`,
+            backgroundBlendMode: "overlay"
+          }}
+        >
+          <div className="w-full max-w-xl p-8 md:p-12 rounded-3xl bg-slate-950/80 border border-[#0f3460]/80 shadow-[0_0_50px_rgba(15,52,96,0.3)] backdrop-blur-md text-center flex flex-col items-center gap-8 relative overflow-hidden">
+            <div className="absolute -top-24 -left-24 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+
+            <div>
+              <div className="text-[11px] font-black text-cyan-400 uppercase tracking-[0.25em] mb-3 animate-pulse">
+                💥 Agentic Tactical Board Game
+              </div>
+              <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-400 to-purple-400 uppercase tracking-wider mb-2 drop-shadow-md">
+                Pokémon Chess
+              </h1>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                A turn-based multiplayer chess game featuring unique elemental synergies, customized dynamic boards, and interactive Pokédex editing.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
+              <button
+                onClick={() => setScreen("preparation")}
+                className="group relative px-8 py-4 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-black text-sm uppercase tracking-widest rounded-2xl transition duration-300 transform hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(6,182,212,0.4)] cursor-pointer outline-none flex items-center justify-center gap-2"
+              >
+                <span>🎮</span> Preperation Setup
+              </button>
+              
+              <button
+                onClick={() => setScreen("pokedex")}
+                className="group relative px-8 py-4 bg-[#16213e]/70 hover:bg-[#202e56]/80 text-white font-bold text-sm uppercase tracking-widest rounded-2xl border border-[#2a3a5a] hover:border-cyan-500/50 transition duration-300 transform hover:-translate-y-0.5 hover:shadow-[0_0_20px_rgba(32,46,86,0.3)] cursor-pointer outline-none flex items-center justify-center gap-2"
+              >
+                <span>📕</span> Pokédex Database
+              </button>
+            </div>
+
+            <div className="text-[10px] text-slate-500 font-mono">
+              Designed by Antigravity v1.0.0
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 0b. PREPARATION CONFIGURATION VIEW */}
+      {screen === "preparation" && (
+        <div 
+          className="flex-grow flex flex-col items-center justify-center min-h-[calc(100vh-3rem)] relative p-6 bg-cover bg-center bg-no-repeat"
+          style={{
+            backgroundImage: `url("blob:https://gemini.google.com/da24b70d-a3cc-481a-8ac6-ca20bdca051e"), radial-gradient(circle, #1a1a3a 0%, #06060f 100%)`,
+            backgroundBlendMode: "overlay"
+          }}
+        >
+          <div className="w-full max-w-lg p-8 rounded-3xl bg-slate-950/80 border border-[#0f3460]/80 shadow-[0_0_50px_rgba(15,52,96,0.3)] backdrop-blur-md relative overflow-hidden">
+            <div className="absolute -top-24 -left-24 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+            
+            <div className="border-b border-[#0f3460]/45 pb-4 mb-6">
+              <h2 className="text-2xl font-black text-white uppercase tracking-wider flex items-center gap-2 font-sans">
+                <span>⚙️</span> Battleground Configuration
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">Configure grid dimensions and roster restrictions for the match.</p>
+            </div>
+
+            <div className="flex flex-col gap-5">
+              <div className="flex flex-col bg-[#16213e]/20 p-4 border border-[#0f3460]/30 rounded-2xl">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-xs font-black text-gray-300 uppercase tracking-wider font-sans">
+                    Grid Board Size (n × n)
+                  </label>
+                  <span className="text-xs font-bold font-mono text-cyan-400 bg-cyan-950/40 border border-cyan-800/40 px-2 py-0.5 rounded">
+                    {gameConfig.boardSize} × {gameConfig.boardSize}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={15}
+                  step={2}
+                  value={gameConfig.boardSize}
+                  onChange={e => setGameConfig(prev => ({ ...prev, boardSize: parseInt(e.target.value, 10) }))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                />
+                <span className="text-[10px] text-gray-500 mt-1">
+                  Adjust grid size. Typically 11 × 11 is default. Odd sizes ensure centered pedestals.
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="flex flex-col bg-[#16213e]/20 p-4 border border-[#0f3460]/30 rounded-2xl">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 font-sans">
+                    Max Roster Units
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={gameConfig.maxUnits}
+                    onChange={e => setGameConfig(prev => ({ ...prev, maxUnits: Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)) }))}
+                    className="bg-[#0f0f1a] border border-[#2a3a5a] text-xs text-white p-2.5 rounded-xl focus:outline-none focus:border-cyan-400 font-mono text-center"
+                  />
+                </div>
+
+                <div className="flex flex-col bg-[#16213e]/20 p-4 border border-[#0f3460]/30 rounded-2xl">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 font-sans">
+                    Max Roster Cost
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={50}
+                    value={gameConfig.maxCost}
+                    onChange={e => setGameConfig(prev => ({ ...prev, maxCost: Math.max(5, Math.min(50, parseInt(e.target.value, 10) || 5)) }))}
+                    className="bg-[#0f0f1a] border border-[#2a3a5a] text-xs text-white p-2.5 rounded-xl focus:outline-none focus:border-cyan-400 font-mono text-center"
+                  />
+                </div>
+
+                <div className="flex flex-col bg-[#16213e]/20 p-4 border border-[#0f3460]/30 rounded-2xl">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 font-sans">
+                    Max Legendaries
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={5}
+                    value={gameConfig.maxLegendary}
+                    onChange={e => setGameConfig(prev => ({ ...prev, maxLegendary: Math.max(0, Math.min(5, parseInt(e.target.value, 10) ?? 0)) }))}
+                    className="bg-[#0f0f1a] border border-[#2a3a5a] text-xs text-white p-2.5 rounded-xl focus:outline-none focus:border-cyan-400 font-mono text-center"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <button
+                onClick={() => setScreen("setup")}
+                className="flex-1 py-3 px-6 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs uppercase tracking-widest rounded-xl transition duration-200 cursor-pointer text-center outline-none"
+              >
+                ✨ Create Battle
+              </button>
+              
+              <button
+                onClick={() => setScreen("landing")}
+                className="py-3 px-6 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition duration-200 cursor-pointer text-center outline-none"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 0c. POKEDEX DATABASE VIEW */}
+      {screen === "pokedex" && (
+        <div 
+          className="flex-grow min-h-[calc(100vh-3rem)] relative p-6 bg-cover bg-center bg-no-repeat overflow-y-auto"
+          style={{
+            backgroundImage: `radial-gradient(circle, #161a2b 0%, #06060c 100%)`
+          }}
+        >
+          <Pokedex
+            onBack={() => setScreen("landing")}
+            boardSize={gameConfig.boardSize}
+          />
+        </div>
+      )}
+
       {screen === "setup" && (
         <SetupScreen
           onStartGame={handleStartGame}
@@ -2725,6 +3357,10 @@ export default function App() {
           peerP1Placements={peerP1Placements}
           peerP2Slots={peerP2Slots}
           peerP2Placements={peerP2Placements}
+          boardSize={gameConfig.boardSize}
+          maxUnits={gameConfig.maxUnits}
+          maxCost={gameConfig.maxCost}
+          maxLegendary={gameConfig.maxLegendary}
         />
       )}
 
@@ -2912,6 +3548,12 @@ export default function App() {
                 🛒 SHOP (F)
               </button>
               <button
+                onClick={() => setTypeChartOpen(!typeChartOpen)}
+                className="action-btn px-4 py-2 bg-[#0f3460] border border-slate-700 hover:bg-[#1a4a7a] rounded-lg text-xs font-bold uppercase transition shrink-0 outline-none cursor-pointer text-white"
+              >
+                📊 TYPE CHART (C)
+              </button>
+              <button
                 disabled={p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber}
                 onClick={handleEndTurn}
                 className={`action-btn end px-5 py-2 bg-[#ef5350] text-white transition font-black text-xs uppercase rounded-lg shadow-md shadow-[#ef5350]/15 shrink-0 outline-none ${p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber
@@ -2943,6 +3585,12 @@ export default function App() {
                 highlightedCells={gameState.highlightedCells}
                 onCellClick={handleCellClick}
                 actionModeTargets={gameState.actionMode?.targets}
+                onCellHover={(col, row) => setHoveredCell({ col, row })}
+                onCellHoverEnd={() => setHoveredCell(null)}
+                actionMode={gameState.actionMode}
+                weather={gameState.weather.type}
+                hazards={gameState.hazards}
+                boardSize={gameConfig.boardSize}
               />
             </div>
 
@@ -2965,6 +3613,8 @@ export default function App() {
                 onToggleSkillMenu={(id) => setGameState(prev => ({ ...prev, skillMenuFor: prev.skillMenuFor === id ? null : id }))}
                 weather={gameState.weather.type}
                 movePoints={gameState.movePoints}
+                hoveredCell={hoveredCell}
+                boardSize={gameConfig.boardSize}
               />
             </div>
 
@@ -2974,6 +3624,10 @@ export default function App() {
               pokemon={gameState.pokemon}
               logs={gameState.logs}
               actionMode={gameState.actionMode}
+              hoveredCell={hoveredCell}
+              pedestals={gameState.pedestals}
+              weather={gameState.weather.type}
+              boardSize={gameConfig.boardSize}
             />
 
             {/* Opponent's turn is displayed via header indicators and interaction blocks directly instead of a fullscreen overlay censor scene */}
@@ -3011,6 +3665,8 @@ export default function App() {
         onBuyItem={handleBuyItem}
         onUseItemAction={handleUseItemAction}
         consumablesUsedThisTurn={gameState.consumablesUsedThisTurn}
+        typeChartOpen={typeChartOpen}
+        onToggleTypeChart={() => setTypeChartOpen(!typeChartOpen)}
       />
 
       {/* Eevee Evolution Modal */}
@@ -3110,6 +3766,26 @@ export default function App() {
             <span className={`font-black uppercase tracking-wider ${chancePopup.success ? "text-emerald-400" : "text-red-400"}`}>
               {chancePopup.success ? "Success" : "Failed"}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* Turn Transition Notice Popup */}
+      {turnNotice !== null && (myPlayerNumber === 0 || myPlayerNumber === turnNotice) && (
+        <div 
+          onClick={() => setTurnNotice(null)}
+          className="fixed top-6 left-1/2 -translate-x-1/2 bg-slate-900 border-2 border-amber-400 p-4 rounded-xl shadow-[0_0_25px_rgba(245,158,11,0.6)] z-[4000] animate-bounce w-[240px] cursor-pointer transition-all hover:scale-105"
+        >
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Battle Turn</span>
+            <span className="text-base animate-pulse">⚔️</span>
+          </div>
+          <div className="text-sm font-black text-white uppercase tracking-wide">
+            {myPlayerNumber === 0 ? `Player ${turnNotice}'s Turn` : "YOUR TURN!"}
+          </div>
+          <div className="flex justify-between items-center text-[9px] mt-2 leading-none text-gray-400 font-medium">
+            <span>Press <span className="text-white font-mono bg-slate-800 px-1 rounded">Q</span> or click to close</span>
+            <span className="text-amber-400 font-bold font-mono">3s</span>
           </div>
         </div>
       )}

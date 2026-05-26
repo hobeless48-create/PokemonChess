@@ -1,11 +1,7 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState } from "react";
-import { ShopItem, PlayerState } from "../types";
+import { ShopItem, PlayerState, Pedestal, PokemonEntity } from "../types";
 import { ITEMS } from "../data/items";
+import { TEFF, TCOL } from "../data/typeCharts";
 
 interface ModalsProps {
   shopOpen: boolean;
@@ -16,6 +12,8 @@ interface ModalsProps {
   onBuyItem: (name: string) => void;
   onUseItemAction: (name: string, type: "held" | "consumable") => void;
   consumablesUsedThisTurn?: { total: number; powerHerb: number; };
+  typeChartOpen: boolean;
+  onToggleTypeChart: () => void;
 }
 
 export const Modals: React.FC<ModalsProps> = ({
@@ -26,7 +24,9 @@ export const Modals: React.FC<ModalsProps> = ({
   playerState,
   onBuyItem,
   onUseItemAction,
-  consumablesUsedThisTurn = { total: 0, powerHerb: 0 }
+  consumablesUsedThisTurn = { total: 0, powerHerb: 0 },
+  typeChartOpen,
+  onToggleTypeChart
 }) => {
   // Shop category tabs
   const [shopCategory, setShopCategory] = useState<"held" | "consumable">("held");
@@ -34,6 +34,9 @@ export const Modals: React.FC<ModalsProps> = ({
 
   // Inventory category tabs
   const [invCategory, setInvCategory] = useState<"held" | "consumable">("held");
+
+  // Type Chart category selection
+  const [selectedType, setSelectedType] = useState<string>("Normal");
 
   const getItemStyleConfig = (category: string, type: string) => {
     if (type === "consumable" || category === "Consumable") {
@@ -51,7 +54,7 @@ export const Modals: React.FC<ModalsProps> = ({
     }
   };
 
-  if (!shopOpen && !inventoryOpen) return null;
+  if (!shopOpen && !inventoryOpen && !typeChartOpen) return null;
 
   return (
     <>
@@ -310,6 +313,183 @@ export const Modals: React.FC<ModalsProps> = ({
                   );
                 });
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- Type Effectiveness Chart Modal Overlay --- */}
+      {typeChartOpen && (
+        <div className="shop-overlay fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
+          <div className="shop-panel bg-[#16213e] border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="shop-panel-header px-6 py-4 border-b border-slate-800 bg-[#0f172a]/60 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold text-white tracking-wide">Type Effectiveness Matrix</h3>
+                <p className="text-xs text-gray-400">Select an elemental type to inspect its combat attributes.</p>
+              </div>
+              <button
+                onClick={onToggleTypeChart}
+                className="bg-slate-800 hover:bg-slate-700 text-gray-200 border border-slate-700 rounded-lg px-4 py-1.5 text-xs font-bold transition cursor-pointer"
+              >
+                Close Chart
+              </button>
+            </div>
+
+            {/* Layout with type lists and detail inspection panel */}
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+              {/* Type Select buttons panel */}
+              <div className="w-full md:w-[180px] border-b md:border-b-0 md:border-r border-slate-800 p-4 overflow-y-auto bg-[#0f0f1a]/40 grid grid-cols-3 md:grid-cols-1 gap-1.5 shrink-0 max-h-[25vh] md:max-h-[70vh]">
+                {Object.keys(TEFF).map(type => {
+                  const isActive = selectedType === type;
+                  const typeColor = TCOL[type] || "#7f8c8d";
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => setSelectedType(type)}
+                      className={`w-full py-1.5 px-3 rounded-lg text-xs font-black text-center uppercase tracking-wide transition border cursor-pointer ${
+                        isActive
+                          ? "text-slate-950 shadow-md font-black"
+                          : "text-gray-300 hover:brightness-110"
+                      }`}
+                      style={{
+                        backgroundColor: isActive ? typeColor : "rgba(15, 15, 26, 0.6)",
+                        borderColor: isActive ? typeColor : "rgba(255, 255, 255, 0.15)"
+                      }}
+                    >
+                      {type}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Matchup details panels */}
+              <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-5">
+                {/* Selected type header badge indicator */}
+                <div className="flex items-center gap-3 bg-[#0f0f1a] p-4 rounded-xl border border-slate-800">
+                  <span
+                    className="text-xs font-black px-4 py-1.5 rounded-lg text-slate-950 uppercase tracking-widest leading-none select-none font-sans"
+                    style={{ backgroundColor: TCOL[selectedType] || "#7f8c8d" }}
+                  >
+                    {selectedType}
+                  </span>
+                  <div className="text-xs text-gray-400">
+                    Inspecting attack and defense statistics.
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Offensive Attack Multipliers card */}
+                  <div className="flex flex-col gap-3 bg-slate-900/40 p-4 rounded-xl border border-slate-800/60">
+                    <h4 className="text-xs font-black text-gray-200 uppercase tracking-widest pb-1.5 border-b border-[#ffd700]/30 text-[#ffd700] flex items-center gap-1">
+                      <span>⚔️</span> Offense (When Attacking)
+                    </h4>
+
+                    {/* Deals 2.0x */}
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                        Deals 2.0x Damage to:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {TEFF[selectedType]?.strong?.length > 0 ? (
+                          TEFF[selectedType].strong.map(type => (
+                            <span
+                              key={type}
+                              className="text-[9px] font-black text-slate-950 px-2 py-0.5 rounded uppercase font-sans tracking-wide"
+                              style={{ backgroundColor: TCOL[type] || "#7f8c8d" }}
+                            >
+                              {type}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[10px] text-gray-500 italic font-medium">None</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Deals 0.5x */}
+                    <div className="flex flex-col gap-1.5 mt-2">
+                      <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                        Deals 0.5x Damage to:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {TEFF[selectedType]?.weak?.length > 0 ? (
+                          TEFF[selectedType].weak.map(type => (
+                            <span
+                              key={type}
+                              className="text-[9px] font-black text-slate-950 px-2 py-0.5 rounded uppercase font-sans tracking-wide"
+                              style={{ backgroundColor: TCOL[type] || "#7f8c8d" }}
+                            >
+                              {type}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[10px] text-gray-500 italic font-medium">None</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Defensive Defense Multipliers card */}
+                  <div className="flex flex-col gap-3 bg-slate-900/40 p-4 rounded-xl border border-slate-800/60">
+                    <h4 className="text-xs font-black text-gray-200 uppercase tracking-widest pb-1.5 border-b border-[#4fc3f7]/30 text-[#4fc3f7] flex items-center gap-1">
+                      <span>🛡️</span> Defense (When Defending)
+                    </h4>
+
+                    {/* Takes 2.0x */}
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                        Takes 2.0x Damage from:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.keys(TEFF).filter(atkType => TEFF[atkType]?.strong?.includes(selectedType)).length > 0 ? (
+                          Object.keys(TEFF)
+                            .filter(atkType => TEFF[atkType]?.strong?.includes(selectedType))
+                            .map(type => (
+                              <span
+                                key={type}
+                                className="text-[9px] font-black text-slate-950 px-2 py-0.5 rounded uppercase font-sans tracking-wide"
+                                style={{ backgroundColor: TCOL[type] || "#7f8c8d" }}
+                              >
+                                {type}
+                              </span>
+                            ))
+                        ) : (
+                          <span className="text-[10px] text-gray-500 italic font-medium">None</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Takes 0.5x */}
+                    <div className="flex flex-col gap-1.5 mt-2">
+                      <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                        Takes 0.5x Damage from:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.keys(TEFF).filter(atkType => TEFF[atkType]?.weak?.includes(selectedType)).length > 0 ? (
+                          Object.keys(TEFF)
+                            .filter(atkType => TEFF[atkType]?.weak?.includes(selectedType))
+                            .map(type => (
+                              <span
+                                key={type}
+                                className="text-[9px] font-black text-slate-950 px-2 py-0.5 rounded uppercase font-sans tracking-wide"
+                                style={{ backgroundColor: TCOL[type] || "#7f8c8d" }}
+                              >
+                                {type}
+                              </span>
+                            ))
+                        ) : (
+                          <span className="text-[10px] text-gray-500 italic font-medium">None</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 p-3 bg-[#0f0f1a] rounded-lg border border-slate-800 text-[10px] text-gray-400 italic leading-relaxed">
+                  💡 In Pokémon Chess, Type Advantage multipliers deal double damage or ignore defenses (Offense), or reduce incoming damage (Defense). Unhatched eggs ignore all type vulnerability factors.
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -6,7 +6,7 @@
 export interface Skill {
   skillName: string;
   skillDesc: string;
-  skillDmg?: number;
+  skillDmg?: number | string;
   skillRaw?: string;
   skillCost?: number;
   statusChance?: string;
@@ -28,6 +28,10 @@ export interface Skill {
     amount: number;
     duration: number;
   };
+  customOffsets?: { dc: number; dr: number }[];
+  isTargetSkill?: boolean;
+  targetCount?: number;
+  isCustom?: boolean;
 }
 
 export interface PokemonDBEntry {
@@ -45,7 +49,7 @@ export interface PokemonDBEntry {
   skills: Skill[];
   skillName?: string;
   skillDesc?: string;
-  skillDmg?: number;
+  skillDmg?: number | string;
   skillRaw?: string;
   skillCost?: number;
   base?: boolean;
@@ -136,6 +140,10 @@ export interface PokemonEntity {
     originalMaxHp: number;
     turnsLeft: number;
   } | null;
+  damageReceivedThisTurn?: number;
+  damageReceivedLastTurn?: number;
+  pressureTriggered?: boolean;
+  customSkills?: Skill[];
 }
 
 export interface Pedestal {
@@ -165,6 +173,14 @@ export interface PlayerState {
   hatchPools: { [hatchGroup: string]: number };
 }
 
+export interface Hazard {
+  col: number;
+  row: number;
+  type: "spikes" | "stealthRock";
+  duration: number;
+  player: number;
+}
+
 export interface GameState {
   turn: number;
   phase: number;
@@ -177,6 +193,7 @@ export interface GameState {
     type: string | null;
     duration: number;
   };
+  hazards?: Hazard[];
   pokemon: PokemonEntity[];
   pedestals: Pedestal[];
   logs: BattleLogEntry[];

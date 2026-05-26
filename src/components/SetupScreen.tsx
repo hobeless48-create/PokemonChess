@@ -24,6 +24,10 @@ interface SetupScreenProps {
   peerP1Placements?: { col: number; row: number }[];
   peerP2Slots?: string[];
   peerP2Placements?: { col: number; row: number }[];
+  boardSize?: number;
+  maxUnits?: number;
+  maxCost?: number;
+  maxLegendary?: number;
 }
 
 export const SetupScreen: React.FC<SetupScreenProps> = ({
@@ -41,7 +45,11 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
   peerP1Slots,
   peerP1Placements,
   peerP2Slots,
-  peerP2Placements
+  peerP2Placements,
+  boardSize = 11,
+  maxUnits = 6,
+  maxCost = 15,
+  maxLegendary = 1
 }) => {
   // Input for joining online games
   const [joinId, setJoinId] = useState<string>("");
@@ -57,21 +65,29 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
   const [selectedPlayer, setSelectedPlayer] = useState<number>(1);
   const [selectedSlot, setSelectedSlot] = useState<number>(0);
 
-  // Teams selections (6 slots)
-  const [p1Slots, setP1Slots] = useState<string[]>(Array(6).fill(""));
-  const [p2Slots, setP2Slots] = useState<string[]>(Array(6).fill(""));
+  // Teams selections (maxUnits slots)
+  const [p1Slots, setP1Slots] = useState<string[]>(() => Array(maxUnits).fill(""));
+  const [p2Slots, setP2Slots] = useState<string[]>(() => Array(maxUnits).fill(""));
 
   // Board placements
-  // Default: P1 slots at row 1 (0-indexed col 0 to 5)
-  // Default: P2 slots at row 9 (0-indexed col 0 to 5)
-  const [p1Placements, setP1Placements] = useState<{ col: number; row: number }[]>(
-    Array.from({ length: 6 }, (_, i) => ({ col: i, row: 1 }))
+  const [p1Placements, setP1Placements] = useState<{ col: number; row: number }[]>(() =>
+    Array.from({ length: maxUnits }, (_, i) => ({ col: i % boardSize, row: 1 + Math.floor(i / boardSize) }))
   );
-  const [p2Placements, setP2Placements] = useState<{ col: number; row: number }[]>(
-    Array.from({ length: 6 }, (_, i) => ({ col: i + 1, row: 9 }))
+  const [p2Placements, setP2Placements] = useState<{ col: number; row: number }[]>(() =>
+    Array.from({ length: maxUnits }, (_, i) => ({ col: (i + 1) % boardSize, row: boardSize - 2 - Math.floor(i / boardSize) }))
   );
 
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
+
+  // Reset/re-initialize slots and placements when custom config parameters change
+  React.useEffect(() => {
+    setP1Slots(Array(maxUnits).fill(""));
+    setP2Slots(Array(maxUnits).fill(""));
+    setP1Placements(Array.from({ length: maxUnits }, (_, i) => ({ col: i % boardSize, row: 1 + Math.floor(i / boardSize) })));
+    setP2Placements(Array.from({ length: maxUnits }, (_, i) => ({ col: (i + 1) % boardSize, row: boardSize - 2 - Math.floor(i / boardSize) })));
+    setSelectedSlot(0);
+    setWarningMsg(null);
+  }, [maxUnits, boardSize]);
 
   // Synchronize slots and placements from Peer
   React.useEffect(() => {
@@ -151,13 +167,15 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
     }
   };
 
+  const p1SpawnRows = Math.min(3, Math.floor((boardSize - 1) / 2));
+
   const handleCellPlacement = (col: number, row: number) => {
     if (p2pStatus === "connected") {
       if (selectedPlayer !== myPlayerNumber) return;
     }
 
     if (selectedPlayer === 1) {
-      if (row > 2) return; // P1 only rows 1-3 (index 0, 1, 2)
+      if (row >= p1SpawnRows) return; // P1 only rows 1 to spawn zone limit
       const nextPlacements = [...p1Placements];
       nextPlacements[selectedSlot] = { col, row };
       setP1Placements(nextPlacements);
@@ -165,7 +183,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
         onSyncSetupData(p1Slots, nextPlacements);
       }
     } else {
-      if (row < 8) return; // P2 only rows 9-11 (index 8, 9, 10)
+      if (row < boardSize - p1SpawnRows) return; // P2 only rows boardSize-limit to boardSize
       const nextPlacements = [...p2Placements];
       nextPlacements[selectedSlot] = { col, row };
       setP2Placements(nextPlacements);
@@ -186,13 +204,13 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
           setWarningMsg("Your team needs at least 1 Pokemon!");
           return;
         }
-        if (p1TotalCost > 15) {
-          setWarningMsg(`Your team cost (${p1TotalCost}) exceeds 15!`);
+        if (p1TotalCost > maxCost) {
+          setWarningMsg(`Your team cost (${p1TotalCost}) exceeds ${maxCost}!`);
           return;
         }
         const p1LegendaryCount = p1Active.filter(item => DB[item.sp]?.legendary).length;
-        if (p1LegendaryCount > 1) {
-          setWarningMsg("Your team can contain at most 1 Legendary Pokémon!");
+        if (p1LegendaryCount > maxLegendary) {
+          setWarningMsg(`Your team can contain at most ${maxLegendary} Legendary Pokémon!`);
           return;
         }
       } else if (myPlayerNumber === 2) {
@@ -200,13 +218,13 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
           setWarningMsg("Your team needs at least 1 Pokemon!");
           return;
         }
-        if (p2TotalCost > 15) {
-          setWarningMsg(`Your team cost (${p2TotalCost}) exceeds 15!`);
+        if (p2TotalCost > maxCost) {
+          setWarningMsg(`Your team cost (${p2TotalCost}) exceeds ${maxCost}!`);
           return;
         }
         const p2LegendaryCount = p2Active.filter(item => DB[item.sp]?.legendary).length;
-        if (p2LegendaryCount > 1) {
-          setWarningMsg("Your team can contain at most 1 Legendary Pokémon!");
+        if (p2LegendaryCount > maxLegendary) {
+          setWarningMsg(`Your team can contain at most ${maxLegendary} Legendary Pokémon!`);
           return;
         }
       }
@@ -224,24 +242,24 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
       return;
     }
 
-    if (p1TotalCost > 15) {
-      setWarningMsg(`Player 1 team cost (${p1TotalCost}) exceeds 15!`);
+    if (p1TotalCost > maxCost) {
+      setWarningMsg(`Player 1 team cost (${p1TotalCost}) exceeds ${maxCost}!`);
       return;
     }
-    if (p2TotalCost > 15) {
-      setWarningMsg(`Player 2 team cost (${p2TotalCost}) exceeds 15!`);
+    if (p2TotalCost > maxCost) {
+      setWarningMsg(`Player 2 team cost (${p2TotalCost}) exceeds ${maxCost}!`);
       return;
     }
 
     const p1LegendaryCount = p1Active.filter(item => DB[item.sp]?.legendary).length;
     const p2LegendaryCount = p2Active.filter(item => DB[item.sp]?.legendary).length;
 
-    if (p1LegendaryCount > 1) {
-      setWarningMsg("Player 1 team can contain at most 1 Legendary Pokémon!");
+    if (p1LegendaryCount > maxLegendary) {
+      setWarningMsg(`Player 1 team can contain at most ${maxLegendary} Legendary Pokémon!`);
       return;
     }
-    if (p2LegendaryCount > 1) {
-      setWarningMsg("Player 2 team can contain at most 1 Legendary Pokémon!");
+    if (p2LegendaryCount > maxLegendary) {
+      setWarningMsg(`Player 2 team can contain at most ${maxLegendary} Legendary Pokémon!`);
       return;
     }
 
@@ -264,11 +282,11 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
 
   const getOccupantSymbol = (col: number, row: number) => {
     // Check if occupied by any slot
-    for (let i = 0; i < 6; i++) {
-      if (p1Slots[i] && p1Placements[i].col === col && p1Placements[i].row === row) {
+    for (let i = 0; i < maxUnits; i++) {
+      if (p1Slots[i] && p1Placements[i] && p1Placements[i].col === col && p1Placements[i].row === row) {
         return { player: 1, idx: i, species: p1Slots[i] };
       }
-      if (p2Slots[i] && p2Placements[i].col === col && p2Placements[i].row === row) {
+      if (p2Slots[i] && p2Placements[i] && p2Placements[i].col === col && p2Placements[i].row === row) {
         return { player: 2, idx: i, species: p2Slots[i] };
       }
     }
@@ -279,7 +297,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
     <div id="screen-setup" className="max-w-4xl mx-auto p-4 md:p-6 bg-[#16213e]/90 rounded-2xl shadow-2xl border border-[#0f3460]">
       <div className="setup-header text-center mb-6">
         <h2 className="text-3xl font-bold text-white tracking-wide font-sans mb-1">Pokémon Chess</h2>
-        <p className="text-sm text-gray-400">Assemble your team: Max Budget 15 · Up to 1 Legendary · Up to 6 active units</p>
+        <p className="text-sm text-gray-400">Assemble your team: Max Budget {maxCost} · Up to {maxLegendary} Legendary · Up to {maxUnits} active units</p>
       </div>
 
       {/* P2P Multiplayer Connection Panel */}
@@ -496,16 +514,16 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
         <div className="flex flex-col md:flex-row gap-6 justify-center">
           {/* Player 1 deployment grid */}
           <div className="flex flex-col items-center">
-            <div className="text-xs font-bold text-[#4fc3f7] mb-2 uppercase tracking-wide">Player 1 rows (1-3)</div>
-            <div className="grid gap-1 bg-[#16213e] p-2 rounded-lg" style={{ gridTemplateColumns: "repeat(11, 30px)" }}>
-              {Array.from({ length: 3 }, (_, rIdx) => (
+            <div className="text-xs font-bold text-[#4fc3f7] mb-2 uppercase tracking-wide">Player 1 rows (1-{p1SpawnRows})</div>
+            <div className="grid gap-1 bg-[#16213e] p-2 rounded-lg" style={{ gridTemplateColumns: `repeat(${boardSize}, 30px)` }}>
+              {Array.from({ length: p1SpawnRows }, (_, rIdx) => (
                 <React.Fragment key={rIdx}>
-                  {Array.from({ length: 11 }, (_, cIdx) => {
+                  {Array.from({ length: boardSize }, (_, cIdx) => {
                     const row = rIdx;
                     const col = cIdx;
                     const occ = getOccupantSymbol(col, row);
-                    const isSelectedVal = selectedPlayer === 1 && p1Placements[selectedSlot].col === col && p1Placements[selectedSlot].row === row;
-                    const isPedestalLoc = col === 5 && row === 0;
+                    const isSelectedVal = selectedPlayer === 1 && p1Placements[selectedSlot] && p1Placements[selectedSlot].col === col && p1Placements[selectedSlot].row === row;
+                    const isPedestalLoc = col === Math.floor(boardSize / 2) && row === 0;
 
                     return (
                       <div
@@ -542,17 +560,16 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
 
           {/* Player 2 deployment grid */}
           <div className="flex flex-col items-center">
-            <div className="text-xs font-bold text-[#ef5350] mb-2 uppercase tracking-wide">Player 2 rows (9-11)</div>
-            <div className="grid gap-1 bg-[#16213e] p-2 rounded-lg" style={{ gridTemplateColumns: "repeat(11, 30px)" }}>
-              {Array.from({ length: 3 }, (_, rIdx) => (
+            <div className="text-xs font-bold text-[#ef5350] mb-2 uppercase tracking-wide">Player 2 rows ({boardSize - p1SpawnRows + 1}-{boardSize})</div>
+            <div className="grid gap-1 bg-[#16213e] p-2 rounded-lg" style={{ gridTemplateColumns: `repeat(${boardSize}, 30px)` }}>
+              {Array.from({ length: p1SpawnRows }, (_, rIdx) => (
                 <React.Fragment key={rIdx}>
-                  {Array.from({ length: 11 }, (_, cIdx) => {
-                    // Rows 9-11 are indices 8, 9, 10
-                    const row = rIdx + 8;
+                  {Array.from({ length: boardSize }, (_, cIdx) => {
+                    const row = rIdx + (boardSize - p1SpawnRows);
                     const col = cIdx;
                     const occ = getOccupantSymbol(col, row);
-                    const isSelectedVal = selectedPlayer === 2 && p2Placements[selectedSlot].col === col && p2Placements[selectedSlot].row === row;
-                    const isPedestalLoc = col === 5 && row === 10;
+                    const isSelectedVal = selectedPlayer === 2 && p2Placements[selectedSlot] && p2Placements[selectedSlot].col === col && p2Placements[selectedSlot].row === row;
+                    const isPedestalLoc = col === Math.floor(boardSize / 2) && row === boardSize - 1;
 
                     return (
                       <div
@@ -618,12 +635,12 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
                   <span className="w-5 text-gray-500 font-mono text-center text-xs">#{sIdx + 1}</span>
 
                   <select
-                    disabled={p2pStatus === "connected" && myPlayerNumber !== 1}
-                    value={slotSp}
-                    onChange={(e) => handleSlotSelect(1, sIdx, e.target.value)}
-                    className={`flex-1 bg-[#0f0f1a] border border-[#2a3a5a] rounded p-1 text-xs text-gray-100 font-sans focus:outline-none focus:border-[#4fc3f7] ${
-                      p2pStatus === "connected" && myPlayerNumber !== 1 ? "opacity-60 cursor-not-allowed" : ""
-                    }`}
+                     disabled={p2pStatus === "connected" && myPlayerNumber !== 1}
+                     value={slotSp}
+                     onChange={(e) => handleSlotSelect(1, sIdx, e.target.value)}
+                     className={`flex-1 bg-[#0f0f1a] border border-[#2a3a5a] rounded p-1 text-xs text-gray-100 font-sans focus:outline-none focus:border-[#4fc3f7] ${
+                       p2pStatus === "connected" && myPlayerNumber !== 1 ? "opacity-60 cursor-not-allowed" : ""
+                     }`}
                   >
                     <option value="">— Empty Slot —</option>
                     {filteredSpecies.map(spName => (
@@ -631,7 +648,6 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
                         {spName} ({DB[spName].cost} Gold) {DB[spName].legendary ? "★ Egg" : ""}
                       </option>
                     ))}
-                    {/* Preserve currently selected species if not matches search filters */}
                     {slotSp && !filteredSpecies.includes(slotSp) && (
                       <option key={slotSp} value={slotSp}>
                         {slotSp} ({DB[slotSp].cost} Gold)
@@ -656,8 +672,8 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
 
           <div className="total-cost text-right mt-3 text-xs font-semibold">
             Total cost:{" "}
-            <span className={p1TotalCost > 15 ? "text-[#ef5350] font-bold" : "text-[#4caf50]"}>
-              {p1TotalCost} / 15 Gold
+            <span className={p1TotalCost > maxCost ? "text-[#ef5350] font-bold" : "text-[#4caf50]"}>
+              {p1TotalCost} / {maxCost} Gold
             </span>
           </div>
         </div>
@@ -689,12 +705,12 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
                   <span className="w-5 text-gray-500 font-mono text-center text-xs">#{sIdx + 1}</span>
 
                   <select
-                    disabled={p2pStatus === "connected" && myPlayerNumber !== 2}
-                    value={slotSp}
-                    onChange={(e) => handleSlotSelect(2, sIdx, e.target.value)}
-                    className={`flex-1 bg-[#0f0f1a] border border-[#2a3a5a] rounded p-1 text-xs text-gray-100 font-sans focus:outline-none focus:border-[#ef5350] ${
-                      p2pStatus === "connected" && myPlayerNumber !== 2 ? "opacity-60 cursor-not-allowed" : ""
-                    }`}
+                     disabled={p2pStatus === "connected" && myPlayerNumber !== 2}
+                     value={slotSp}
+                     onChange={(e) => handleSlotSelect(2, sIdx, e.target.value)}
+                     className={`flex-1 bg-[#0f0f1a] border border-[#2a3a5a] rounded p-1 text-xs text-gray-100 font-sans focus:outline-none focus:border-[#ef5350] ${
+                       p2pStatus === "connected" && myPlayerNumber !== 2 ? "opacity-60 cursor-not-allowed" : ""
+                     }`}
                   >
                     <option value="">— Empty Slot —</option>
                     {filteredSpecies.map(spName => (
@@ -726,8 +742,8 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
 
           <div className="total-cost text-right mt-3 text-xs font-semibold">
             Total cost:{" "}
-            <span className={p2TotalCost > 15 ? "text-[#ef5350] font-bold" : "text-[#4caf50]"}>
-              {p2TotalCost} / 15 Gold
+            <span className={p2TotalCost > maxCost ? "text-[#ef5350] font-bold" : "text-[#4caf50]"}>
+              {p2TotalCost} / {maxCost} Gold
             </span>
           </div>
         </div>

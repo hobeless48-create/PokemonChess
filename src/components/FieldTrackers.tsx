@@ -22,15 +22,15 @@ export const FieldTrackers: React.FC<FieldTrackersProps> = ({
   const p1Team = pokemon.filter(p => p.player === 1);
   const p2Team = pokemon.filter(p => p.player === 2);
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: string, statusTurns?: number) => {
     switch (status) {
-      case "burn": return "🔥 Burn";
-      case "freeze": return "❄️ Freeze";
-      case "poison": return "☠️ Poison";
-      case "sleep": return "💤 Sleep";
-      case "paralysis": return "⚡ Paralysis";
-      case "confuse": return "💫 Confuse";
-      case "toxic": return "☣️ Toxic";
+      case "burn": return `🔥 Burn (${2 - (statusTurns || 0)}t)`;
+      case "freeze": return `❄️ Freeze (1t)`;
+      case "poison": return "☠️ Poison (perm)";
+      case "sleep": return "💤 Sleep (50%)";
+      case "paralysis": return "⚡ Paralysis (perm)";
+      case "confuse": return "💫 Confuse (perm)";
+      case "toxic": return "☣️ Toxic (perm)";
       default: return status;
     }
   };
@@ -104,7 +104,7 @@ export const FieldTrackers: React.FC<FieldTrackersProps> = ({
                       className="text-[9px] font-black uppercase px-2 py-0.5 rounded tracking-wide w-fit leading-none mt-1 shadow-sm border border-white/20"
                       style={{ backgroundColor: SCOL[p.status], color: '#1a1a2e' }}
                     >
-                      {getStatusIcon(p.status)}
+                      {getStatusIcon(p.status, p.statusTurns)}
                     </div>
                   )}
 

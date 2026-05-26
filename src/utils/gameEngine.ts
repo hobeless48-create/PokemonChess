@@ -93,14 +93,14 @@ export const MOVE_PATTERNS: {
   }
 };
 
-export function adjCells(col: number, row: number, range: number, diagonal: boolean): { col: number; row: number }[] {
+export function adjCells(col: number, row: number, range: number, diagonal: boolean, boardSize: number = 11): { col: number; row: number }[] {
   const out: { col: number; row: number }[] = [];
   for (let dc = -range; dc <= range; dc++) {
     for (let dr = -range; dr <= range; dr++) {
       if (dc === 0 && dr === 0) continue;
       if (!diagonal && Math.abs(dc) + Math.abs(dr) > range) continue;
       const nc = col + dc, nr = row + dr;
-      if (nc >= 0 && nc < 11 && nr >= 0 && nr < 11) {
+      if (nc >= 0 && nc < boardSize && nr >= 0 && nr < boardSize) {
         out.push({ col: nc, row: nr });
       }
     }
@@ -108,7 +108,7 @@ export function adjCells(col: number, row: number, range: number, diagonal: bool
   return out;
 }
 
-export function getLineCells(col: number, row: number, range: number, dirs: number[]): { col: number; row: number }[] {
+export function getLineCells(col: number, row: number, range: number, dirs: number[], boardSize: number = 11): { col: number; row: number }[] {
   const out: { col: number; row: number }[] = [];
   dirs.forEach(d => {
     const dir = DDIRS[d];
@@ -116,14 +116,14 @@ export function getLineCells(col: number, row: number, range: number, dirs: numb
     for (let step = 1; step <= range; step++) {
       const nc = col + dir.dc * step;
       const nr = row + dir.dr * step;
-      if (nc < 0 || nc >= 11 || nr < 0 || nr >= 11) break;
+      if (nc < 0 || nc >= boardSize || nr < 0 || nr >= boardSize) break;
       out.push({ col: nc, row: nr });
     }
   });
   return out;
 }
 
-export function getConeCells(col: number, row: number, range: number, dir: number): { col: number; row: number }[] {
+export function getConeCells(col: number, row: number, range: number, dir: number, boardSize: number = 11): { col: number; row: number }[] {
   const out: { col: number; row: number }[] = [];
   if (dir === 1 || dir === 3) {
     const dy = dir === 1 ? -1 : 1;
@@ -132,20 +132,20 @@ export function getConeCells(col: number, row: number, range: number, dir: numbe
       if (range === 1) {
         for (let dx = -1; dx <= 1; dx++) {
           const nc = col + dx;
-          if (nc >= 0 && nc < 11 && nr >= 0 && nr < 11) out.push({ col: nc, row: nr });
+          if (nc >= 0 && nc < boardSize && nr >= 0 && nr < boardSize) out.push({ col: nc, row: nr });
         }
       } else if (step === 1) {
         const nc = col;
-        if (nc >= 0 && nc < 11 && nr >= 0 && nr < 11) out.push({ col: nc, row: nr });
+        if (nc >= 0 && nc < boardSize && nr >= 0 && nr < boardSize) out.push({ col: nc, row: nr });
       } else if (step < range) {
         for (let dx = -1; dx <= 1; dx++) {
           const nc = col + dx;
-          if (nc >= 0 && nc < 11 && nr >= 0 && nr < 11) out.push({ col: nc, row: nr });
+          if (nc >= 0 && nc < boardSize && nr >= 0 && nr < boardSize) out.push({ col: nc, row: nr });
         }
       } else {
         for (let dx = -(range - 1); dx <= (range - 1); dx++) {
           const nc = col + dx;
-          if (nc >= 0 && nc < 11 && nr >= 0 && nr < 11) out.push({ col: nc, row: nr });
+          if (nc >= 0 && nc < boardSize && nr >= 0 && nr < boardSize) out.push({ col: nc, row: nr });
         }
       }
     }
@@ -156,19 +156,19 @@ export function getConeCells(col: number, row: number, range: number, dir: numbe
       if (range === 1) {
         for (let dy = -1; dy <= 1; dy++) {
           const nr = row + dy;
-          if (nr >= 0 && nr < 11 && nc >= 0 && nc < 11) out.push({ col: nc, row: nr });
+          if (nr >= 0 && nr < boardSize && nc >= 0 && nc < boardSize) out.push({ col: nc, row: nr });
         }
       } else if (step === 1) {
-        if (nc >= 0 && nc < 11) out.push({ col: nc, row });
+        if (nc >= 0 && nc < boardSize) out.push({ col: nc, row });
       } else if (step < range) {
         for (let dy = -1; dy <= 1; dy++) {
           const nr = row + dy;
-          if (nr >= 0 && nr < 11 && nc >= 0 && nc < 11) out.push({ col: nc, row: nr });
+          if (nr >= 0 && nr < boardSize && nc >= 0 && nc < boardSize) out.push({ col: nc, row: nr });
         }
       } else {
         for (let dy = -(range - 1); dy <= (range - 1); dy++) {
           const nr = row + dy;
-          if (nr >= 0 && nr < 11 && nc >= 0 && nc < 11) out.push({ col: nc, row: nr });
+          if (nr >= 0 && nr < boardSize && nc >= 0 && nc < boardSize) out.push({ col: nc, row: nr });
         }
       }
     }
@@ -193,16 +193,33 @@ export function pedAt(col: number, row: number, pedestals: Pedestal[]): Pedestal
   return pedestals.find(p => p.col === col && p.row === row);
 }
 
-export function getRoleBasedMoves(p: PokemonEntity, pokemonList: PokemonEntity[], pedestals: Pedestal[]): { col: number; row: number }[] {
+export function getRoleBasedMoves(p: PokemonEntity, pokemonList: PokemonEntity[], pedestals: Pedestal[], boardSize: number = 11): { col: number; row: number }[] {
   const db = DB[p.species];
+  if (db && db.legendary && p.isEgg && !p.hasHatched) return [];
+
+  // Shadow Tag trapping check
+  if (db && db.ability !== "Run Away") {
+    const enemies = pokemonList.filter(other => other.player !== p.player && !other.fainted);
+    const isTrapped = enemies.some(other => {
+      const otherDb = DB[other.species];
+      if (otherDb && otherDb.ability === "Shadow Tag") {
+        const dist = Math.max(Math.abs(other.col - p.col), Math.abs(other.row - p.row));
+        return dist === 1;
+      }
+      return false;
+    });
+    if (isTrapped) {
+      return [];
+    }
+  }
+
   const out: { col: number; row: number }[] = [];
   const col = p.col;
   const row = p.row;
   const fwd = p.player === 1 ? 1 : -1;
-  if (db && db.legendary && p.isEgg && !p.hasHatched) return [];
 
   const addIfValid = (c: number, r: number) => {
-    if (c >= 0 && c < 11 && r >= 0 && r < 11 && !pkAt(c, r, pokemonList) && !pedAt(c, r, pedestals)) {
+    if (c >= 0 && c < boardSize && r >= 0 && r < boardSize && !pkAt(c, r, pokemonList) && !pedAt(c, r, pedestals)) {
       out.push({ col: c, row: r });
     }
   };
@@ -219,8 +236,8 @@ export function getRoleBasedMoves(p: PokemonEntity, pokemonList: PokemonEntity[]
   return out;
 }
 
-export function getAtkCells(p: PokemonEntity, pokemonList: PokemonEntity[], pedestals: Pedestal[]): { col: number; row: number }[] {
-  const adj = adjCells(p.col, p.row, 1, true);
+export function getAtkCells(p: PokemonEntity, pokemonList: PokemonEntity[], pedestals: Pedestal[], boardSize: number = 11): { col: number; row: number }[] {
+  const adj = adjCells(p.col, p.row, 1, true, boardSize);
   const out: { col: number; row: number }[] = [];
   adj.forEach(c => {
     const t = pkAt(c.col, c.row, pokemonList);
@@ -315,7 +332,161 @@ export function parseSkillShape(db: PokemonDBEntry, p: PokemonEntity, skillIdx?:
   return { type: 'combo', parts: parsedParts, targetCount };
 }
 
-export function getSkillData(db: PokemonDBEntry, skillIdx?: number): Skill {
+export function parseSkillShapeObj(skill: Skill, p: PokemonEntity): ParsedShape {
+  const desc = skill.skillDesc || '';
+  if (desc.trim().toLowerCase() === 'all') return { type: 'all', targetCount: null };
+
+  const m = desc.match(/Target\s*=\s*\[(\d+)\((.+)\)\]/i);
+  let targetCount: number | null = null;
+  let inner = desc;
+  if (m) {
+    targetCount = parseInt(m[1], 10);
+    inner = m[2];
+  }
+
+  const parts = inner.split('+').map(s => s.trim()).filter(Boolean);
+  const parsedParts: ParsedShape[] = [];
+
+  parts.forEach(part => {
+    let mm = part.match(/Line\((\d+)\)\(([0-9,]+)\)/i);
+    if (mm) {
+      const rot = p.rotation || 0;
+      parsedParts.push({
+        type: 'line',
+        range: parseInt(mm[1], 10),
+        dirs: mm[2].split(',').map(n => {
+          const d = parseInt(n, 10);
+          const baseDir = normalizeDir(d, p.player);
+          const rotated = ((baseDir - 1 + rot) % 4) + 1;
+          return rotated;
+        }),
+        targetCount: null
+      });
+      return;
+    }
+    mm = part.match(/Cone\((\d+)\)(?:\(([0-9,]+)\))?/i);
+    if (mm) {
+      const rot = p.rotation || 0;
+      const baseDirs = mm[2] ? mm[2].split(',').map(n => parseInt(n, 10)) : [3];
+      const dirs = baseDirs.map(d => {
+        const baseDir = normalizeDir(d, p.player);
+        const rotated = ((baseDir - 1 + rot) % 4) + 1;
+        return rotated;
+      });
+      parsedParts.push({
+        type: 'cone',
+        range: parseInt(mm[1], 10),
+        dirs,
+        targetCount: null
+      });
+      return;
+    }
+    mm = part.match(/AoE\((\d+)\)(?:\((\d+)\))?/i);
+    if (mm) {
+      const radius = parseInt(mm[1], 10);
+      const range = mm[2] ? parseInt(mm[2], 10) : undefined;
+      parsedParts.push({
+        type: 'aoe',
+        radius,
+        range,
+        targetCount: null
+      });
+      return;
+    }
+  });
+
+  if (parsedParts.length === 0) return { type: null, targetCount };
+  if (parsedParts.length === 1) return { ...parsedParts[0], targetCount };
+  return { type: 'combo', parts: parsedParts, targetCount };
+}
+
+export function getSkillShapeCellsObj(
+  p: PokemonEntity,
+  skill: Skill,
+  pokemonList: PokemonEntity[] = [],
+  pedestals: Pedestal[] = [],
+  boardSize: number = 11
+): { col: number; row: number }[] {
+  const db = DB[p.species];
+  if (!db) return [];
+
+  if (skill.customOffsets && skill.customOffsets.length > 0) {
+    const rot = p.rotation || 0;
+    const cells: { col: number; row: number }[] = [];
+    const fwd = p.player === 1 ? 1 : -1;
+    
+    skill.customOffsets.forEach(offset => {
+      let dc = offset.dc;
+      let dr = offset.dr * fwd;
+      if (rot > 0) {
+        for (let r = 0; r < rot; r++) {
+          const temp = dc;
+          dc = -dr;
+          dr = temp;
+        }
+      }
+      const nc = p.col + dc;
+      const nr = p.row + dr;
+      if (nc >= 0 && nc < boardSize && nr >= 0 && nr < boardSize) {
+        cells.push({ col: nc, row: nr });
+      }
+    });
+    return cells;
+  }
+
+  if (skill.skillName === "Teleport") {
+    const out: { col: number; row: number }[] = [];
+    for (let c = 0; c < boardSize; c++) {
+      for (let r = 0; r < boardSize; r++) {
+        const dist = Math.max(Math.abs(c - p.col), Math.abs(r - p.row));
+        if (dist <= 3) {
+          out.push({ col: c, row: r });
+        }
+      }
+    }
+    return out;
+  }
+
+  const shape = parseSkillShapeObj(skill, p);
+  const effectTarget = getSkillTargetType(skill, db);
+
+  if (effectTarget === 'self' || skill.skillName === "Transform") {
+    return [{ col: p.col, row: p.row }];
+  }
+  
+  if (shape && shape.type) {
+    const cells: { col: number; row: number }[] = [];
+    const addShapeCells = (sh: ParsedShape) => {
+      if (!sh) return;
+      if (sh.type === 'line' && sh.range && sh.dirs) {
+        cells.push(...getLineCells(p.col, p.row, sh.range, sh.dirs, boardSize));
+      } else if (sh.type === 'cone' && sh.range && sh.dirs) {
+        sh.dirs.forEach(dir => cells.push(...getConeCells(p.col, p.row, sh.range!, dir, boardSize)));
+      } else if (sh.type === 'aoe' && sh.radius) {
+        if (sh.range) {
+          cells.push(...adjCells(p.col, p.row, sh.range, true, boardSize));
+          cells.push({ col: p.col, row: p.row });
+        } else {
+          cells.push(...adjCells(p.col, p.row, sh.radius, true, boardSize));
+          cells.push({ col: p.col, row: p.row });
+        }
+      }
+    };
+
+    if (shape.type === 'combo' && shape.parts) {
+      shape.parts.forEach(part => addShapeCells(part));
+    } else {
+      addShapeCells(shape);
+    }
+    return cells;
+  }
+  return [];
+}
+
+export function getSkillData(db: PokemonDBEntry, skillIdx?: number, customSkills?: Skill[]): Skill {
+  if (customSkills && typeof skillIdx !== 'undefined' && customSkills[skillIdx]) {
+    return customSkills[skillIdx];
+  }
   if (typeof skillIdx !== 'undefined' && db && Array.isArray(db.skills) && db.skills[skillIdx]) {
     return db.skills[skillIdx];
   }
@@ -332,6 +503,7 @@ export function getSkillData(db: PokemonDBEntry, skillIdx?: number): Skill {
 }
 
 export function getSkillTargetType(skill: Skill, dbAll: PokemonDBEntry): string | null {
+  if (skill?.skillName === "Baton Pass") return "ally";
   return (
     skill?.skillEffect?.target ||
     skill?.skillHealTarget ||
@@ -346,7 +518,30 @@ export function getSkillTargetType(skill: Skill, dbAll: PokemonDBEntry): string 
 export function getModifiedStat(p: PokemonEntity, stat: "atk" | "def", pokemonList: PokemonEntity[], context: any = {}): number {
   const db = DB[p.species];
   if (!db) return stat === 'atk' ? p.atk : p.def;
+  
+  // Unhatched eggs have 0 defense
+  if (p.isEgg && !p.hasHatched && stat === "def") {
+    return 0;
+  }
+
   let base = stat === 'atk' ? p.atk : p.def;
+
+  // Download ability for Porygon2
+  if (db.ability === "Download" && stat === "def" && pokemonList && pokemonList.length > 0) {
+    const enemies = pokemonList.filter(other => other.player !== p.player && !other.fainted);
+    if (enemies.length > 0) {
+      let maxEnemyAtk = 0;
+      enemies.forEach(enemy => {
+        if (!context.inDownloadCheck) {
+          const enemyAtk = getModifiedStat(enemy, "atk", pokemonList, { ...context, inDownloadCheck: true });
+          if (enemyAtk > maxEnemyAtk) {
+            maxEnemyAtk = enemyAtk;
+          }
+        }
+      });
+      base += maxEnemyAtk;
+    }
+  }
 
   if (db && db.ability === "Unaware") {
     return base;
@@ -459,6 +654,10 @@ export function getModifiedStat(p: PokemonEntity, stat: "atk" | "def", pokemonLi
     });
   }
 
+  if (stat === "atk" && base < 0) {
+    base = 0;
+  }
+
   return base;
 }
 
@@ -491,16 +690,41 @@ export function getSkillShapeCells(
   p: PokemonEntity,
   pokemonList: PokemonEntity[] = [],
   pedestals: Pedestal[] = [],
-  skillIdx?: number
+  skillIdx?: number,
+  boardSize: number = 11
 ): { col: number; row: number }[] {
   const db = DB[p.species];
   if (!db) return [];
-  const skill = getSkillData(db, skillIdx);
+  const skill = getSkillData(db, skillIdx, p.customSkills);
+
+  if (skill.customOffsets && skill.customOffsets.length > 0) {
+    const rot = p.rotation || 0;
+    const cells: { col: number; row: number }[] = [];
+    const fwd = p.player === 1 ? 1 : -1;
+    
+    skill.customOffsets.forEach(offset => {
+      let dc = offset.dc;
+      let dr = offset.dr * fwd;
+      if (rot > 0) {
+        for (let r = 0; r < rot; r++) {
+          const temp = dc;
+          dc = -dr;
+          dr = temp;
+        }
+      }
+      const nc = p.col + dc;
+      const nr = p.row + dr;
+      if (nc >= 0 && nc < boardSize && nr >= 0 && nr < boardSize) {
+        cells.push({ col: nc, row: nr });
+      }
+    });
+    return cells;
+  }
 
   if (skill.skillName === "Teleport") {
     const out: { col: number; row: number }[] = [];
-    for (let c = 0; c < 11; c++) {
-      for (let r = 0; r < 11; r++) {
+    for (let c = 0; c < boardSize; c++) {
+      for (let r = 0; r < boardSize; r++) {
         const dist = Math.max(Math.abs(c - p.col), Math.abs(r - p.row));
         if (dist <= 3) {
           out.push({ col: c, row: r });
@@ -522,15 +746,15 @@ export function getSkillShapeCells(
     const addShapeCells = (sh: ParsedShape) => {
       if (!sh) return;
       if (sh.type === 'line' && sh.range && sh.dirs) {
-        cells.push(...getLineCells(p.col, p.row, sh.range, sh.dirs));
+        cells.push(...getLineCells(p.col, p.row, sh.range, sh.dirs, boardSize));
       } else if (sh.type === 'cone' && sh.range && sh.dirs) {
-        sh.dirs.forEach(dir => cells.push(...getConeCells(p.col, p.row, sh.range!, dir)));
+        sh.dirs.forEach(dir => cells.push(...getConeCells(p.col, p.row, sh.range!, dir, boardSize)));
       } else if (sh.type === 'aoe' && sh.radius) {
         if (sh.range) {
-          cells.push(...adjCells(p.col, p.row, sh.range, true));
+          cells.push(...adjCells(p.col, p.row, sh.range, true, boardSize));
           cells.push({ col: p.col, row: p.row });
         } else {
-          cells.push(...adjCells(p.col, p.row, sh.radius, true));
+          cells.push(...adjCells(p.col, p.row, sh.radius, true, boardSize));
           cells.push({ col: p.col, row: p.row });
         }
       }
@@ -562,24 +786,35 @@ export function getSkillShapeCells(
   }
 
   const range = (db.cost || 1) + 1; // Default fallback range math
-  return adjCells(p.col, p.row, range, true);
+  return adjCells(p.col, p.row, range, true, boardSize);
 }
 
 export function getSkillCells(
   p: PokemonEntity,
   pokemonList: PokemonEntity[],
   pedestals: Pedestal[],
-  skillIdx?: number
+  skillIdx?: number,
+  boardSize: number = 11
 ): { col: number; row: number; type: "move" | "atk" | "atk-preview" | "skill-preview" }[] {
   const db = DB[p.species];
   if (!db) return [];
-  const skill = getSkillData(db, skillIdx);
+  const skill = getSkillData(db, skillIdx, p.customSkills);
   const effectTarget = getSkillTargetType(skill, db);
+
+  if (skill.skillName === "Baton Pass") {
+    const shapeCells = getSkillShapeCells(p, pokemonList, pedestals, skillIdx, boardSize);
+    return shapeCells
+      .filter(c => {
+        const t = pkAt(c.col, c.row, pokemonList);
+        return t && t.player === p.player && t.id !== p.id && !t.fainted;
+      })
+      .map(c => ({ col: c.col, row: c.row, type: 'atk' as const }));
+  }
 
   if (skill.skillName === "Teleport") {
     const out: { col: number; row: number; type: "move" | "atk" | "atk-preview" | "skill-preview" }[] = [];
-    for (let c = 0; c < 11; c++) {
-      for (let r = 0; r < 11; r++) {
+    for (let c = 0; c < boardSize; c++) {
+      for (let r = 0; r < boardSize; r++) {
         const dist = Math.max(Math.abs(c - p.col), Math.abs(r - p.row));
         if (dist <= 3) {
           if (!pkAt(c, r, pokemonList) && !pedAt(c, r, pedestals)) {
@@ -609,7 +844,7 @@ export function getSkillCells(
   const shape = parseSkillShape(db, p, skillIdx);
   const isAoE = shape.type === "aoe" || shape.type === "cone" || (shape.type === "line" && shape.range && shape.range > 1);
 
-  const shapeCells = getSkillShapeCells(p, pokemonList, pedestals, skillIdx);
+  const shapeCells = getSkillShapeCells(p, pokemonList, pedestals, skillIdx, boardSize);
 
   return shapeCells.reduce<{ col: number; row: number; type: "move" | "atk" | "atk-preview" | "skill-preview" }[]>((acc, c) => {
     const t = pkAt(c.col, c.row, pokemonList);
@@ -618,6 +853,8 @@ export function getSkillCells(
     if (effectTarget === 'ally') {
       if (t && t.player === p.player) {
          acc.push({ col: c.col, row: c.row, type: 'atk' });
+      } else if (!t && !pd) {
+         acc.push({ col: c.col, row: c.row, type: 'skill-preview' });
       } else if (isAoE) {
          acc.push({ col: c.col, row: c.row, type: 'skill-preview' });
       }
@@ -627,6 +864,8 @@ export function getSkillCells(
     if (effectTarget === 'enemy') {
       if ((t && t.player !== p.player) || (pd && pd.player !== p.player)) {
         acc.push({ col: c.col, row: c.row, type: 'atk' });
+      } else if (!t && !pd) {
+        acc.push({ col: c.col, row: c.row, type: 'skill-preview' });
       }
       return acc;
     }
@@ -646,6 +885,12 @@ export function typeBonus(attacker: PokemonEntity, target: PokemonEntity, weathe
   const adb = DB[attacker.species];
   const tdb = DB[target.species];
   if (!adb || !tdb) return 0;
+
+  // Unhatched eggs are immune to type advantages/disadvantages
+  if ((attacker.isEgg && !attacker.hasHatched) || (target.isEgg && !target.hasHatched)) {
+    return 0;
+  }
+
   let b = 0;
   const atkType = attacker.reflectedType || adb.t1;
   const defType = target.reflectedType || tdb.t1;
@@ -679,4 +924,332 @@ export function getStatusChanceValue(status: string, source: any = null): number
   if (status === 'freeze') return 0.25;
   if (status === 'burn' || status === 'poison' || status === 'toxic') return 0.3;
   return 0;
+}
+
+export function predictDamage(
+  actor: PokemonEntity,
+  target: PokemonEntity | Pedestal,
+  skillIdx: number | undefined,
+  pokemonList: PokemonEntity[],
+  pedestals: Pedestal[],
+  weather: string | null
+): {
+  damage: number;
+  baseAtk: number;
+  targetDef: number;
+  typeMult: number;
+  abilityBonus: number;
+  tidalBellReduction: number;
+  isElectricAbsorb: boolean;
+  isWaterAbsorb: boolean;
+  isLevitateMiss: boolean;
+  isDreamEaterMiss: boolean;
+  isSturdyTriggered: boolean;
+  itemDmgBonus: number;
+} {
+  const isPedestal = !('species' in target);
+  
+  if (isPedestal) {
+    const ped = target as Pedestal;
+    let rawAtk = getModifiedStat(actor, "atk", pokemonList, { action: skillIdx === undefined ? "melee" : "skill", isSkill: skillIdx !== undefined, weather });
+    if (actor.status === "burn") rawAtk = Math.max(0, rawAtk - 1);
+    
+    let pedDmg = 0;
+    if (skillIdx === undefined) {
+      pedDmg = Math.min(1, Math.max(0, Math.floor(rawAtk / 2) - 1));
+    } else {
+      const dbEntry = DB[actor.species];
+      const skill = getSkillData(dbEntry, skillIdx);
+      let rawDmg = 0;
+      if (skillIdx === 0) {
+        rawDmg = skill.skillDmg ? rawAtk : 0;
+      } else {
+        const isAtkBase = typeof skill.skillDmg === "string" && skill.skillDmg.toLowerCase() === "atk";
+        if (isAtkBase) {
+          rawDmg = rawAtk;
+        } else {
+          rawDmg = typeof skill.skillDmg === "number" ? skill.skillDmg : (parseInt(skill.skillDmg || "0", 10) || 0);
+        }
+      }
+      if (actor.status === "burn") rawDmg = Math.max(0, rawDmg - 1);
+      pedDmg = Math.min(1, Math.max(0, rawDmg - 1));
+    }
+    
+    return {
+      damage: pedDmg,
+      baseAtk: rawAtk,
+      targetDef: 1,
+      typeMult: 0,
+      abilityBonus: 0,
+      tidalBellReduction: 0,
+      isElectricAbsorb: false,
+      isWaterAbsorb: false,
+      isLevitateMiss: false,
+      isDreamEaterMiss: false,
+      isSturdyTriggered: false,
+      itemDmgBonus: 0
+    };
+  }
+
+  const tg = target as PokemonEntity;
+  const actorDb = DB[actor.species];
+  const targetDb = DB[tg.species];
+  
+  if (!actorDb || !targetDb) {
+    return {
+      damage: 0,
+      baseAtk: 0,
+      targetDef: 0,
+      typeMult: 0,
+      abilityBonus: 0,
+      tidalBellReduction: 0,
+      isElectricAbsorb: false,
+      isWaterAbsorb: false,
+      isLevitateMiss: false,
+      isDreamEaterMiss: false,
+      isSturdyTriggered: false,
+      itemDmgBonus: 0
+    };
+  }
+
+  let isElectricAbsorb = false;
+  let isWaterAbsorb = false;
+  let isLevitateMiss = false;
+  let isDreamEaterMiss = false;
+
+  let damage = 0;
+  let typeMult = 0;
+  let abilityBonus = 0;
+  let baseAtk = 0;
+  let targetDef = 0;
+  let itemDmgBonus = 0;
+
+  if (skillIdx === undefined) {
+    typeMult = typeBonus(actor, tg, weather);
+    baseAtk = getModifiedStat(actor, "atk", pokemonList, { action: "melee", isSkill: false, target: tg, weather });
+    targetDef = getModifiedStat(tg, "def", pokemonList, { weather });
+
+    if (actor.hp <= actor.maxHp * 0.5) {
+      if (actorDb.ability === "Overgrow" && (actorDb.t1 === "Grass" || actorDb.t2 === "Grass")) abilityBonus += 1;
+      if (actorDb.ability === "Blaze" && (actorDb.t1 === "Fire" || actorDb.t2 === "Fire")) abilityBonus += 1;
+      if (actorDb.ability === "Torrent" && (actorDb.t1 === "Water" || actorDb.t2 === "Water")) abilityBonus += 1;
+    }
+
+    damage = Math.floor(baseAtk / 2) + typeMult + abilityBonus - targetDef;
+    if (actor.status === "burn") {
+      damage = damage - 1;
+    }
+
+    if (targetDb.ability === "Multiscale" && tg.hp === tg.maxHp) damage -= 3;
+    if (targetDb.ability === "Sheer Force" && actor.hp < tg.hp) damage -= 1;
+    if (targetDb.ability === "Rock Head" && damage === 1) damage = 0;
+    damage = Math.max(0, damage);
+  } else {
+    const skill = getSkillData(actorDb, skillIdx);
+    
+    if (skill.skillHeal && (skill.skillHealTarget === "ally" || skill.skillHealTarget === "all_allies" || skill.skillHealTarget === "self")) {
+      return {
+        damage: -skill.skillHeal,
+        baseAtk: 0,
+        targetDef: 0,
+        typeMult: 0,
+        abilityBonus: 0,
+        tidalBellReduction: 0,
+        isElectricAbsorb: false,
+        isWaterAbsorb: false,
+        isLevitateMiss: false,
+        isDreamEaterMiss: false,
+        isSturdyTriggered: false,
+        itemDmgBonus: 0
+      };
+    }
+
+    let rawDmg = 0;
+    const isAtkBase = typeof skill.skillDmg === 'string' && skill.skillDmg.toLowerCase() === 'atk';
+
+    if (isAtkBase) {
+      const baseAtk = getModifiedStat(actor, "atk", pokemonList, { isSkill: true, weather });
+      if (skill.statusChance) {
+        rawDmg = Math.max(0, baseAtk - 1);
+      } else {
+        rawDmg = baseAtk;
+      }
+    } else {
+      if (skillIdx === 0) {
+        if (skill.skillDmg && skill.skillDmg !== 0 && skill.skillDmg !== "0" && skill.skillDmg !== "") {
+          const baseAtk = getModifiedStat(actor, "atk", pokemonList, { isSkill: true, weather });
+          if (skill.statusChance) {
+            rawDmg = Math.max(0, baseAtk - 1);
+          } else {
+            rawDmg = baseAtk;
+          }
+        } else {
+          rawDmg = 0;
+        }
+      } else {
+        rawDmg = typeof skill.skillDmg === 'number' ? skill.skillDmg : (parseInt(skill.skillDmg || '0', 10) || 0);
+      }
+    }
+
+    if (skill.skillName === "Foul Play") {
+      rawDmg = getModifiedStat(tg, "atk", pokemonList, { weather });
+    }
+
+    if (skill.skillName === "Sucker Punch") {
+      if (actor.damageReceivedLastTurn && actor.damageReceivedLastTurn > 0) {
+        rawDmg += 2;
+      }
+    }
+
+    if (actor.status === "burn") rawDmg = Math.max(0, rawDmg - 1);
+    
+    if (actor.hp <= actor.maxHp * 0.5) {
+      if (actorDb.ability === "Overgrow" && (actorDb.t1 === "Grass" || actorDb.t2 === "Grass")) abilityBonus += 1;
+      if (actorDb.ability === "Blaze" && (actorDb.t1 === "Fire" || actorDb.t2 === "Fire")) abilityBonus += 1;
+      if (actorDb.ability === "Torrent" && (actorDb.t1 === "Water" || actorDb.t2 === "Water")) abilityBonus += 1;
+    }
+
+    const isElectricHit = actorDb.t1 === "Electric" || actorDb.t2 === "Electric" || skill.skillName.toLowerCase().includes("thunder") || skill.skillName.toLowerCase().includes("shock") || skill.skillName.toLowerCase().includes("electro") || skill.skillName.toLowerCase().includes("discharge");
+    const isWaterHit = actorDb.t1 === "Water" || actorDb.t2 === "Water" || skill.skillName.toLowerCase().includes("water") || skill.skillName.toLowerCase().includes("hydro") || skill.skillName.toLowerCase().includes("bubble") || skill.skillName.toLowerCase().includes("scald") || skill.skillName.toLowerCase().includes("surf");
+
+    if (targetDb.ability === "Volt Absorb" && isElectricHit) isElectricAbsorb = true;
+    if (targetDb.ability === "Water Absorb" && isWaterHit) isWaterAbsorb = true;
+
+    if (isElectricAbsorb || isWaterAbsorb) {
+      return {
+        damage: -3,
+        baseAtk: rawDmg,
+        targetDef: 0,
+        typeMult: 0,
+        abilityBonus,
+        tidalBellReduction: 0,
+        isElectricAbsorb,
+        isWaterAbsorb,
+        isLevitateMiss: false,
+        isDreamEaterMiss: false,
+        isSturdyTriggered: false,
+        itemDmgBonus: 0
+      };
+    }
+
+    if (skill.skillName === "Dream Eater" && tg.status !== "sleep") {
+      isDreamEaterMiss = true;
+      return {
+        damage: 0,
+        baseAtk: rawDmg,
+        targetDef: 0,
+        typeMult: 0,
+        abilityBonus,
+        tidalBellReduction: 0,
+        isElectricAbsorb: false,
+        isWaterAbsorb: false,
+        isLevitateMiss: false,
+        isDreamEaterMiss: true,
+        isSturdyTriggered: false,
+        itemDmgBonus: 0
+      };
+    }
+
+    const isGroundSkill = skill.skillName === "Earthquake" || skill.skillName === "Mud Shot" || skill.skillName === "Bone Rush" || skill.skillDesc.toLowerCase().includes("ground");
+    if (targetDb.ability === "Levitate" && isGroundSkill) {
+      isLevitateMiss = true;
+      return {
+        damage: 0,
+        baseAtk: rawDmg,
+        targetDef: 0,
+        typeMult: 0,
+        abilityBonus,
+        tidalBellReduction: 0,
+        isElectricAbsorb: false,
+        isWaterAbsorb: false,
+        isLevitateMiss: true,
+        isDreamEaterMiss: false,
+        isSturdyTriggered: false,
+        itemDmgBonus: 0
+      };
+    }
+
+    typeMult = typeBonus(actor, tg, weather);
+    targetDef = getModifiedStat(tg, "def", pokemonList, { bySkill: true, weather });
+    damage = rawDmg + typeMult + abilityBonus - targetDef;
+
+    if (skill.skillName === "Sonic Boom") damage = 2;
+    if (skill.skillName === "Psycutter") damage += targetDef;
+    if (skill.skillName === "Counter") {
+      const dmgReceived = actor.damageReceivedLastTurn || 0;
+      damage = dmgReceived > 0 ? (dmgReceived + 1) : 0;
+    }
+
+    if (targetDb.ability === "Multiscale" && tg.hp === tg.maxHp) damage -= 3;
+    if (targetDb.ability === "Sheer Force" && actor.hp < tg.hp) damage -= 1;
+    damage = Math.max(0, damage);
+    baseAtk = rawDmg;
+  }
+
+  let tidalBellReduction = 0;
+  const friendlyBell = pokemonList.find(bell => {
+    if ((bell.species !== "Tidal Bell" && bell.species !== "Tidal bell") || bell.fainted || bell.player !== tg.player) return false;
+    const dc = Math.abs(bell.col - tg.col);
+    const dr = Math.abs(bell.row - tg.row);
+    return dc <= 1 && dr <= 1;
+  });
+  if (friendlyBell && damage > 0 && tg.species !== "Lugia") {
+    tidalBellReduction = Math.min(damage, 2);
+    damage = Math.max(0, damage - 2);
+  }
+
+  let isSturdyTriggered = false;
+  if (damage >= tg.hp && targetDb.ability === "Sturdy" && tg.hp === tg.maxHp) {
+    isSturdyTriggered = true;
+    damage = tg.hp - 1;
+  }
+
+  return {
+    damage,
+    baseAtk,
+    targetDef,
+    typeMult,
+    abilityBonus,
+    tidalBellReduction,
+    isElectricAbsorb,
+    isWaterAbsorb,
+    isLevitateMiss,
+    isDreamEaterMiss,
+    isSturdyTriggered,
+    itemDmgBonus
+  };
+}
+
+export function getAffectedCells(
+  actor: PokemonEntity,
+  skill: Skill,
+  skillIdx: number,
+  targetCell: { col: number; row: number } | null,
+  pokemonList: PokemonEntity[],
+  pedestals: Pedestal[],
+  boardSize: number = 11
+): { col: number; row: number }[] {
+  const dbEntry = DB[actor.species];
+  if (!dbEntry) return [];
+
+  if (skill.customOffsets && skill.customOffsets.length > 0) {
+    return getSkillShapeCells(actor, pokemonList, pedestals, skillIdx, boardSize);
+  }
+
+  const shape = parseSkillShape(dbEntry, actor, skillIdx);
+  const isAoE = shape.type === "aoe" || shape.type === "cone" || (shape.type === "line" && shape.range && shape.range > 1);
+
+  if (isAoE) {
+    if (shape.type === "aoe" && shape.range && targetCell) {
+      const radius = shape.radius || 1;
+      const cells = adjCells(targetCell.col, targetCell.row, radius, true, boardSize);
+      cells.push({ col: targetCell.col, row: targetCell.row });
+      return cells;
+    } else {
+      return getSkillShapeCells(actor, pokemonList, pedestals, skillIdx, boardSize);
+    }
+  } else if (targetCell) {
+    return [{ col: targetCell.col, row: targetCell.row }];
+  }
+  return [];
 }

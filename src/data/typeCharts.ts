@@ -9,28 +9,29 @@ export const TEFF: { [type: string]: { strong: string[]; weak: string[] } } = {
   Grass: { strong: ['Water', 'Rock', 'Ground'], weak: ['Fire', 'Ice', 'Flying', 'Poison', 'Bug', 'Dragon', 'Steel'] },
   Electric: { strong: ['Water', 'Flying'], weak: ['Ground', 'Grass', 'Electric', 'Dragon'] },
   Ice: { strong: ['Grass', 'Flying', 'Ground', 'Dragon'], weak: ['Fire', 'Rock', 'Steel', 'Water'] },
-  Psychic: { strong: ['Fighting', 'Poison'], weak: ['Steel', 'Psychic'] },
+  Psychic: { strong: ['Fighting', 'Poison'], weak: ['Steel', 'Psychic', 'Dark'] },
   Flying: { strong: ['Grass', 'Fighting', 'Bug'], weak: ['Electric', 'Ice', 'Rock', 'Steel'] },
   Normal: { strong: [], weak: ['Rock', 'Steel', 'Fighting'] },
   Poison: { strong: ['Grass', 'Fairy'], weak: ['Ground', 'Psychic', 'Poison', 'Rock', 'Ghost'] },
   Rock: { strong: ['Fire', 'Flying', 'Ice', 'Bug'], weak: ['Water', 'Grass', 'Fighting', 'Ground', 'Steel'] },
   Ground: { strong: ['Fire', 'Electric', 'Rock', 'Poison', 'Steel'], weak: ['Water', 'Grass', 'Ice', 'Bug'] },
-  Ghost: { strong: ['Ghost', 'Psychic'], weak: ['Ghost'] },
-  Bug: { strong: ['Grass', 'Psychic'], weak: ['Fire', 'Flying', 'Rock', 'Fighting', 'Ghost', 'Steel', 'Fairy', 'Poison'] },
+  Ghost: { strong: ['Ghost', 'Psychic'], weak: ['Ghost', 'Dark'] },
+  Bug: { strong: ['Grass', 'Psychic', 'Dark'], weak: ['Fire', 'Flying', 'Rock', 'Fighting', 'Ghost', 'Steel', 'Fairy', 'Poison'] },
   Dragon: { strong: ['Dragon'], weak: ['Steel', 'Fairy'] },
-  Fairy: { strong: ['Fighting', 'Dragon'], weak: ['Fire', 'Poison', 'Steel'] },
-  Fighting: { strong: ['Normal', 'Rock', 'Steel', 'Ice'], weak: ['Psychic', 'Flying', 'Fairy', 'Bug', 'Poison'] },
+  Fairy: { strong: ['Fighting', 'Dragon', 'Dark'], weak: ['Fire', 'Poison', 'Steel'] },
+  Fighting: { strong: ['Normal', 'Rock', 'Steel', 'Ice', 'Dark'], weak: ['Psychic', 'Flying', 'Fairy', 'Bug', 'Poison'] },
   Steel: { strong: ['Rock', 'Ice', 'Fairy'], weak: ['Fire', 'Water', 'Electric', 'Steel'] },
+  Dark: { strong: ['Psychic', 'Ghost'], weak: ['Fighting', 'Dark', 'Fairy'] },
 };
 
 export const STATUS_META: { [status: string]: { label: string; desc: string } } = {
-  sleep: { label: 'Sleep', desc: '50% chance to wake and act; if the action fails, sleep ends.' },
-  paralysis: { label: 'Paralysis', desc: '30% chance to be unable to act each turn.' },
-  confuse: { label: 'Confuse', desc: '30% chance to hurt itself for 2 damage instead of acting.' },
-  freeze: { label: 'Freeze', desc: 'Cannot act until thawed. 25% chance to thaw at end of turn.' },
-  toxic: { label: 'Toxic', desc: 'Takes 1 damage every end of turn while afflicted.' },
-  burn: { label: 'Burn', desc: 'Takes 1 damage every end of turn until cured.' },
-  poison: { label: 'Poison', desc: 'Takes 1 damage every end of turn until cured.' }
+  sleep: { label: 'Sleep', desc: 'Cannot act. 50% chance to wake up each turn (until wake).' },
+  paralysis: { label: 'Paralysis', desc: '30% chance to be unable to act each turn (permanent).' },
+  confuse: { label: 'Confuse', desc: '25% chance to hurt itself for 1 damage instead of acting (permanent).' },
+  freeze: { label: 'Freeze', desc: 'Cannot act. Thaws automatically after 1 turn.' },
+  toxic: { label: 'Toxic', desc: 'Takes 1 damage at the end of each turn (permanent).' },
+  burn: { label: 'Burn', desc: 'Takes 1 damage at the end of each turn (2 turns max).' },
+  poison: { label: 'Poison', desc: 'Takes 1 damage at the end of each turn (permanent).' }
 };
 
 export const SCOL: { [status: string]: string } = {
@@ -44,21 +45,22 @@ export const SCOL: { [status: string]: string } = {
 };
 
 export const TCOL: { [type: string]: string } = {
-  Fire: '#D85A30',
-  Water: '#185FA5',
-  Grass: '#3B6D11',
-  Electric: '#BA7517',
-  Ice: '#0C447C',
-  Psychic: '#993556',
-  Flying: '#534AB7',
-  Normal: '#5F5E5A',
-  Poison: '#72243E',
-  Rock: '#5F5A5A',
-  Ground: '#854F0B',
-  Ghost: '#3C3489',
-  Bug: '#6D8E1E',
-  Dragon: '#5B7DD1',
-  Fairy: '#C96BAA',
-  Fighting: '#A63D2E',
-  Steel: '#6F7C8B'
+  Normal: '#A8A77A',
+  Fire: '#EE8130',
+  Water: '#6390F0',
+  Electric: '#F7D02C',
+  Grass: '#7AC74C',
+  Ice: '#96D9D6',
+  Fighting: '#C22E28',
+  Poison: '#A33EA1',
+  Ground: '#E2BF65',
+  Flying: '#A98FF3',
+  Psychic: '#F95587',
+  Bug: '#A6B91A',
+  Rock: '#B6A136',
+  Ghost: '#735797',
+  Dragon: '#6F35FC',
+  Dark: '#705746',
+  Steel: '#B7B7CE',
+  Fairy: '#D685AD'
 };

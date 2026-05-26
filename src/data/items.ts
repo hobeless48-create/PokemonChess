@@ -11,7 +11,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Muscle Band",
     desc: "สวมใส่: เพิ่ม Atk Modifier +1 ให้กับยูนิตตัวนี้ตลอดเวลา",
     category: "Offense",
-    cost: 6,
+    cost: 5,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/muscle-band.png",
     type: "held",
     effect: { stat: "atk", amount: 1 }
@@ -20,7 +20,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Black Belt",
     desc: "สวมใส่: เพิ่ม Atk Modifier +1 เฉพาะการโจมตีปกติระยะประชิด",
     category: "Offense",
-    cost: 5,
+    cost: 4,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/black-belt.png",
     type: "held",
     effect: { stat: "atk", amount: 1, condition: "melee" }
@@ -29,7 +29,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Wise Glasses",
     desc: "สวมใส่: เพิ่ม Atk Modifier +1 ให้กับความแรงของ Skill",
     category: "Offense",
-    cost: 6,
+    cost: 5,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/wise-glasses.png",
     type: "held",
     effect: { stat: "atk", amount: 1, condition: "skill" }
@@ -38,7 +38,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Sharp Beak",
     desc: "สวมใส่: ถ้าโจมตีหลังเดินในเทิร์นนั้น → จะได้รับ Atk Modifier +1",
     category: "Offense",
-    cost: 5,
+    cost: 4,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/sharp-beak.png",
     type: "held"
   },
@@ -46,7 +46,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Scope Lens",
     desc: "สวมใส่: ถ้าโจมตีศัตรูที่ HP เต็ม 100% → จะได้รับ Atk Modifier +1",
     category: "Offense",
-    cost: 5,
+    cost: 4,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/scope-lens.png",
     type: "held"
   },
@@ -54,7 +54,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Shell Bell",
     desc: "สวมใส่: โจมตีโดนศัตรู → ได้รับ Energy +1 แต้ม (เกิดขึ้นสูงสุด 1 ครั้ง/turn)",
     category: "Offense",
-    cost: 6,
+    cost: 5,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/shell-bell.png",
     type: "held"
   },
@@ -62,7 +62,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "King’s Rock",
     desc: "สวมใส่: โจมตีศัตรูที่ HP ต่ำกว่า 50% → จะได้รับ Atk Modifier +1",
     category: "Offense",
-    cost: 5,
+    cost: 4,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/kings-rock.png",
     type: "held"
   },
@@ -70,7 +70,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Life Orb",
     desc: "สวมใส่: ทุกการกระทำ Atk Modifier +1 แต่หลังโจมตีเสร็จยูนิตตัวเองจะเสีย 1 HP",
     category: "Offense",
-    cost: 7,
+    cost: 5,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/life-orb.png",
     type: "held",
     effect: { stat: "atk", amount: 1 }
@@ -81,7 +81,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Leftovers",
     desc: "สวมใส่: เมื่อจบเทิร์นของตัวเอง → ฟื้นฟู HP 1 แต้ม",
     category: "Defense",
-    cost: 7,
+    cost: 5,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/leftovers.png",
     type: "held"
   },
@@ -89,7 +89,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Rocky Helmet",
     desc: "สวมใส่: เมื่อโดนโจมตีระยะประชิด → ศัตรูผู้โจมตีจะรับความเสียหายสะท้อน 1 HP",
     category: "Defense",
-    cost: 6,
+    cost: 4,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/rocky-helmet.png",
     type: "held"
   },
@@ -97,7 +97,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Eviolite",
     desc: "สวมใส่: ถ้าตัวหมากยังสามารถวิวัฒนาการต่อได้ → จะได้รับ Def Modifier +1",
     category: "Defense",
-    cost: 5,
+    cost: 4,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/eviolite.png",
     type: "held"
   },
@@ -105,7 +105,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Focus Band",
     desc: "สวมใส่: ครั้งแรกที่ยูนิตจะโดนโจมตีถึงตาย → พลังชีวิตจะเหลือรอดไว้ที่ 1 HP",
     category: "Defense",
-    cost: 6,
+    cost: 5,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/focus-band.png",
     type: "held"
   },
@@ -121,7 +121,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Assault Vest",
     desc: "สวมใส่: เพิ่ม Def Modifier +1 ให้กับยูนิตเฉพาะเวลาคำนวณความเสียหายจาก Skill",
     category: "Defense",
-    cost: 5,
+    cost: 4,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/assault-vest.png",
     type: "held"
   },
@@ -129,7 +129,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Big Root",
     desc: "สวมใส่: กลไกการดูด HP ทั้งหมดของตัวหมากตัวนี้จะฟื้นฟูแรงขึ้น +1 แต้ม",
     category: "Defense",
-    cost: 4,
+    cost: 3,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/big-root.png",
     type: "held"
   },
@@ -139,7 +139,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "EXP Share",
     desc: "สวมใส่: หากเทิร์นนี้ยูนิตไม่ได้สั่งเดินและไม่ได้สั่งโจมตีเลย → จบเทิร์นจะได้รับ EXP +1",
     category: "Utility",
-    cost: 4,
+    cost: 3,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/exp-share.png",
     type: "held"
   },
@@ -147,7 +147,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Lucky Egg",
     desc: "สวมใส่: เมื่อยูนิตนี้สามารถโจมตีกำจัดยูนิตศัตรูลงได้สำเร็จ → ได้รับโบนัส EXP +1",
     category: "Utility",
-    cost: 5,
+    cost: 4,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/lucky-egg.png",
     type: "held"
   },
@@ -163,7 +163,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Quick Claw",
     desc: "สวมใส่: การสั่งเดินเคลื่อนที่ครั้งแรกสุดของเกมสำหรับยูนิตนี้ ค่า Energy Cost จะเป็น -1",
     category: "Utility",
-    cost: 4,
+    cost: 3,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/quick-claw.png",
     type: "held"
   },
@@ -179,7 +179,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Light Clay",
     desc: "สวมใส่: ระยะเวลาการกางโล่บาเรีย (Shield) หรือสถานะ Buff จะอยู่ยาวนานขึ้นอีก 1 turn",
     category: "Utility",
-    cost: 4,
+    cost: 3,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/light-clay.png",
     type: "held"
   },
@@ -195,7 +195,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Destiny Knot",
     desc: "สวมใส่: เมื่อยูนิตนี้โดนโจมตีติดสถานะผิดปกติ → ศัตรูผู้ทำดาเมจจะติดสถานะนั้นด้วยทันที",
     category: "Utility",
-    cost: 4,
+    cost: 3,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/destiny-knot.png",
     type: "held"
   },
@@ -203,7 +203,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Safety Goggles",
     desc: "สวมใส่: ป้องกันความเสียหายจากพายุสภาพอากาศ (Field Effect) หรือโซนพิษอย่างสมบูรณ์",
     category: "Utility",
-    cost: 3,
+    cost: 2,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/safety-goggles.png",
     type: "held"
   },
@@ -213,7 +213,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Sitrus Berry",
     desc: "กดใช้: ฟื้นฟู HP 2 แต้มทันทีให้กับยูนิตโปเกมอนฝั่งคุณที่เลือก",
     category: "Consumable",
-    cost: 3,
+    cost: 2,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/sitrus-berry.png",
     type: "consumable"
   },
@@ -221,7 +221,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Lum Berry",
     desc: "กดใช้: ล้างสถานะผิดปกติร้ายแรงทั้งหมดออกจากตัวหมากทันที (1 ครั้ง)",
     category: "Consumable",
-    cost: 2,
+    cost: 1,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/lum-berry.png",
     type: "consumable"
   },
@@ -229,7 +229,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "White Herb",
     desc: "กดใช้: ล้างค่าดีบัฟติดลบ (Negative Modifiers) ทั้งหมดออกจากสเตตัสหมากให้เป็นศูนย์",
     category: "Consumable",
-    cost: 2,
+    cost: 1,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/white-herb.png",
     type: "consumable"
   },
@@ -237,7 +237,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Berry Juice",
     desc: "กดใช้: เติมสารอาหารช่วยฟื้นฟูคืน HP 1 แต้มให้กับโปเกมอนที่ระบุ",
     category: "Consumable",
-    cost: 2,
+    cost: 1,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/berry-juice.png",
     type: "consumable"
   },
@@ -245,15 +245,15 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Mental Herb",
     desc: "กดใช้: ปลดสถานะผิดปกติจำพวกหยุดนิ่งข้ามเทิร์น หรืออาการมึนงงสับสน (Confusion)",
     category: "Consumable",
-    cost: 2,
+    cost: 1,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/mental-herb.png",
     type: "consumable"
   },
   "Power Herb": {
     name: "Power Herb",
-    desc: "กดใช้: ร่ายมนตร์มอบบัฟเพิ่ม Atk Modifier +1 ให้กับยูนิตเป็นเวลา 2 เทิร์น",
+    desc: "กดใช้: ร่ายมนตร์มอบบัฟเพิ่ม Atk Modifier +1 ให้กับยูนิตเป็นเวลา 1 เทิร์น",
     category: "Consumable",
-    cost: 3,
+    cost: 1,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/power-herb.png",
     type: "consumable"
   }

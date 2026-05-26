@@ -319,21 +319,18 @@ export const DB: { [species: string]: PokemonDBEntry } = {
     ],
     { evoFrom: "Vulpix", color: "#D85A30" }
   ),
-  "Alolan Ninetales": Pkmn(38, ["Ice", "Fairy"], 3, [14, 4, 2], "Support",
-    "Snow Warning - Deploys a Hail Storm when first active",
-    [
-      S("Ice Beam", "Line(3)(1)", 4, { statusChance: "freeze", statusChanceValue: 0.3, skillRaw: "Ice Beam (Line(3)(1)): Deal 4 Ice damage, 30% chance to Freeze target for 2 turns." }),
-      S("Hail", "Self", 0, { skillCost: 2, skillRaw: "Hail (Self): Summons Hail Storm weather on the zone for 5 turns." })
-    ],
-    { base: true, color: "#8CD16D" }
+  "Alolan Vulpix": Pkmn(37.2, ["Ice"], 2, [7, 2, 1], "Support",
+    "Snow Warning - When deployed, set Hail Storm for 5 turns",
+    [S("Powder Snow", "Line(2)(1)", 1, { statusChance: "freeze", statusChanceValue: 0.3, skillRaw: "Powder Snow (Line(2)(1): Deal 1 Ice damage, 30% chance to Freeze target for 1 turn)" })],
+    { base: true, evoCost: 6, evoTo: "Alolan Ninetales", color: "#8CD16D" }
   ),
-  "Alolan Nincetail": Pkmn(38, ["Ice", "Fairy"], 3, [14, 4, 2], "Support",
-    "Snow Warning - Deploys a Hail Storm when first active",
+  "Alolan Ninetales": Pkmn(38.2, ["Ice", "Fairy"], 3, [14, 4, 2], "Support",
+    "Snow Warning - When deployed, set Hail Storm for 5 turns",
     [
-      S("Ice Beam", "Line(3)(1)", 4, { statusChance: "freeze", statusChanceValue: 0.3, skillRaw: "Ice Beam (Line(3)(1)): Deal 4 Ice damage, 30% chance to Freeze target for 2 turns." }),
+      S("Ice Beam", "Line(3)(1)", 4, { statusChance: "freeze", statusChanceValue: 0.3, skillRaw: "Ice Beam (Line(3)(1)): Deal 4 Ice damage, 30% chance to Freeze target for 1 turn." }),
       S("Hail", "Self", 0, { skillCost: 2, skillRaw: "Hail (Self): Summons Hail Storm weather on the zone for 5 turns." })
     ],
-    { base: true, color: "#8CD16D" }
+    { evoFrom: "Alolan Vulpix", color: "#8CD16D" }
   ),
 
   // --- NORMAL/FAIRY LINE (JIGGLYPUFF) ---
@@ -1272,7 +1269,7 @@ export const DB: { [species: string]: PokemonDBEntry } = {
     { evoFrom: "Sunkern", color: "#FFE04A" }
   ),
   Yanma: Pkmn(193, ["Bug", "Flying"], 2, [8, 3, 0], "Assassin",
-    "Speed Boost - Gains extra movement range and action priority every 3 turns",
+    "Speed Boost - Gain +1 Atk for 1 turn after moving",
     [S("Air Cutter", "Cone(2)", 2)],
     { base: true, color: "#BF3B3B" }
   ),
@@ -1293,7 +1290,7 @@ export const DB: { [species: string]: PokemonDBEntry } = {
     [S("Psychic", "Line(3)(1)", 4)],
     { evoFrom: "Eevee", color: "#DC9AE5" }
   ),
-  Umbreon: Pkmn(197, ["Dark"], 2, [14, 3, 3], "Defense",
+  Umbreon: Pkmn(197, ["Dark"], 2, [14, 2, 3], "Defense",
     "Synchronize - When inflicted with status, inflict same status on attacker with +1 turn duration",
     [S("Foul Play", "Line(1)(1)", 3, { skillRaw: "Foul Play: Deal 3 damage + 1 per opponent's Atk modifier" })],
     { evoFrom: "Eevee", color: "#2B2B2B" }
@@ -1479,7 +1476,7 @@ export const DB: { [species: string]: PokemonDBEntry } = {
     [S("Earthquake", "AoE(2)", 4)],
     { evoFrom: "Phanpy", color: "#7BA8BF" }
   ),
-  Porygon2: Pkmn(233, ["Normal"], 2, [13, 0, 1], "Defense",
+  Porygon2: Pkmn(233, ["Normal"], 2, [13, 2, 1], "Defense",
     "Download - Gain bonus Def when facing heavily physical opponents",
     [S("Foul Play", "Line(1)(1)", 3)],
     { evoFrom: "Porygon", color: "#EC5E62" }
@@ -1597,9 +1594,9 @@ export const DB: { [species: string]: PokemonDBEntry } = {
   Celebi: Pkmn(251, ["Psychic", "Grass"], 5, [14, 5, 1], "Support",
     "Natural Cure - Heal status conditions at turn end for itself and adjacent allies",
     [
-      S("Leaf Storm", "Cone(3)", 5, { skillCost: 4 }),
+      S("Leaf Storm", "Cone(3)", 5, { skillCost: 2 }),
       S("Aromatherapy", "AoE(2)(2)", 0, { skillCost: 2, skillHeal: 3, skillHealTarget: "ally", aoe: 2 }),
-      S("Future Sight", "Line(3)(1)", 0, { skillCost: 3 })
+      S("Future Sight", "Line(3)(1)", 0, { skillCost: 2 })
     ],
     { base: true, legendary: true, hatchCost: 30, color: "#8CD16D" }
   ),
@@ -1632,4 +1629,50 @@ Object.keys(DB).forEach(key => {
       entry.evoCost = Math.round(entry.evoCost * 1.8); // e.g. second stage: 9->16, 8->14, magikarp 20->36
     }
   }
+
+  // Post-process DB to set Skill 1 (index 0) damage and description dynamically to match parent ATK
+  if (entry && entry.skills && entry.skills.length > 0) {
+    const s0 = entry.skills[0];
+    if (s0.skillDmg !== undefined && typeof s0.skillDmg === "number" && s0.skillDmg > 0 && s0.skillName !== "Sonic Boom") {
+      const oldDmg = s0.skillDmg;
+      const newDmg = s0.statusChance ? Math.max(0, entry.atk - 1) : entry.atk;
+      s0.skillDmg = newDmg;
+      entry.skillDmg = newDmg;
+      
+      if (s0.skillRaw) {
+        let raw = s0.skillRaw;
+        raw = raw.replace(new RegExp(`Deals ${oldDmg} damage`, 'i'), `Deals ${newDmg} damage`);
+        raw = raw.replace(new RegExp(`Deal ${oldDmg} damage`, 'i'), `Deal ${newDmg} damage`);
+        raw = raw.replace(new RegExp(`Deals ${oldDmg} Damage`, 'i'), `Deals ${newDmg} Damage`);
+        raw = raw.replace(new RegExp(`Deal ${oldDmg} Damage`, 'i'), `Deal ${newDmg} Damage`);
+        raw = raw.replace(new RegExp(`drains ${oldDmg} HP`, 'i'), `drains ${newDmg} HP`);
+        raw = raw.replace(new RegExp(`drain ${oldDmg} HP`, 'i'), `drain ${newDmg} HP`);
+        raw = raw.replace(new RegExp(`draining ${oldDmg} HP`, 'i'), `draining ${newDmg} HP`);
+        raw = raw.replace(new RegExp(`Deals ${oldDmg} Ice damage`, 'i'), `Deals ${newDmg} Ice damage`);
+        raw = raw.replace(new RegExp(`Deal ${oldDmg} Ice damage`, 'i'), `Deal ${newDmg} Ice damage`);
+        raw = raw.replace(new RegExp(`hit for ${oldDmg} damage`, 'i'), `hit for ${newDmg} damage`);
+        raw = raw.replace(new RegExp(`\\(${oldDmg}\\)`, 'g'), `(${newDmg})`);
+        s0.skillRaw = raw;
+        entry.skillRaw = raw;
+      }
+    }
+  }
 });
+
+// Load customized Pokémon database from localStorage if present
+try {
+  if (typeof window !== "undefined" && window.localStorage) {
+    const savedCustomDB = window.localStorage.getItem("pokemon_chess_custom_db");
+    if (savedCustomDB) {
+      const parsed = JSON.parse(savedCustomDB);
+      Object.keys(parsed).forEach(key => {
+        if (DB[key]) {
+          DB[key] = { ...DB[key], ...parsed[key] };
+        }
+      });
+    }
+  }
+} catch (err) {
+  console.error("Failed to load customized Pokémon DB:", err);
+}
+

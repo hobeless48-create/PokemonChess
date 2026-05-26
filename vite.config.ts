@@ -5,8 +5,11 @@ import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: '/PokeChess/', // Updated to match your exact repo name
+    base: '/PokeChess/',
     plugins: [react(), tailwindcss()],
+    build: {
+      outDir: 'docs', // Tells Vite to make a 'docs' folder instead of 'dist'
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

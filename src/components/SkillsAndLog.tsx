@@ -4,24 +4,33 @@
  */
 
 import React, { useState } from "react";
-import { PokemonEntity, BattleLogEntry, Skill } from "../types";
+import { PokemonEntity, BattleLogEntry, Skill, Pedestal } from "../types";
 import { DB } from "../data/pokemon";
-import { getSkillData } from "../utils/gameEngine";
+import { getSkillData, getAffectedCells, getSkillTargetType } from "../utils/gameEngine";
+import { STATUS_META, SCOL } from "../data/typeCharts";
 
 interface SkillsAndLogProps {
   selectedCell: { col: number; row: number } | null;
   pokemon: PokemonEntity[];
   logs: BattleLogEntry[];
   actionMode: any;
+  hoveredCell: { col: number; row: number } | null;
+  pedestals: Pedestal[];
+  weather: string | null;
+  boardSize?: number;
 }
 
 export const SkillsAndLog: React.FC<SkillsAndLogProps> = ({
   selectedCell,
   pokemon,
   logs,
-  actionMode
+  actionMode,
+  hoveredCell,
+  pedestals,
+  weather,
+  boardSize = 11
 }) => {
-  const [activeTab, setActiveTab] = useState<"skill" | "log">("skill");
+  const [activeTab, setActiveTab] = useState<"skill" | "status" | "log">("skill");
 
   // Determine selected pokemon
   const pkMatch = selectedCell
@@ -34,7 +43,7 @@ export const SkillsAndLog: React.FC<SkillsAndLogProps> = ({
     ? (typeof actionMode.skillIdx !== "undefined" ? actionMode.skillIdx : 0)
     : 0;
 
-  const skillList: Skill[] = db
+  const skillList: Skill[] = pkMatch?.customSkills || (db
     ? (Array.isArray(db.skills) && db.skills.length > 0
         ? db.skills
         : [{
@@ -47,7 +56,54 @@ export const SkillsAndLog: React.FC<SkillsAndLogProps> = ({
             statusChanceValue: db.statusChanceValue,
             skillEffect: db.skillEffect
           }])
-    : [];
+    : []);
+
+  const getCalculatedCost = (sk: Skill, idx: number) => {
+    if (!pkMatch || !db) return sk.skillCost || 2;
+    let cost = sk.skillCost || db.skillCost || 2;
+    if (pkMatch.heldItem === "Miracle Seed" && !pkMatch.hasUsedSkill) {
+      cost = Math.max(0, cost - 1);
+    }
+    
+    const isChosen = actionMode?.type === "skill" && actionMode?.pokeId === pkMatch.id && actionMode?.skillIdx === idx;
+    const isWeatherSkill = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(sk.skillName);
+    const targetType = getSkillTargetType(sk, db);
+    const isInstant = (
+      sk.skillDesc === "All" ||
+      targetType === "self" ||
+      targetType === "all_allies" ||
+      targetType === "all_ice" ||
+      sk.skillDesc?.toLowerCase() === "self" ||
+      isWeatherSkill
+    ) && sk.skillName !== "Transform";
+
+    let hasPressureModifier = false;
+    if (isInstant) {
+      if (sk.skillName === "Powder Snow") {
+        hasPressureModifier = pokemon.some(p => {
+          if (p.player === pkMatch.player || p.fainted) return false;
+          const pDb = DB[p.species];
+          return pDb && pDb.ability === "Pressure" && !p.pressureTriggered;
+        });
+      }
+    } else {
+      const targetCell = (isChosen && hoveredCell) ? hoveredCell : null;
+      if (targetCell) {
+        const affected = getAffectedCells(pkMatch, sk, idx, targetCell, pokemon, pedestals, boardSize);
+        hasPressureModifier = pokemon.some(p => {
+          if (p.player === pkMatch.player || p.fainted) return false;
+          const pDb = DB[p.species];
+          if (!pDb || pDb.ability !== "Pressure" || p.pressureTriggered) return false;
+          return affected.some(c => c.col === p.col && c.row === p.row);
+        });
+      }
+    }
+
+    if (hasPressureModifier) {
+      cost += 1;
+    }
+    return cost;
+  };
 
   // Describe pattern helper
   const getHumanRangeText = (desc: string) => {
@@ -105,7 +161,7 @@ export const SkillsAndLog: React.FC<SkillsAndLogProps> = ({
                         {skill.skillName} {isActive && <span className="text-[9px] font-normal text-amber-500 uppercase tracking-wider ml-1">(Selected)</span>}
                       </span>
                       <span className="font-mono text-[9px] bg-slate-900 px-1.5 py-0.5 rounded text-amber-400 font-extrabold">
-                        {skill.skillCost || db.skillCost || 2}⚡
+                        {getCalculatedCost(skill, idx)}⚡
                       </span>
                     </div>
                     <div className="text-xs text-gray-300 leading-relaxed font-sans mb-1.5 whitespace-pre-line">
@@ -114,11 +170,26 @@ export const SkillsAndLog: React.FC<SkillsAndLogProps> = ({
                     <div className="skill-pattern text-[10px] text-gray-400 bg-slate-950/85 p-1.5 rounded border border-slate-900 leading-tight">
                       🎯 <strong>Casting Matrix:</strong> {getHumanRangeText(skill.skillDesc || "")}
                     </div>
-                    {skill.statusChance && (
-                      <div className="chance-badge mt-1.5 self-start bg-[#4caf50] text-[#1a1a2e] font-black text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider leading-none select-none inline-block">
-                        ⚡ {skill.statusChance}: {Math.round((skill.statusChanceValue || 0.3) * 100)}% Chance
-                      </div>
-                    )}
+                    {skill.statusChance && (() => {
+                      const getStatusDurationDesc = (status: string) => {
+                        switch (status.toLowerCase()) {
+                          case "burn": return "2 turns max";
+                          case "freeze": return "1 turn";
+                          case "sleep": return "50% wake chance/turn";
+                          case "poison":
+                          case "toxic":
+                          case "paralysis":
+                          case "confuse":
+                          default:
+                            return "permanent";
+                        }
+                      };
+                      return (
+                        <div className="chance-badge mt-1.5 self-start bg-[#4caf50] text-[#1a1a2e] font-black text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider leading-none select-none inline-block">
+                          ⚡ {skill.statusChance}: {Math.round((skill.statusChanceValue || 0.3) * 100)}% Chance ({getStatusDurationDesc(skill.statusChance)})
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
@@ -142,6 +213,16 @@ export const SkillsAndLog: React.FC<SkillsAndLogProps> = ({
           Board Intel
         </button>
         <button
+          onClick={() => setActiveTab("status")}
+          className={`flex-1 py-1.5 text-center text-xs font-bold rounded-lg transition ${
+            activeTab === "status"
+              ? "bg-[#43a047] text-[#1a1a2e]"
+              : "text-gray-400 hover:text-gray-200"
+          }`}
+        >
+          Status Guide
+        </button>
+        <button
           onClick={() => setActiveTab("log")}
           className={`flex-1 py-1.5 text-center text-xs font-bold rounded-lg transition ${
             activeTab === "log"
@@ -149,7 +230,7 @@ export const SkillsAndLog: React.FC<SkillsAndLogProps> = ({
               : "text-gray-400 hover:text-gray-200"
           }`}
         >
-          Battle Log ({logs.length})
+          Log ({logs.length})
         </button>
       </div>
 
@@ -172,6 +253,27 @@ export const SkillsAndLog: React.FC<SkillsAndLogProps> = ({
             <div className="text-[10px] text-slate-400 italic">
               Tip: Clear conditions like Frost and Burn using Sitrus or Lum items from the shop overlay.
             </div>
+          </div>
+        ) : activeTab === "status" ? (
+          <div className="h-full overflow-y-auto text-[11px] text-gray-300 flex flex-col gap-2.5 font-sans leading-relaxed">
+            <h4 className="font-bold text-gray-200 uppercase tracking-widest text-[9px] pb-1 border-b border-slate-800">
+              Status Affliction Guide
+            </h4>
+            {Object.keys(STATUS_META).map(key => {
+              const meta = STATUS_META[key];
+              const color = SCOL[key] || "#7f8c8d";
+              return (
+                <div key={key} className="flex gap-2 items-start border-b border-slate-800/40 pb-1.5 last:border-b-0 last:pb-0">
+                  <span
+                    className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider text-slate-950 font-sans shrink-0"
+                    style={{ backgroundColor: color }}
+                  >
+                    {meta.label}
+                  </span>
+                  <p className="text-[10px] text-gray-300 font-medium leading-normal">{meta.desc}</p>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="log-box h-full overflow-y-auto pr-1 flex flex-col gap-2 font-mono text-[10px] bg-slate-950 p-2.5 rounded-lg border border-slate-800 shadow-inner">

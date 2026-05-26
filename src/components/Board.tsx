@@ -1,12 +1,8 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from "react";
 import { PokemonEntity, Pedestal } from "../types";
 import { DB } from "../data/pokemon";
 import { SCOL } from "../data/typeCharts";
+import { predictDamage } from "../utils/gameEngine";
 
 interface BoardProps {
   pokemon: PokemonEntity[];
@@ -15,6 +11,12 @@ interface BoardProps {
   highlightedCells: { col: number; row: number; type: "move" | "atk" | "atk-preview" | "skill-preview" }[];
   onCellClick: (col: number, row: number) => void;
   actionModeTargets?: { col: number; row: number }[];
+  onCellHover?: (col: number, row: number) => void;
+  onCellHoverEnd?: () => void;
+  actionMode?: any;
+  weather?: string | null;
+  hazards?: any[];
+  boardSize?: number;
 }
 
 export const Board: React.FC<BoardProps> = ({
@@ -23,7 +25,13 @@ export const Board: React.FC<BoardProps> = ({
   selectedCell,
   highlightedCells,
   onCellClick,
-  actionModeTargets = []
+  actionModeTargets = [],
+  onCellHover,
+  onCellHoverEnd,
+  actionMode,
+  weather = null,
+  hazards = [],
+  boardSize = 11
 }) => {
   const getHighlightType = (col: number, row: number): "move" | "atk" | "atk-preview" | "skill-preview" | null => {
     const found = highlightedCells.find(h => h.col === col && h.row === row);
@@ -34,7 +42,7 @@ export const Board: React.FC<BoardProps> = ({
     return actionModeTargets.some(t => t.col === col && t.row === row);
   };
 
-  const cols = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"];
+  const cols = Array.from({ length: boardSize }, (_, i) => String.fromCharCode(65 + i));
 
   return (
     <div className="board-section flex flex-col items-center bg-[#16213e] p-4 rounded-2xl border border-[#2a3a5a] shadow-xl">
@@ -48,7 +56,7 @@ export const Board: React.FC<BoardProps> = ({
       </div>
 
       <div className="flex flex-col gap-[2px]">
-        {Array.from({ length: 11 }, (_, rowIdx) => (
+        {Array.from({ length: boardSize }, (_, rowIdx) => (
           <div key={rowIdx} className="board-row flex items-center">
             {/* Row Number */}
             <span className="row-label w-8 text-xs font-bold text-gray-400 text-right pr-3 shrink-0">
@@ -56,7 +64,7 @@ export const Board: React.FC<BoardProps> = ({
             </span>
 
             {/* Column cells */}
-            {Array.from({ length: 11 }, (_, colIdx) => {
+            {Array.from({ length: boardSize }, (_, colIdx) => {
               const alternateDark = (colIdx + rowIdx) % 2 !== 0;
               const hl = getHighlightType(colIdx, rowIdx);
               const isSelected = selectedCell?.col === colIdx && selectedCell?.row === rowIdx;
@@ -102,8 +110,55 @@ export const Board: React.FC<BoardProps> = ({
                 <div
                   key={colIdx}
                   onClick={() => onCellClick(colIdx, rowIdx)}
+                  onMouseEnter={() => onCellHover?.(colIdx, rowIdx)}
+                  onMouseLeave={() => onCellHoverEnd?.()}
                   className={`w-10 h-10 flex items-center justify-center relative transition-all duration-100 shrink-0 ${cellBg} ${borderStyle} ${animationClass} ${extraOutline} hover:brightness-110`}
                 >
+                  {/* Damage / Healing prediction overlay */}
+                  {hl && (hl === "atk" || hl === "atk-preview" || hl === "skill-preview") && (() => {
+                    const actor = selectedCell ? pokemon.find(p => p.col === selectedCell.col && p.row === selectedCell.row && !p.fainted) : null;
+                    const target = pkMatch || pedMatch;
+                    if (actor && target) {
+                      const skillIdx = actionMode?.type === "skill" ? actionMode.skillIdx : undefined;
+                      const prediction = predictDamage(actor, target, skillIdx, pokemon, pedestals, weather);
+                      if (prediction.damage < 0) {
+                        return (
+                          <div className="absolute top-0 left-0 right-0 bg-emerald-950/90 text-emerald-300 text-[8px] font-black py-[1px] text-center border-b border-emerald-500/30 z-20 pointer-events-none rounded-t select-none leading-none">
+                            💚+{Math.abs(prediction.damage)}
+                          </div>
+                        );
+                      } else {
+                        return (
+                          <div className="absolute top-0 left-0 right-0 bg-red-950/90 text-red-300 text-[8px] font-black py-[1px] text-center border-b border-red-500/30 z-20 pointer-events-none rounded-t select-none leading-none">
+                            💥{prediction.damage}
+                          </div>
+                        );
+                      }
+                    }
+                    return null;
+                  })()}
+
+                  {/* Hazard graphic */}
+                  {(() => {
+                    const cellHazards = hazards?.filter(h => h.col === colIdx && h.row === rowIdx) || [];
+                    if (cellHazards.length > 0) {
+                      const hasSpikes = cellHazards.some(h => h.type === "spikes");
+                      const hasStealthRock = cellHazards.some(h => h.type === "stealthRock");
+                      
+                      let icon = "";
+                      if (hasSpikes && hasStealthRock) icon = "🕸️⛰️";
+                      else if (hasSpikes) icon = "🕸️";
+                      else if (hasStealthRock) icon = "⛰️";
+                      
+                      return (
+                        <div className="absolute bottom-1 left-1 text-[10px] pointer-events-none select-none z-5" title={cellHazards.map(h => `${h.type === "spikes" ? "Spikes" : "Stealth Rock"} (P${h.player}: ${h.duration}t)`).join(", ")}>
+                          {icon}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
                   {/* Pedestal graphic */}
                   {pedMatch && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center z-1 pointer-events-none select-none text-[8px] font-bold text-center leading-tight">

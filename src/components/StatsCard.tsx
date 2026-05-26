@@ -6,7 +6,8 @@
 import React, { useState } from "react";
 import { PokemonEntity, Pedestal, Skill } from "../types";
 import { DB } from "../data/pokemon";
-import { getModifiedStat, getSkillData } from "../utils/gameEngine";
+import { TCOL } from "../data/typeCharts";
+import { getModifiedStat, getSkillData, predictDamage, getAffectedCells, getSkillTargetType } from "../utils/gameEngine";
 
 interface StatsCardProps {
   selectedCell: { col: number; row: number } | null;
@@ -25,6 +26,8 @@ interface StatsCardProps {
   onToggleSkillMenu: (id: number) => void;
   weather: string | null;
   movePoints?: { [player: number]: number };
+  hoveredCell: { col: number; row: number } | null;
+  boardSize?: number;
 }
 
 export const StatsCard: React.FC<StatsCardProps> = ({
@@ -43,17 +46,163 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   skillMenuFor,
   onToggleSkillMenu,
   weather,
-  movePoints
+  movePoints,
+  hoveredCell,
+  boardSize = 11
 }) => {
   const [showStatBreakdown, setShowStatBreakdown] = useState<boolean>(false);
 
+  // Check if we can display a Combat Forecast
+  const actor = selectedCell ? pokemon.find(p => p.col === selectedCell.col && p.row === selectedCell.row && !p.fainted) : null;
+  
+  const getHoveredTarget = () => {
+    if (!hoveredCell) return null;
+    if (!actionMode || (actionMode.type !== "attack" && actionMode.type !== "skill")) return null;
+    const pkTarget = pokemon.find(p => p.col === hoveredCell.col && p.row === hoveredCell.row && !p.fainted);
+    const pedTarget = pedestals.find(pd => pd.col === hoveredCell.col && pd.row === hoveredCell.row);
+    return pkTarget || pedTarget;
+  };
+
+  const target = getHoveredTarget();
+
+  const renderCombatForecast = () => {
+    if (!actor || !target) return null;
+    const skillIdx = actionMode?.type === "skill" ? actionMode.skillIdx : undefined;
+    const isSkill = skillIdx !== undefined;
+    
+    // Call predict damage
+    const pred = predictDamage(actor, target, skillIdx, pokemon, pedestals, weather);
+    const isDefendingPedestal = !('species' in target);
+    const targetName = isDefendingPedestal ? `Player ${(target as Pedestal).player} Pedestal` : (target as PokemonEntity).species;
+    const skillName = isSkill ? (DB[actor.species]?.skills?.[skillIdx]?.skillName || "Skill") : "Melee Attack";
+
+    // Format type text
+    let typeEffectivenessText = "Neutral (1.0x)";
+    let typeColor = "text-gray-400 font-mono";
+    if (pred.typeMult > 0) {
+      typeEffectivenessText = `Super Effective (+${pred.typeMult} Dmg)`;
+      typeColor = "text-emerald-400 font-bold font-mono";
+    } else if (pred.typeMult < 0) {
+      typeEffectivenessText = `Not Very Effective (${pred.typeMult} Dmg)`;
+      typeColor = "text-rose-400 font-bold font-mono";
+    }
+
+    const isHeal = pred.damage < 0;
+
+    return (
+      <div className="combat-forecast bg-[#1a1c2e]/95 backdrop-blur-md border border-[#ff9800] rounded-2xl overflow-hidden shadow-2xl w-full mb-4 animate-fade-in relative z-30">
+        <div className="bg-[#ff9800] px-4 py-2 text-[#1a1a2e] font-black text-xs uppercase tracking-wider flex items-center justify-between">
+          <span>⚔️ Combat Forecast</span>
+          <span className="text-[9px] bg-slate-950 text-[#ff9800] font-mono px-1.5 py-0.5 rounded font-extrabold uppercase">
+            Live Preview
+          </span>
+        </div>
+
+        <div className="p-4 flex flex-col gap-2 text-xs text-gray-200">
+          <div className="flex justify-between items-center pb-1 border-b border-slate-800/80">
+            <span className="text-gray-400 font-semibold">Action Mode</span>
+            <span className="font-bold text-white bg-indigo-950/80 text-indigo-300 px-2 py-0.5 rounded text-[10px] border border-indigo-500/20">
+              {skillName}
+            </span>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <span className="text-gray-400">Attacker</span>
+            <span className="font-bold text-sky-400">{actor.species}</span>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <span className="text-gray-400">Target</span>
+            <span className="font-bold text-rose-400">{targetName}</span>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <span className="text-gray-400">Base Atk Power</span>
+            <span className="font-mono text-gray-100 font-bold">{pred.baseAtk}</span>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <span className="text-gray-400">Target Def Reduction</span>
+            <span className="font-mono text-gray-100 font-bold">-{pred.targetDef}</span>
+          </div>
+
+          {!isDefendingPedestal && (
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Type Vulnerability</span>
+              <span className={typeColor}>{typeEffectivenessText}</span>
+            </div>
+          )}
+
+          {pred.abilityBonus !== 0 && (
+            <div className="flex justify-between items-center text-emerald-400 font-semibold">
+              <span>Passive Ability Bonus</span>
+              <span className="font-mono">+{pred.abilityBonus}</span>
+            </div>
+          )}
+
+          {pred.tidalBellReduction > 0 && (
+            <div className="flex justify-between items-center text-rose-400 font-semibold">
+              <span>🔔 Tidal Bell Shield</span>
+              <span className="font-mono">-{pred.tidalBellReduction}</span>
+            </div>
+          )}
+
+          {pred.isElectricAbsorb && (
+            <div className="flex justify-between items-center text-emerald-400 font-bold uppercase tracking-wider text-[9px]">
+              <span>Volt Absorb Active</span>
+              <span>Heals Target</span>
+            </div>
+          )}
+
+          {pred.isWaterAbsorb && (
+            <div className="flex justify-between items-center text-emerald-400 font-bold uppercase tracking-wider text-[9px]">
+              <span>Water Absorb Active</span>
+              <span>Heals Target</span>
+            </div>
+          )}
+
+          {pred.isLevitateMiss && (
+            <div className="flex justify-between items-center text-rose-400 font-bold uppercase tracking-wider text-[9px]">
+              <span>Levitate Immune</span>
+              <span>0 Damage (Miss)</span>
+            </div>
+          )}
+
+          {pred.isDreamEaterMiss && (
+            <div className="flex justify-between items-center text-rose-400 font-bold uppercase tracking-wider text-[9px]">
+              <span>Target Not Asleep</span>
+              <span>0 Damage (Miss)</span>
+            </div>
+          )}
+
+          {pred.isSturdyTriggered && (
+            <div className="flex justify-between items-center text-yellow-400 font-bold uppercase tracking-wider text-[9px]">
+              <span>Sturdy Triggered</span>
+              <span>Survives with 1 HP</span>
+            </div>
+          )}
+
+          <div className="border-t border-slate-800/80 pt-2 mt-1 flex justify-between items-center">
+            <span className="text-xs font-bold text-gray-100">Projected Outcome</span>
+            <span className={`text-sm font-black font-sans leading-none ${isHeal ? "text-emerald-400" : "text-rose-400 animate-pulse"}`}>
+              {isHeal ? `💚 Heal +${Math.abs(pred.damage)} HP` : `💥 Deal ${pred.damage} Damage`}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (!selectedCell) {
     return (
-      <div className="stats-card bg-[#16213e] border border-slate-700 rounded-2xl overflow-hidden shadow-xl w-full p-6 text-center text-gray-400">
-        <span className="text-4xl block mb-2">🔍</span>
-        <h3 className="text-sm font-semibold tracking-wide uppercase text-gray-400 mb-1">Grid Telemetry</h3>
-        <p className="text-xs">Click on any Pokémon or pedestal to view interactive statistics and actions.</p>
-      </div>
+      <>
+        {renderCombatForecast()}
+        <div className="stats-card bg-[#16213e] border border-slate-700 rounded-2xl overflow-hidden shadow-xl w-full p-6 text-center text-gray-400">
+          <span className="text-4xl block mb-2">🔍</span>
+          <h3 className="text-sm font-semibold tracking-wide uppercase text-gray-400 mb-1">Grid Telemetry</h3>
+          <p className="text-xs">Click on any Pokémon or pedestal to view interactive statistics and actions.</p>
+        </div>
+      </>
     );
   }
 
@@ -64,35 +213,38 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   if (pedMatch) {
     const pct = Math.round((pedMatch.hp / pedMatch.maxHp) * 100);
     return (
-      <div className="stats-card bg-[#16213e] border border-slate-700 rounded-2xl overflow-hidden shadow-[#43a047]/10 w-full p-4">
-        <div className="flex items-center gap-3 mb-3">
-          <span className="text-2xl">🏛️</span>
-          <div>
-            <h3 className="text-base font-bold text-white leading-tight">Player {pedMatch.player} Pedestal</h3>
-            <span className="text-[10px] text-gray-400 uppercase font-mono tracking-wider">
-              Grid Position {String.fromCharCode(65 + col)}{row + 1}
-            </span>
+      <>
+        {renderCombatForecast()}
+        <div className="stats-card bg-[#16213e] border border-slate-700 rounded-2xl overflow-hidden shadow-[#43a047]/10 w-full p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-2xl">🏛️</span>
+            <div>
+              <h3 className="text-base font-bold text-white leading-tight">Player {pedMatch.player} Pedestal</h3>
+              <span className="text-[10px] text-gray-400 uppercase font-mono tracking-wider">
+                Grid Position {String.fromCharCode(65 + col)}{row + 1}
+              </span>
+            </div>
           </div>
-        </div>
 
-        <div className="flex justify-between items-center text-xs text-gray-300 mb-1">
-          <span>Shield Integrity</span>
-          <span className="font-bold">{pedMatch.hp} / {pedMatch.maxHp} HP</span>
-        </div>
+          <div className="flex justify-between items-center text-xs text-gray-300 mb-1">
+            <span>Shield Integrity</span>
+            <span className="font-bold">{pedMatch.hp} / {pedMatch.maxHp} HP</span>
+          </div>
 
-        <div className="hp-track-bar h-2 bg-slate-900 rounded-full overflow-hidden mb-2">
-          <div
-            className={`h-full transition-all duration-300 ${
-              pct < 33 ? "bg-red-500 animate-pulse" : pct < 66 ? "bg-amber-500" : "bg-[#4caf50]"
-            }`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+          <div className="hp-track-bar h-2 bg-slate-900 rounded-full overflow-hidden mb-2">
+            <div
+              className={`h-full transition-all duration-300 ${
+                pct < 33 ? "bg-red-500 animate-pulse" : pct < 66 ? "bg-amber-500" : "bg-[#4caf50]"
+              }`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
 
-        <p className="text-[11px] text-gray-400 leading-relaxed bg-[#0f0f1a] p-2.5 rounded-lg border border-slate-800">
-          The central Command link. If this pedestal is reduced to 0 HP and Player {pedMatch.player} has no alive units, they lose the game. Protect your pedestal!
-        </p>
-      </div>
+          <p className="text-[11px] text-gray-400 leading-relaxed bg-[#0f0f1a] p-2.5 rounded-lg border border-slate-800">
+            The central Command link. If this pedestal is reduced to 0 HP and Player {pedMatch.player} has no alive units, they lose the game. Protect your pedestal!
+          </p>
+        </div>
+      </>
     );
   }
 
@@ -100,20 +252,26 @@ export const StatsCard: React.FC<StatsCardProps> = ({
 
   if (!pkMatch) {
     return (
-      <div className="stats-card bg-[#16213e] border border-slate-700 rounded-2xl overflow-hidden shadow-xl w-full p-6 text-center text-gray-400">
-        <span className="text-4xl block mb-2">🌫️</span>
-        <h3 className="text-sm font-semibold tracking-wide uppercase text-gray-400 mb-1">Empty Terrain Cell</h3>
-        <p className="text-xs">Cell coordinates: {String.fromCharCode(65 + col)}{row + 1}. Tap a valid active token to command.</p>
-      </div>
+      <>
+        {renderCombatForecast()}
+        <div className="stats-card bg-[#16213e] border border-slate-700 rounded-2xl overflow-hidden shadow-xl w-full p-6 text-center text-gray-400">
+          <span className="text-4xl block mb-2">🌫️</span>
+          <h3 className="text-sm font-semibold tracking-wide uppercase text-gray-400 mb-1">Empty Terrain Cell</h3>
+          <p className="text-xs">Cell coordinates: {String.fromCharCode(65 + col)}{row + 1}. Tap a valid active token to command.</p>
+        </div>
+      </>
     );
   }
 
   const db = DB[pkMatch.species];
   if (!db) {
     return (
-      <div className="stats-card bg-[#16213e] border border-slate-700 rounded-2xl overflow-hidden w-full p-4 text-center">
-        <p className="text-xs text-red-400">Database Entry Stale/Missing error.</p>
-      </div>
+      <>
+        {renderCombatForecast()}
+        <div className="stats-card bg-[#16213e] border border-slate-700 rounded-2xl overflow-hidden w-full p-4 text-center">
+          <p className="text-xs text-red-400">Database Entry Stale/Missing error.</p>
+        </div>
+      </>
     );
   }
 
@@ -130,7 +288,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   const canAtk = isMyUnit && !isEggForm && energy >= 1;
 
   // Retrieve skill configuration lists
-  const skillList: Skill[] = Array.isArray(db.skills) && db.skills.length > 0
+  const skillList: Skill[] = pkMatch.customSkills || (Array.isArray(db.skills) && db.skills.length > 0
     ? db.skills
     : [{
         skillName: db.skillName || "Skill",
@@ -138,7 +296,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
         skillDmg: db.skillDmg,
         skillRaw: db.skillRaw,
         skillCost: db.skillCost || 2
-      }];
+      }]);
 
   const currentSkillIdx = actionMode && actionMode.type === "skill" && actionMode.pokeId === pkMatch.id
     ? (actionMode.skillIdx || 0)
@@ -146,8 +304,54 @@ export const StatsCard: React.FC<StatsCardProps> = ({
 
   const displaySkill = skillList[currentSkillIdx] || skillList[0];
 
-  const canUseSkill = (skObj: Skill) => {
-    const sc = skObj.skillCost || db.skillCost || 2;
+  const getCalculatedCost = (sk: Skill, idx: number) => {
+    let cost = sk.skillCost || db.skillCost || 2;
+    if (pkMatch.heldItem === "Miracle Seed" && !pkMatch.hasUsedSkill) {
+      cost = Math.max(0, cost - 1);
+    }
+    
+    const isChosen = actionMode?.type === "skill" && actionMode?.pokeId === pkMatch.id && actionMode?.skillIdx === idx;
+    const isWeatherSkill = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(sk.skillName);
+    const targetType = getSkillTargetType(sk, db);
+    const isInstant = (
+      sk.skillDesc === "All" ||
+      targetType === "self" ||
+      targetType === "all_allies" ||
+      targetType === "all_ice" ||
+      sk.skillDesc?.toLowerCase() === "self" ||
+      isWeatherSkill
+    ) && sk.skillName !== "Transform";
+
+    let hasPressureModifier = false;
+    if (isInstant) {
+      if (sk.skillName === "Powder Snow") {
+        hasPressureModifier = pokemon.some(p => {
+          if (p.player === pkMatch.player || p.fainted) return false;
+          const pDb = DB[p.species];
+          return pDb && pDb.ability === "Pressure" && !p.pressureTriggered;
+        });
+      }
+    } else {
+      const targetCell = (isChosen && hoveredCell) ? hoveredCell : null;
+      if (targetCell) {
+        const affected = getAffectedCells(pkMatch, sk, idx, targetCell, pokemon, pedestals, boardSize);
+        hasPressureModifier = pokemon.some(p => {
+          if (p.player === pkMatch.player || p.fainted) return false;
+          const pDb = DB[p.species];
+          if (!pDb || pDb.ability !== "Pressure" || p.pressureTriggered) return false;
+          return affected.some(c => c.col === p.col && c.row === p.row);
+        });
+      }
+    }
+
+    if (hasPressureModifier) {
+      cost += 1;
+    }
+    return cost;
+  };
+
+  const canUseSkill = (skObj: Skill, idx: number) => {
+    const sc = getCalculatedCost(skObj, idx);
     const isNewWeatherActive = weather === "Harsh Sunlight" || weather === "Heavy Rain" || weather === "Strong Winds";
     const isWeatherMove = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(skObj.skillName);
     if (isNewWeatherActive && isWeatherMove) {
@@ -166,21 +370,23 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   const totalDef = getModifiedStat(pkMatch, "def", pokemon, { weather });
 
   // Status visual map
-  const getStatusName = (st: string) => {
+  const getStatusName = (st: string, statusTurns?: number) => {
     const map: { [k: string]: string } = {
-      burn: "🔥 Burn",
-      poison: "☠️ Poison",
-      toxic: "☣️ Toxic",
-      paralysis: "⚡ Paralysis",
-      sleep: "💤 Sleep",
-      freeze: "❄️ Freeze",
-      confuse: "💫 Confuse"
+      burn: `🔥 Burn (${2 - (statusTurns || 0)}t remaining)`,
+      poison: "☠️ Poison (permanent)",
+      toxic: "☣️ Toxic (permanent)",
+      paralysis: "⚡ Paralysis (permanent)",
+      sleep: "💤 Sleep (50% wake chance)",
+      freeze: "❄️ Freeze (1t remaining)",
+      confuse: "💫 Confuse (permanent)"
     };
     return map[st] || st;
   };
 
   return (
-    <div className="stats-card bg-[#16213e] border border-[#43a047] rounded-2xl overflow-hidden shadow-lg w-full flex flex-col">
+    <>
+      {renderCombatForecast()}
+      <div className="stats-card bg-[#16213e] border border-[#43a047] rounded-2xl overflow-hidden shadow-lg w-full flex flex-col">
       <div className="stats-header bg-[#43a047] px-4 py-2 text-[#1a1a2e] font-bold text-sm uppercase tracking-wider flex justify-between items-center">
         <span>Active Combat Record</span>
         <span className="text-[10px] bg-emerald-900 text-white font-extrabold px-1.5 py-0.5 rounded leading-none">
@@ -207,11 +413,11 @@ export const StatsCard: React.FC<StatsCardProps> = ({
               Class: {db.cls} · Sector {String.fromCharCode(65 + col)}{row + 1}
             </span>
             <div className="flex flex-wrap gap-1 mt-1">
-              <span className="text-[9px] font-bold text-white px-1.5 py-0.5 rounded" style={{ backgroundColor: '#2196f3' }}>
+              <span className="text-[9px] font-bold text-white px-1.5 py-0.5 rounded animate-pulse" style={{ backgroundColor: TCOL[db.t1] || '#7f8c8d' }}>
                 {db.t1}
               </span>
               {db.t2 && (
-                <span className="text-[9px] font-bold text-white px-1.5 py-0.5 rounded" style={{ backgroundColor: '#9c27b0' }}>
+                <span className="text-[9px] font-bold text-white px-1.5 py-0.5 rounded animate-pulse" style={{ backgroundColor: TCOL[db.t2] || '#7f8c8d' }}>
                   {db.t2}
                 </span>
               )}
@@ -266,7 +472,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
           <div className="flex justify-between items-center">
             <span className="text-gray-400 font-medium">Status Condition</span>
             {pkMatch.status ? (
-              <span className="text-red-400 font-bold uppercase">{getStatusName(pkMatch.status)}</span>
+              <span className="text-red-400 font-bold uppercase">{getStatusName(pkMatch.status, pkMatch.statusTurns)}</span>
             ) : (
               <span className="text-gray-500">None</span>
             )}
@@ -372,8 +578,8 @@ export const StatsCard: React.FC<StatsCardProps> = ({
                       Casting Menu
                     </span>
                     {skillList.map((sk, idx) => {
-                      const cost = sk.skillCost || db.skillCost || 2;
-                      const activeSkillAllowed = canUseSkill(sk);
+                      const cost = getCalculatedCost(sk, idx);
+                      const activeSkillAllowed = canUseSkill(sk, idx);
                       const isChosen = actionMode?.type === "skill" && actionMode?.pokeId === pkMatch.id && actionMode?.skillIdx === idx;
                       const isConfirming = actionMode?.type === "skill" && actionMode?.pokeId === pkMatch.id && actionMode?.confirmingIdx === idx;
 
@@ -409,12 +615,12 @@ export const StatsCard: React.FC<StatsCardProps> = ({
               </div>
             ) : (
               <button
-                disabled={!canUseSkill(displaySkill)}
+                disabled={!canUseSkill(displaySkill, currentSkillIdx)}
                 onClick={() => onSelectAction("skill", pkMatch.id, 0)}
                 className={`py-2 rounded-lg border flex flex-col items-center justify-center transition leading-normal outline-none focus:outline-none ${
                   actionMode?.type === "skill" && actionMode?.pokeId === pkMatch.id
                     ? "bg-indigo-500/20 border-indigo-400 text-indigo-300"
-                    : canUseSkill(displaySkill)
+                    : canUseSkill(displaySkill, currentSkillIdx)
                     ? "bg-[#534ab7]/10 hover:bg-[#534ab7]/25 border-[#534ab7]/40 text-[#b5b4eb] cursor-pointer"
                     : "bg-slate-800/40 border-slate-800 text-gray-500 cursor-not-allowed opacity-55"
                 }`}
@@ -424,7 +630,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
                     ? "Confirm Cast"
                     : `✨ ${displaySkill?.skillName || "Skill"}`}
                 </span>
-                <span className="text-[9px] opacity-75 font-mono">{displaySkill?.skillCost || db.skillCost || 2}⚡ Cost</span>
+                <span className="text-[9px] opacity-75 font-mono">{getCalculatedCost(displaySkill, currentSkillIdx)}⚡ Cost</span>
               </button>
             )}
           </div>
@@ -456,5 +662,6 @@ export const StatsCard: React.FC<StatsCardProps> = ({
         )}
       </div>
     </div>
+  </>
   );
 };
