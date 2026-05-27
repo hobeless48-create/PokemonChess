@@ -4,6 +4,7 @@
  */
 
 import { PokemonDBEntry, Skill } from "../types";
+import { DB_GEN3_6 } from "./pokemon_gen3_6";
 
 function S(name: string, desc: string, dmg: number = 0, extra: Partial<Skill> = {}): Skill {
   let defaultRaw = extra.skillRaw;
@@ -322,7 +323,7 @@ export const DB: { [species: string]: PokemonDBEntry } = {
   "Alolan Vulpix": Pkmn(37.2, ["Ice"], 2, [7, 2, 1], "Support",
     "Snow Warning - When deployed, set Hail Storm for 5 turns",
     [S("Powder Snow", "Line(2)(1)", 1, { statusChance: "freeze", statusChanceValue: 0.3, skillRaw: "Powder Snow (Line(2)(1): Deal 1 Ice damage, 30% chance to Freeze target for 1 turn)" })],
-    { base: true, evoCost: 6, evoTo: "Alolan Ninetales", color: "#8CD16D" }
+    { base: true, evoCost: 6, evoTo: "Alolan Ninetales", color: "#8CD16D", img: "https://img.pokemondb.net/artwork/avif/vulpix-alolan.avif" }
   ),
   "Alolan Ninetales": Pkmn(38.2, ["Ice", "Fairy"], 3, [14, 4, 2], "Support",
     "Snow Warning - When deployed, set Hail Storm for 5 turns",
@@ -330,7 +331,7 @@ export const DB: { [species: string]: PokemonDBEntry } = {
       S("Ice Beam", "Line(3)(1)", 4, { statusChance: "freeze", statusChanceValue: 0.3, skillRaw: "Ice Beam (Line(3)(1)): Deal 4 Ice damage, 30% chance to Freeze target for 1 turn." }),
       S("Hail", "Self", 0, { skillCost: 2, skillRaw: "Hail (Self): Summons Hail Storm weather on the zone for 5 turns." })
     ],
-    { evoFrom: "Alolan Vulpix", color: "#8CD16D" }
+    { evoFrom: "Alolan Vulpix", color: "#8CD16D", img: "https://img.pokemondb.net/artwork/avif/ninetales-alolan.avif" }
   ),
 
   // --- NORMAL/FAIRY LINE (JIGGLYPUFF) ---
@@ -1615,6 +1616,7 @@ export const DB: { [species: string]: PokemonDBEntry } = {
     [],
     { base: true, color: "#00bcd4" }
   ),
+  ...DB_GEN3_6
 };
 
 // Post-process DB to scale evolution costs for a longer 20-turn game duration

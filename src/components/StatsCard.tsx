@@ -431,12 +431,45 @@ export const StatsCard: React.FC<StatsCardProps> = ({
         <div>
           <div className="flex justify-between items-center text-xs text-gray-300 leading-none mb-1">
             <span>Life Force</span>
-            <span className="font-bold">{pkMatch.hp} / {pkMatch.maxHp} HP</span>
+            <span className="font-bold flex items-center gap-1.5">
+              {pkMatch.hp} / {pkMatch.maxHp} HP
+              {pkMatch.shield !== undefined && pkMatch.shield > 0 && (
+                <span className="text-sky-400 font-extrabold text-[10px] bg-sky-950/80 px-1.5 py-0.5 rounded border border-sky-500/30 flex items-center gap-0.5">
+                  🛡️ +{pkMatch.shield}
+                </span>
+              )}
+            </span>
           </div>
           <div className="hp-bar-big h-2 bg-slate-900 rounded-full overflow-hidden">
             <div className={`h-full ${remainingColor} transition-all duration-300`} style={{ width: `${pct}%` }} />
           </div>
         </div>
+
+        {/* Custom Gauge Bar */}
+        {pkMatch.customBar && (
+          <div>
+            <div className="flex justify-between items-center text-xs text-gray-300 leading-none mb-1">
+              <span className="flex items-center gap-1">
+                {pkMatch.customBar.type === "Happiness" ? "💖 Happiness" :
+                 pkMatch.customBar.type === "Frost" ? "❄️ Frost" :
+                 "💢 Angry"}
+              </span>
+              <span className="font-bold font-mono">
+                {pkMatch.customBar.value} / {pkMatch.customBar.max}
+              </span>
+            </div>
+            <div className="h-2 bg-slate-900 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-300 ${
+                  pkMatch.customBar.type === "Happiness" ? "bg-pink-500" :
+                  pkMatch.customBar.type === "Frost" ? "bg-sky-400" :
+                  "bg-red-500"
+                }`}
+                style={{ width: `${(pkMatch.customBar.value / pkMatch.customBar.max) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Exp progress meter - or hatch pool details */}
         {pkMatch.isEgg ? (
@@ -635,6 +668,32 @@ export const StatsCard: React.FC<StatsCardProps> = ({
                 <span className="text-[9px] opacity-75 font-mono">{getCalculatedCost(displaySkill, currentSkillIdx)}⚡ Cost</span>
               </button>
             )}
+          </div>
+        )}
+
+        {/* Active Ability Button */}
+        {isMyUnit && ["Mesprit", "Palkia", "Cryogonal"].includes(pkMatch.species) && (
+          <div className="mt-2">
+            <button
+              disabled={pkMatch.activeAbilityUsed}
+              onClick={() => onSelectAction("active_ability" as any, pkMatch.id)}
+              className={`w-full py-2.5 rounded-lg border flex flex-col items-center justify-center transition leading-normal outline-none focus:outline-none ${
+                !pkMatch.activeAbilityUsed
+                  ? "bg-amber-500/10 hover:bg-amber-500/25 border-amber-500/50 text-amber-400 cursor-pointer shadow-md shadow-amber-500/5 font-extrabold"
+                  : "bg-slate-800/40 border-slate-800 text-gray-500 cursor-not-allowed opacity-55"
+              }`}
+            >
+              <span className="text-xs font-black uppercase tracking-wider font-sans">
+                ⭐ Active Ability: {
+                  pkMatch.species === "Mesprit" ? "Spiritual Buff (1⚡)" :
+                  pkMatch.species === "Palkia" ? "Spatial Control (0⚡)" :
+                  "Shield Barrier (0⚡)"
+                }
+              </span>
+              <span className="text-[9px] opacity-75 font-mono">
+                {pkMatch.activeAbilityUsed ? "Already Used This Turn" : "Click to select target"}
+              </span>
+            </button>
           </div>
         )}
 

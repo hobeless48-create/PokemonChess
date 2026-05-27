@@ -647,6 +647,16 @@ export function getModifiedStat(p: PokemonEntity, stat: "atk" | "def", pokemonLi
 
   let base = stat === 'atk' ? p.atk : p.def;
 
+  // Dark Aura ability
+  if (pokemonList && pokemonList.length > 0) {
+    const hasActiveYveltal = pokemonList.some(other => {
+      return other.species === "Yveltal" && !other.fainted;
+    });
+    if (hasActiveYveltal && (db.t1 === "Dark" || db.t2 === "Dark" || db.t1 === "Flying" || db.t2 === "Flying" || p.reflectedType === "Dark" || p.reflectedType === "Flying")) {
+      base += 2;
+    }
+  }
+
   // Download ability for Porygon2
   if (db.ability === "Download" && stat === "def" && pokemonList && pokemonList.length > 0) {
     const enemies = pokemonList.filter(other => other.player !== p.player && !other.fainted);
@@ -1076,7 +1086,8 @@ export function predictDamage(
   pokemonList: PokemonEntity[],
   pedestals: Pedestal[],
   weather: string | null,
-  terrain?: string | null
+  terrain?: string | null,
+  isCrit: boolean = false
 ): {
   damage: number;
   baseAtk: number;
@@ -1179,7 +1190,11 @@ export function predictDamage(
       if (actorDb.ability === "Torrent" && (actorDb.t1 === "Water" || actorDb.t2 === "Water")) abilityBonus += 1;
     }
 
-    damage = Math.floor(baseAtk / 2) + typeMult + abilityBonus - targetDef;
+    const effectiveDef = isCrit ? 0 : targetDef;
+    damage = Math.floor(baseAtk / 2) + typeMult + abilityBonus - effectiveDef;
+    if (isCrit) {
+      damage += 2;
+    }
     if (actor.status === "burn") {
       damage = damage - 1;
     }
@@ -1315,7 +1330,11 @@ export function predictDamage(
 
     typeMult = typeBonus(actor, tg, weather);
     targetDef = getModifiedStat(tg, "def", pokemonList, { bySkill: true, weather, terrain });
-    damage = rawDmg + typeMult + abilityBonus - targetDef;
+    const effectiveDef = isCrit ? 0 : targetDef;
+    damage = rawDmg + typeMult + abilityBonus - effectiveDef;
+    if (isCrit) {
+      damage += 2;
+    }
 
     if (skill.skillName === "Sonic Boom") damage = 2;
     if (skill.skillName === "Psycutter") damage += targetDef;

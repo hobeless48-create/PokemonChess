@@ -18,6 +18,26 @@ interface BoardProps {
   terrain?: string | null;
   hazards?: any[];
   boardSize?: number;
+  onCellRightClick?: (col: number, row: number) => void;
+  radiusPreviewCells?: { col: number; row: number }[];
+}
+
+function getEmojiFor(species: string): string | null {
+  const name = species.toLowerCase();
+  if (name === "zygarde cell") return "🟢";
+  if (name === "zygarde reassembly unit") return "📦";
+  if (name === "clear bell" || name === "tidal bell") return "🔔";
+  if (name.includes("pillar")) return "🪨";
+  
+  const db = DB[species];
+  if (!db || db.isSummon) {
+    if (db?.cls === "Defense" || name.includes("rock") || name.includes("stone") || name.includes("shield")) return "🪨";
+    return "👾";
+  }
+  if (!db.img || db.img.trim() === "") {
+    return "👾";
+  }
+  return null;
 }
 
 export const Board: React.FC<BoardProps> = ({
@@ -33,7 +53,9 @@ export const Board: React.FC<BoardProps> = ({
   weather = null,
   terrain = null,
   hazards = [],
-  boardSize = 11
+  boardSize = 11,
+  onCellRightClick,
+  radiusPreviewCells = []
 }) => {
   const getHighlightType = (col: number, row: number): "move" | "atk" | "atk-preview" | "skill-preview" | null => {
     const found = highlightedCells.find(h => h.col === col && h.row === row);
@@ -71,6 +93,7 @@ export const Board: React.FC<BoardProps> = ({
               const hl = getHighlightType(colIdx, rowIdx);
               const isSelected = selectedCell?.col === colIdx && selectedCell?.row === rowIdx;
               const isTargSelected = isTargetSelected(colIdx, rowIdx);
+              const isRadiusPreview = radiusPreviewCells.some(c => c.col === colIdx && c.row === rowIdx);
 
               const pkMatch = pokemon.find(p => p.col === colIdx && p.row === rowIdx && !p.fainted);
               const pedMatch = pedestals.find(pd => pd.col === colIdx && pd.row === rowIdx);
@@ -101,6 +124,11 @@ export const Board: React.FC<BoardProps> = ({
                 animationClass = "animate-pulse";
               }
 
+              if (isRadiusPreview) {
+                cellBg = "bg-red-600/70 cursor-pointer shadow-[0_0_20px_rgba(239,68,68,0.95),inset_0_0_12px_rgba(239,68,68,0.6)] border-2 border-red-400 z-10 scale-[0.98]";
+                animationClass = "animate-pulse";
+              }
+
               let extraOutline = "";
               if (isSelected) {
                 extraOutline = "outline outline-3 outline-[#ffd700] outline-offset-[-2px] z-10";
@@ -112,6 +140,10 @@ export const Board: React.FC<BoardProps> = ({
                 <div
                   key={colIdx}
                   onClick={() => onCellClick(colIdx, rowIdx)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    onCellRightClick?.(colIdx, rowIdx);
+                  }}
                   onMouseEnter={() => onCellHover?.(colIdx, rowIdx)}
                   onMouseLeave={() => onCellHoverEnd?.()}
                   className={`w-10 h-10 flex items-center justify-center relative transition-all duration-100 shrink-0 ${cellBg} ${borderStyle} ${animationClass} ${extraOutline} hover:brightness-110`}
@@ -180,13 +212,25 @@ export const Board: React.FC<BoardProps> = ({
                           : "bg-red-950/80 border-[#ef5350] text-[#ef5350]"
                       }`}
                     >
-                      {/* Sprite icon */}
-                      <img
-                        src={DB[pkMatch.species]?.img}
-                        alt={pkMatch.species}
-                        referrerPolicy="no-referrer"
-                        className="w-[85%] h-[85%] object-contain select-none pointer-events-none filter drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]"
-                      />
+                      {/* Sprite icon or Emoji fallback */}
+                      {(() => {
+                        const emoji = getEmojiFor(pkMatch.species);
+                        if (emoji) {
+                          return (
+                            <span className="text-sm select-none pointer-events-none leading-none mt-[-2px]">
+                              {emoji}
+                            </span>
+                          );
+                        }
+                        return (
+                          <img
+                            src={DB[pkMatch.species]?.img}
+                            alt={pkMatch.species}
+                            referrerPolicy="no-referrer"
+                            className="w-[85%] h-[85%] object-contain select-none pointer-events-none filter drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]"
+                          />
+                        );
+                      })()}
 
                       {/* Micro health gauge */}
                       {(() => {

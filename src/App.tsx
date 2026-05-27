@@ -440,7 +440,8 @@ export default function App() {
           rotation: 0,
           hatchProgress: 0,
           skillUses: {},
-          skillCooldowns: {}
+          skillCooldowns: {},
+          customBar: getCustomBarForSpecies(species)
         };
       };
 
@@ -680,7 +681,8 @@ export default function App() {
         rotation: 0,
         hatchProgress: 0,
         skillUses: {},
-        skillCooldowns: {}
+        skillCooldowns: {},
+        customBar: getCustomBarForSpecies(species)
       };
     };
 
@@ -756,6 +758,261 @@ export default function App() {
     }
   };
 
+  const [radiusPreviewCenter, setRadiusPreviewCenter] = useState<{ col: number; row: number; radius: number } | null>(null);
+
+  const handleCellRightClick = (col: number, row: number) => {
+    if (radiusPreviewCenter && radiusPreviewCenter.col === col && radiusPreviewCenter.row === row) {
+      const nextRadius = radiusPreviewCenter.radius + 1;
+      if (nextRadius > 3) {
+        setRadiusPreviewCenter(null);
+      } else {
+        setRadiusPreviewCenter({ col, row, radius: nextRadius });
+      }
+    } else {
+      setRadiusPreviewCenter({ col, row, radius: 1 });
+    }
+  };
+
+  const getRadiusPreviewCells = () => {
+    if (!radiusPreviewCenter) return [];
+    const cells = adjCells(radiusPreviewCenter.col, radiusPreviewCenter.row, radiusPreviewCenter.radius, true, gameConfig.boardSize);
+    cells.push({ col: radiusPreviewCenter.col, row: radiusPreviewCenter.row });
+    return cells;
+  };
+
+  const getCustomBarForSpecies = (species: string): PokemonEntity["customBar"] => {
+    const db = DB[species];
+    if (!db) return null;
+    const isFairy = db.t1 === "Fairy" || db.t2 === "Fairy";
+    const isIce = db.t1 === "Ice" || db.t2 === "Ice";
+    const isFighting = db.t1 === "Fighting" || db.t2 === "Fighting";
+    if (isFairy) return { type: "Happiness", value: 0, max: 20 };
+    if (isIce) return { type: "Frost", value: 0, max: 20 };
+    if (isFighting) return { type: "Angry", value: 0, max: 20 };
+    return null;
+  };
+
+  const getEffectiveAccuracy = (actor: PokemonEntity, baseAccuracy: number): number => {
+    let accMod = 0;
+    if (actor.modifiers) {
+      actor.modifiers.forEach(m => {
+        if (m.stat === "accuracy") accMod += m.amount;
+      });
+    }
+    if (accMod >= 0) return baseAccuracy;
+    const stage = Math.max(-4, accMod);
+    let cap = 100;
+    if (stage === -1) cap = 80;
+    else if (stage === -2) cap = 65;
+    else if (stage === -3) cap = 55;
+    else if (stage === -4) cap = 50;
+    return Math.min(baseAccuracy, cap);
+  };
+
+  const checkAccuracy = (actor: PokemonEntity, skill: Skill | undefined): { isHit: boolean; roll: number; threshold: number; chance: number } => {
+    let baseAccuracy = 100;
+    if (skill) {
+      if (typeof skill.accuracy === "number") baseAccuracy = skill.accuracy;
+      else if (skill.skillName === "Guillotine") baseAccuracy = 50;
+      else if (skill.skillName === "High Jump Kick") baseAccuracy = 85;
+    }
+    const effectiveAccuracy = getEffectiveAccuracy(actor, baseAccuracy);
+    const roll = Math.floor(Math.random() * 20) + 1;
+    const threshold = 20 - Math.round(effectiveAccuracy / 5);
+    const isHit = roll > threshold;
+    return { isHit, roll, threshold, chance: effectiveAccuracy / 100 };
+  };
+
+  const checkCriticalHit = (actor: PokemonEntity, target: PokemonEntity, skill: Skill | undefined, pokemonList: PokemonEntity[]): { isCrit: boolean; roll?: number; threshold?: number } => {
+    const targetDb = DB[target.species];
+    if (targetDb && (targetDb.ability === "Shell Armor" || targetDb.ability === "Battle Armor")) {
+      return { isCrit: false };
+    }
+    let threshold: number | null = null;
+    let hasCritMention = false;
+    if (skill) {
+      const desc = skill.skillDesc?.toLowerCase() || "";
+      if (desc.includes("crit on 14+")) {
+        threshold = 13;
+        hasCritMention = true;
+      } else if (desc.includes("crit on 15+")) {
+        threshold = 14;
+        hasCritMention = true;
+      } else if (desc.includes("crit on 16+")) {
+        threshold = 15;
+        hasCritMention = true;
+      } else if (desc.includes("high crit chance") || desc.includes("high critical rate") || desc.includes("critical")) {
+        threshold = 8;
+        hasCritMention = true;
+      }
+    }
+    const actorDb = DB[actor.species];
+    const hasScopeLens = actor.heldItem === "Scope Lens";
+    const hasSuperLuck = actorDb?.ability === "Super Luck";
+    const hasSniper = actorDb?.ability === "Sniper";
+    if (hasScopeLens || hasSuperLuck || hasSniper) {
+      if (threshold === null || threshold > 8) threshold = 8;
+      hasCritMention = true;
+    }
+    if (hasCritMention && threshold !== null) {
+      const roll = Math.floor(Math.random() * 20) + 1;
+      return { isCrit: roll > threshold, roll, threshold };
+    }
+    return { isCrit: false };
+  };
+
+  const resolvePushPull = (actor: PokemonEntity, target: PokemonEntity, pushAmount: number, pullAmount: number, list: PokemonEntity[], peds: Pedestal[], boardSize: number = 11): { col: number; row: number; moved: boolean } => {
+    if (pushAmount <= 0 && pullAmount <= 0) return { col: target.col, row: target.row, moved: false };
+    const colDist = target.col - actor.col;
+    const rowDist = target.row - actor.row;
+    if (colDist === 0 && rowDist === 0) return { col: target.col, row: target.row, moved: false };
+    let axis: "vertical" | "horizontal" = "vertical";
+    if (Math.abs(colDist) === 0) axis = "vertical";
+    else if (Math.abs(rowDist) === 0) axis = "horizontal";
+    else axis = Math.abs(rowDist) <= Math.abs(colDist) ? "vertical" : "horizontal";
+    let stepCol = 0, stepRow = 0;
+    if (pushAmount > 0) {
+      if (axis === "vertical") stepRow = rowDist > 0 ? 1 : -1;
+      else stepCol = colDist > 0 ? 1 : -1;
+    } else {
+      if (axis === "vertical") stepRow = rowDist > 0 ? -1 : 1;
+      else stepCol = colDist > 0 ? -1 : 1;
+    }
+    let currentCol = target.col, currentRow = target.row;
+    const steps = pushAmount > 0 ? pushAmount : pullAmount;
+    let moved = false;
+    for (let s = 0; s < steps; s++) {
+      const nextCol = currentCol + stepCol;
+      const nextRow = currentRow + stepRow;
+      if (nextCol < 0 || nextCol >= boardSize || nextRow < 0 || nextRow >= boardSize) break;
+      const obsUnit = list.find(p => p.col === nextCol && p.row === nextRow && !p.fainted && p.id !== target.id);
+      const obsPed = peds.find(p => p.col === nextCol && p.row === nextRow);
+      if (obsUnit || obsPed) break;
+      if (pullAmount > 0) {
+        const dist = Math.abs(nextCol - actor.col) + Math.abs(nextRow - actor.row);
+        if (dist === 0) break;
+        const currDist = Math.abs(currentCol - actor.col) + Math.abs(currentRow - actor.row);
+        if (currDist === 1) break;
+      }
+      currentCol = nextCol;
+      currentRow = nextRow;
+      moved = true;
+    }
+    return { col: currentCol, row: currentRow, moved };
+  };
+
+  const applyStatusEffect = (p: PokemonEntity, status: string, turns: number = 0): boolean => {
+    let finalStatus = status;
+    if (finalStatus === "paralyze") finalStatus = "paralysis";
+    if (!canInflictStatus(p, finalStatus)) return false;
+    
+    // Freeze roll conversion for Ice types
+    const pDb = DB[p.species];
+    if (finalStatus === "freeze" && pDb && (pDb.t1 === "Ice" || pDb.t2 === "Ice")) {
+      if (p.customBar && p.customBar.type === "Frost") {
+        p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 5);
+        addLog(`❄️ Freeze check converted! ${p.species} gained +5 Frost instead of freeze.`, "sys");
+      }
+      return false;
+    }
+
+    if (p.heldItem) {
+      let cured = false;
+      if (p.heldItem === "Lum Berry") cured = true;
+      else if (p.heldItem === "Cheri Berry" && finalStatus === "paralysis") cured = true;
+      else if (p.heldItem === "Chesto Berry" && finalStatus === "sleep") cured = true;
+      else if (p.heldItem === "Pecha Berry" && (finalStatus === "poison" || finalStatus === "toxic")) cured = true;
+      else if (p.heldItem === "Rawst Berry" && finalStatus === "burn") cured = true;
+      else if (p.heldItem === "Aspear Berry" && finalStatus === "freeze") cured = true;
+      else if (p.heldItem === "Persim Berry" && finalStatus === "confuse") cured = true;
+      else if (p.heldItem === "Mental Herb" && (finalStatus === "confuse" || finalStatus === "paralysis" || finalStatus === "sleep" || finalStatus === "freeze")) cured = true;
+      if (cured) {
+        addLog(`🍃 ${p.species}'s held ${p.heldItem} was automatically consumed to cure ${finalStatus.toUpperCase()}!`, "heal");
+        p.heldItem = null;
+        p.status = null;
+        return false;
+      }
+    }
+    p.status = finalStatus;
+    p.statusTurns = turns;
+    return true;
+  };
+
+  const gainHappiness = (p: PokemonEntity, amount: number, list: PokemonEntity[]) => {
+    if (!p.customBar || p.customBar.type !== "Happiness") return;
+    const oldVal = p.customBar.value;
+    p.customBar.value = Math.min(p.customBar.max, p.customBar.value + amount);
+    const actualGain = p.customBar.value - oldVal;
+    if (actualGain > 0 && p.species !== "Diancie") {
+      list.forEach(other => {
+        if (other.species === "Diancie" && !other.fainted && other.player === p.player) {
+          gainHappiness(other, 1, list);
+        }
+      });
+    }
+    if (p.species === "Diancie" && p.customBar.value >= 20) {
+      p.customBar.value = 0;
+      list.forEach(ally => {
+        if (ally.player === p.player && !ally.fainted) {
+          ally.hp = Math.min(ally.maxHp, ally.hp + 1);
+          ally.status = null;
+        }
+      });
+      addLog(`💎 Crystal Happiness! Diancie healed all allies for 1 HP and cleansed status conditions!`, "heal");
+    }
+  };
+
+  const checkZygardeEvolution = (zygarde: PokemonEntity, list: PokemonEntity[]) => {
+    if (zygarde.fainted) return;
+    const cells = zygarde.zygCellsCollected || 0;
+    let newSpecies = "";
+    let newMaxHp = 0, newAtk = 0, newDef = 0;
+    if (zygarde.species === "Zygarde Reassembly Unit" && cells >= 10) {
+      newSpecies = "Zygarde 10%";
+      newMaxHp = 8; newAtk = 2; newDef = 2;
+    } else if (zygarde.species === "Zygarde 10%" && cells >= 25) {
+      newSpecies = "Zygarde 50%";
+      newMaxHp = 11; newAtk = 4; newDef = 3;
+    } else if (zygarde.species === "Zygarde 50%" && cells >= 50) {
+      newSpecies = "Zygarde Complete Forme";
+      newMaxHp = 13; newAtk = 5; newDef = 3;
+    }
+    if (newSpecies) {
+      const oldName = zygarde.species;
+      const damageTaken = zygarde.maxHp - zygarde.hp;
+      zygarde.species = newSpecies;
+      zygarde.maxHp = newMaxHp;
+      zygarde.hp = Math.max(1, newMaxHp - damageTaken);
+      zygarde.atk = newAtk;
+      zygarde.def = newDef;
+      addLog(`🟢 Reassembly! ${oldName} transformed into ${newSpecies}!`, "heal");
+      if (newSpecies === "Zygarde Complete Forme") {
+        list.forEach(p => {
+          if (p.species === "Zygarde Cell") p.fainted = true;
+        });
+        addLog(`🟢 Complete Forme Transition: All remaining Zygarde Cells destroyed!`, "sys");
+      }
+      checkZygardeEvolution(zygarde, list);
+    }
+  };
+
+  const checkPowerConstruct = (zygarde: PokemonEntity, list: PokemonEntity[]) => {
+    if (zygarde.fainted) return;
+    if ((zygarde.species === "Zygarde 10%" || zygarde.species === "Zygarde 50%") && zygarde.hp < zygarde.maxHp * 0.5) {
+      const oldName = zygarde.species;
+      const damageTaken = zygarde.maxHp - zygarde.hp;
+      zygarde.species = "Zygarde Complete Forme";
+      zygarde.maxHp = 13;
+      zygarde.hp = Math.max(1, 13 - damageTaken);
+      zygarde.atk = 5;
+      zygarde.def = 3;
+      addLog(`🟢 Power Construct! ${oldName} assembled into Zygarde Complete Forme!`, "heal");
+      list.forEach(p => {
+        if (p.species === "Zygarde Cell") p.fainted = true;
+      });
+    }
+  };
+
   // Status effects checker
   const verifyActionStatus = (p: PokemonEntity): boolean => {
     if (!p.status || p.fainted) return true;
@@ -821,7 +1078,29 @@ export default function App() {
         const stateCopy = { ...gameState.players[gameState.currentPlayer] };
 
         let nextUsed = gameState.consumablesUsedThisTurn || { total: 0, powerHerb: 0 };
-        if (mode.itemType !== "held") {
+        const CURE_BERRY_STATUS_MAP: { [berry: string]: string } = {
+          "Cheri Berry": "paralysis",
+          "Chesto Berry": "sleep",
+          "Pecha Berry": "poison",
+          "Rawst Berry": "burn",
+          "Aspear Berry": "freeze",
+          "Persim Berry": "confuse"
+        };
+
+        const isCureBerry = CURE_BERRY_STATUS_MAP[mode.item] !== undefined;
+        let isConsuming = mode.itemType !== "held" && mode.item !== "Oval Stone";
+
+        if (isCureBerry) {
+          const targetStatus = CURE_BERRY_STATUS_MAP[mode.item];
+          const isAfflicted = p.status === targetStatus || (targetStatus === "poison" && p.status === "toxic");
+          if (isAfflicted) {
+            isConsuming = true;
+          } else {
+            isConsuming = false;
+          }
+        }
+
+        if (isConsuming) {
           const used = gameState.consumablesUsedThisTurn || { total: 0, powerHerb: 0 };
           if (used.total >= 2) {
             addLog("❌ Item usage failed! Limit of 2 consumables per turn reached.", "sys");
@@ -842,6 +1121,30 @@ export default function App() {
           if (mode.item === "Power Herb") {
             p.modifiers.push({ stat: "atk", amount: 1, duration: 2, source: "Power Herb" });
           }
+          if (isCureBerry) {
+            p.status = null;
+            p.statusTurns = 0;
+          }
+          if (mode.item === "Curry") {
+            const alreadyCurried = p.curryEffect && p.curryEffect.turnsLeft > 0;
+            if (!alreadyCurried) {
+              p.maxHp += 2;
+              p.hp = Math.min(p.maxHp, p.hp + 2);
+            }
+            p.curryEffect = { hpBoost: 2, turnsLeft: 3 };
+            if (p.customBar && p.customBar.type === "Happiness") {
+              gainHappiness(p, 5, list);
+            }
+          } else {
+            if (p.customBar && p.customBar.type === "Happiness") {
+              gainHappiness(p, 3, list);
+            }
+          }
+
+          if (p.customBar && p.customBar.type === "Angry") {
+            p.customBar.value = Math.max(0, p.customBar.value - 3);
+          }
+
           const idx = stateCopy.inventory.consumable.indexOf(mode.item);
           if (idx > -1) stateCopy.inventory.consumable.splice(idx, 1);
           addLog(`${p.species} consumed ${mode.item}!`, "heal");
@@ -851,13 +1154,18 @@ export default function App() {
             powerHerb: used.powerHerb + (mode.item === "Power Herb" ? 1 : 0)
           };
         } else {
-          // If already has item, put back to inventory
+          // Equipping item
           if (p.heldItem) {
             stateCopy.inventory.held.push(p.heldItem);
           }
           p.heldItem = mode.item;
-          const idx = stateCopy.inventory.held.indexOf(mode.item);
-          if (idx > -1) stateCopy.inventory.held.splice(idx, 1);
+          if (isCureBerry) {
+            const idx = stateCopy.inventory.consumable.indexOf(mode.item);
+            if (idx > -1) stateCopy.inventory.consumable.splice(idx, 1);
+          } else {
+            const idx = stateCopy.inventory.held.indexOf(mode.item);
+            if (idx > -1) stateCopy.inventory.held.splice(idx, 1);
+          }
           addLog(`${p.species} equipped ${mode.item}!`, "heal");
         }
 
@@ -896,6 +1204,90 @@ export default function App() {
 
       if (!verifyActionStatus(actor)) {
         setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+        return;
+      }
+
+      // 3. Active Ability Execution
+      if (mode.type === "active_ability") {
+        const target = list.find(pk => pk.col === col && pk.row === row && !pk.fainted);
+        if (!target) {
+          addLog("❌ Active ability failed: No target found.", "sys");
+          setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+          return;
+        }
+
+        if (actor.species === "Mesprit") {
+          if (gameState.energy[gameState.currentPlayer] < 1) {
+            addLog("❌ Active ability failed: Not enough Energy (needs 1⚡).", "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          if (!target.modifiers) target.modifiers = [];
+          target.modifiers.push({ stat: "atk", amount: 1, duration: 2, source: "Spiritual Buff" });
+          target.modifiers.push({ stat: "def", amount: 1, duration: 2, source: "Spiritual Buff" });
+          actor.activeAbilityUsed = true;
+          addLog(`⭐ Spiritual Buff! Mesprit buffed ${target.species} (+1 Atk, +1 Def for 2 turns)!`, "heal");
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: list,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - 1)
+            }
+          }));
+          return;
+        } else if (actor.species === "Cryogonal") {
+          const cryoDef = getModifiedStat(actor, "def", list, { weather: gameState.weather.type });
+          let duration = 2;
+          if (actor.heldItem === "Light Clay") duration += 1;
+          target.shield = cryoDef;
+          target.shieldDuration = duration;
+          actor.activeAbilityUsed = true;
+          addLog(`⭐ Shield Barrier! Cryogonal granted ${target.species} a shield of ${cryoDef} HP for ${duration} turns!`, "heal");
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: list,
+            actionMode: null,
+            highlightedCells: []
+          }));
+          return;
+        } else if (actor.species === "Palkia") {
+          const emptyCells = adjCells(actor.col, actor.row, 2, true, gameConfig.boardSize)
+            .filter(c => !pkAt(c.col, c.row, list) && !pedAt(c.col, c.row, peds));
+          setGameState(prev => ({
+            ...prev,
+            actionMode: { type: "active_ability_palkia_teleport", pokeId: actor.id, targetId: target.id },
+            highlightedCells: emptyCells.map(c => ({ col: c.col, row: c.row, type: "move" as const }))
+          }));
+          addLog(`⭐ Spatial Control: Choose an empty cell in Palkia's AoE(2) range to teleport ${target.species}.`, "sys");
+          return;
+        }
+      }
+
+      if (mode.type === "active_ability_palkia_teleport") {
+        const targetAlly = list.find(pk => pk.id === mode.targetId);
+        if (!targetAlly || targetAlly.fainted) {
+          addLog("❌ Teleport failed: Target ally fainted or missing.", "sys");
+          setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+          return;
+        }
+        const oldCol = targetAlly.col;
+        const oldRow = targetAlly.row;
+        targetAlly.col = col;
+        targetAlly.row = row;
+        actor.activeAbilityUsed = true;
+        addLog(`⭐ Spatial Control: Palkia teleported ally ${targetAlly.species} from ${String.fromCharCode(65 + oldCol)}${oldRow + 1} to ${String.fromCharCode(65 + col)}${row + 1}!`, "heal");
+
+        setGameState(prev => ({
+          ...prev,
+          pokemon: list,
+          actionMode: null,
+          highlightedCells: []
+        }));
         return;
       }
 
@@ -996,6 +1388,41 @@ export default function App() {
         const targetPed = pedAt(col, row, peds);
 
         if (target) {
+          // Zygarde Cell allied collection or enemy destruction
+          if (target.species === "Zygarde Cell") {
+            if (target.player === actor.player) {
+              const zygUnit = list.find(z => z.player === actor.player && (z.species === "Zygarde Reassembly Unit" || z.species === "Zygarde 10%" || z.species === "Zygarde 50%"));
+              if (zygUnit) {
+                zygUnit.zygCellsCollected = (zygUnit.zygCellsCollected || 0) + 1;
+                addLog(`🟢 Cell collected! Zygarde has now collected ${zygUnit.zygCellsCollected} cells.`, "heal");
+                target.fainted = true;
+                checkZygardeEvolution(zygUnit, list);
+              } else {
+                target.fainted = true;
+                addLog(`🟢 Zygarde Cell collected (no Zygarde unit on field).`, "sys");
+              }
+            } else {
+              target.fainted = true;
+              addLog(`💥 Zygarde Cell destroyed by enemy ${actor.species}!`, "atk");
+            }
+
+            actor.exp += 1;
+            actor.hasAttacked = true;
+
+            const nextPokemon = [...list];
+            const nextPedestals = [...peds];
+            checkWinner(nextPedestals, nextPokemon);
+
+            setGameState(prev => ({
+              ...prev,
+              pokemon: nextPokemon,
+              pedestals: nextPedestals,
+              actionMode: null,
+              highlightedCells: []
+            }));
+            return;
+          }
+
           const bonus = typeBonus(actor, target);
           const rawAtk = getModifiedStat(actor, "atk", list, { action: "melee", isSkill: false, target, weather: gameState.weather.type });
           const opponentDef = getModifiedStat(target, "def", list, { weather: gameState.weather.type });
@@ -1017,7 +1444,22 @@ export default function App() {
             }
           }
 
-          let netDmg = Math.max(0, Math.floor(rawAtk / 2) + bonus + abilityAtkBonus - opponentDef);
+          const critResult = checkCriticalHit(actor, target, undefined, list);
+          const isCrit = critResult.isCrit;
+          if (critResult.roll !== undefined) {
+            setChancePopup({
+              statusType: "Critical Hit Check",
+              chance: (20 - critResult.threshold!) / 20,
+              roll: critResult.roll,
+              success: isCrit
+            });
+            setTimeout(() => setChancePopup(null), 3500);
+          }
+
+          let netDmg = Math.max(0, Math.floor(rawAtk / 2) + bonus + abilityAtkBonus - (isCrit ? 0 : opponentDef));
+          if (isCrit) {
+            netDmg += 2;
+          }
 
           if (actor.status === "burn") {
             netDmg = Math.max(0, netDmg - 1);
@@ -1041,15 +1483,43 @@ export default function App() {
 
           netDmg = applyTidalBellReduction(target, netDmg, list);
 
+          // Apply shield reduction
+          if (target.shield && target.shield > 0 && netDmg > 0) {
+            if (netDmg <= target.shield) {
+              target.shield -= netDmg;
+              addLog(`🛡️ Shield absorbed ${netDmg} damage! (Remaining Shield: ${target.shield} HP)`, "combat");
+              netDmg = 0;
+            } else {
+              netDmg -= target.shield;
+              target.shield = 0;
+              addLog(`🛡️ Shield broke! ${netDmg} damage carried through.`, "combat");
+            }
+          }
+
+          // Custom bar updates on hit
+          if (target.customBar && target.customBar.type === "Angry") {
+            target.customBar.value = Math.min(target.customBar.max, target.customBar.value + netDmg);
+          }
+          if (target.customBar && target.customBar.type === "Happiness") {
+            target.customBar.value = Math.max(0, target.customBar.value - 1);
+          }
+          if (actorDb && (actorDb.t1 === "Fire" || actorDb.t2 === "Fire")) {
+            if (target.customBar && target.customBar.type === "Frost") {
+              target.customBar.value = Math.max(0, target.customBar.value - 1);
+            }
+          }
+
           const startingHp = target.hp;
           target.hp = Math.max(0, target.hp - netDmg);
           target.damageReceivedThisTurn = (target.damageReceivedThisTurn || 0) + netDmg;
-          addLog(`⚔️ ${actor.species} attacked ${target.species} for ${netDmg} damage!`, "combat");
+          addLog(`⚔️ ${actor.species} attacked ${target.species} for ${netDmg} damage!${isCrit ? " (CRITICAL HIT!)" : ""}`, "combat");
 
           if (target.hp <= 0 && targetDb && targetDb.ability === "Sturdy" && startingHp === target.maxHp) {
             target.hp = 1;
             addLog(`🛡️ Sturdy! ${target.species} survived the lethal blow with 1 HP!`, "combat");
           }
+
+          checkPowerConstruct(target, list);
 
           if (targetDb) {
             // Gengar Cursed Body контакт
@@ -1067,14 +1537,14 @@ export default function App() {
 
             // Static contact paralyze
             if (targetDb.ability === "Static" && !actor.fainted) {
-              if (Math.random() < 0.3 && actor.status !== "paralysis" && canInflictStatus(actor, "paralysis")) {
-                actor.status = "paralysis";
-                actor.statusTurns = 0;
-                addLog(`⚡ Static! ${actor.species} got Paralyzed by contacting ${target.species}!`, "combat");
-                if (actorDb && actorDb.ability === "Synchronize" && canInflictStatus(target, "paralysis")) {
-                  target.status = "paralysis";
-                  target.statusTurns = 1;
-                  addLog(`💫 Synchronize! Reflected PARALYSIS back onto ${target.species}!`, "combat");
+              if (Math.random() < 0.3 && actor.status !== "paralysis") {
+                if (applyStatusEffect(actor, "paralysis")) {
+                  addLog(`⚡ Static! ${actor.species} got Paralyzed by contacting ${target.species}!`, "combat");
+                }
+                if (actorDb && actorDb.ability === "Synchronize") {
+                  if (applyStatusEffect(target, "paralysis", 1)) {
+                    addLog(`💫 Synchronize! Reflected PARALYSIS back onto ${target.species}!`, "combat");
+                  }
                 }
               }
             }
@@ -1082,13 +1552,11 @@ export default function App() {
             if (targetDb.ability === "Effect Spore" && !actor.fainted) {
               if (Math.random() < 0.3 && !actor.status) {
                 const effect = Math.random() < 0.5 ? "poison" : "sleep";
-                if (canInflictStatus(actor, effect)) {
-                  actor.status = effect;
-                  actor.statusTurns = 0;
+                if (applyStatusEffect(actor, effect)) {
                   addLog(`🍄 Effect Spore! ${actor.species} got ${effect.toUpperCase()} by touching ${target.species}!`, "combat");
-                  if (actorDb && actorDb.ability === "Synchronize" && canInflictStatus(target, effect)) {
-                    target.status = effect;
-                    target.statusTurns = 1;
+                }
+                if (actorDb && actorDb.ability === "Synchronize") {
+                  if (applyStatusEffect(target, effect, 1)) {
                     addLog(`💫 Synchronize! Reflected ${effect.toUpperCase()} back onto ${target.species}!`, "combat");
                   }
                 }
@@ -1096,40 +1564,40 @@ export default function App() {
             }
             // Cute Charm
             if (targetDb.ability === "Cute Charm" && !actor.fainted) {
-              if (Math.random() < 0.3 && actor.status !== "confuse" && canInflictStatus(actor, "confuse")) {
-                actor.status = "confuse";
-                actor.statusTurns = 0;
-                addLog(`💖 Cute Charm! ${actor.species} fell in love (CONFUSED) with ${target.species}!`, "combat");
-                if (actorDb && actorDb.ability === "Synchronize" && canInflictStatus(target, "confuse")) {
-                  target.status = "confuse";
-                  target.statusTurns = 1;
-                  addLog(`💫 Synchronize! Reflected CONFUSE back onto ${target.species}!`, "combat");
+              if (Math.random() < 0.3 && actor.status !== "confuse") {
+                if (applyStatusEffect(actor, "confuse")) {
+                  addLog(`💖 Cute Charm! ${actor.species} fell in love (CONFUSED) with ${target.species}!`, "combat");
+                }
+                if (actorDb && actorDb.ability === "Synchronize") {
+                  if (applyStatusEffect(target, "confuse", 1)) {
+                    addLog(`💫 Synchronize! Reflected CONFUSE back onto ${target.species}!`, "combat");
+                  }
                 }
               }
             }
             // Flame Body
             if (targetDb.ability === "Flame Body" && !actor.fainted) {
-              if (Math.random() < 0.3 && actor.status !== "burn" && canInflictStatus(actor, "burn")) {
-                actor.status = "burn";
-                actor.statusTurns = 0;
-                addLog(`🔥 Flame Body! ${actor.species} got Burned by touching ${target.species}!`, "combat");
-                if (actorDb && actorDb.ability === "Synchronize" && canInflictStatus(target, "burn")) {
-                  target.status = "burn";
-                  target.statusTurns = 1;
-                  addLog(`💫 Synchronize! Reflected BURN back onto ${target.species}!`, "combat");
+              if (Math.random() < 0.3 && actor.status !== "burn") {
+                if (applyStatusEffect(actor, "burn")) {
+                  addLog(`🔥 Flame Body! ${actor.species} got Burned by touching ${target.species}!`, "combat");
+                }
+                if (actorDb && actorDb.ability === "Synchronize") {
+                  if (applyStatusEffect(target, "burn", 1)) {
+                    addLog(`💫 Synchronize! Reflected BURN back onto ${target.species}!`, "combat");
+                  }
                 }
               }
             }
             // Poison Point
             if (targetDb.ability === "Poison Point" && !actor.fainted) {
-              if (Math.random() < 0.3 && actor.status !== "poison" && canInflictStatus(actor, "poison")) {
-                actor.status = "poison";
-                actor.statusTurns = 0;
-                addLog(`☠️ Poison Point! ${actor.species} got Poisoned by touching ${target.species}!`, "combat");
-                if (actorDb && actorDb.ability === "Synchronize" && canInflictStatus(target, "poison")) {
-                  target.status = "poison";
-                  target.statusTurns = 1;
-                  addLog(`💫 Synchronize! Reflected POISON back onto ${target.species}!`, "combat");
+              if (Math.random() < 0.3 && actor.status !== "poison") {
+                if (applyStatusEffect(actor, "poison")) {
+                  addLog(`☠️ Poison Point! ${actor.species} got Poisoned by touching ${target.species}!`, "combat");
+                }
+                if (actorDb && actorDb.ability === "Synchronize") {
+                  if (applyStatusEffect(target, "poison", 1)) {
+                    addLog(`💫 Synchronize! Reflected POISON back onto ${target.species}!`, "combat");
+                  }
                 }
               }
             }
@@ -1203,7 +1671,9 @@ export default function App() {
         }
 
         // Add 1 EXP
-        actor.exp += 1;
+        if (actor.heldItem !== "Oval Stone") {
+          actor.exp += 1;
+        }
         actor.hasAttacked = true;
 
         const nextPokemon = [...list];
@@ -1785,19 +2255,100 @@ export default function App() {
           return;
         }
 
-        // Special Skill Accuracy Roll checking: Guillotine (50%) & High Jump Kick (85%)
-        let isHit = true;
-        if (skill.skillName === "Guillotine") {
-          isHit = Math.random() < 0.50;
-        } else if (skill.skillName === "High Jump Kick") {
-          isHit = Math.random() < 0.85;
+        // Special Skill Intercept: Heart Sacrifice
+        if (skill.skillName === "Heart Sacrifice") {
+          const targetPk = pkAt(col, row, list);
+          if (!targetPk) {
+            addLog(`❌ Heart Sacrifice failed! Select an ally to heal.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          if (targetPk.player !== actor.player) {
+            addLog(`❌ Heart Sacrifice failed! Target must be an ally.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          const happinessVal = targetPk.customBar && targetPk.customBar.type === "Happiness" ? targetPk.customBar.value : 0;
+          if (happinessVal < 10) {
+            addLog(`❌ Heart Sacrifice failed! Target ${targetPk.species} does not have at least 10 Happiness (Current: ${happinessVal}).`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          
+          // Deduct 10 Happiness
+          targetPk.customBar!.value -= 10;
+          
+          // Heal 6 HP
+          targetPk.hp = Math.min(targetPk.maxHp, targetPk.hp + 6);
+          addLog(`💖 Heart Sacrifice! Deducted 10 Happiness from ${targetPk.species} and healed them for 6 HP!`, "heal");
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
         }
 
-        if (!isHit) {
-          addLog(`💨 Miss! ${actor.species}'s ${skill.skillName} missed the target!`, "combat");
+        // Check Xerneas Geomancy charging
+        if (skill.skillName === "Geomancy") {
+          actor.geomancyCharge = 2;
+          addLog(`🌟 Xerneas starts charging Geomancy!`, "sys");
+          
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Skill Accuracy Roll checking (d20)
+        const accResult = checkAccuracy(actor, skill);
+        setChancePopup({
+          statusType: `${skill.skillName} Accuracy`,
+          chance: accResult.chance,
+          roll: accResult.roll,
+          success: accResult.isHit
+        });
+        setTimeout(() => setChancePopup(null), 3500);
+
+        if (!accResult.isHit) {
+          addLog(`💨 Miss! ${actor.species}'s ${skill.skillName} missed the target! (Rolled ${accResult.roll}/20, needed > ${accResult.threshold})`, "combat");
           if (skill.skillName === "High Jump Kick") {
-            actor.hp = Math.max(0, actor.hp - 2);
-            addLog(`⚠️ recoil! ${actor.species} crashed and took 2 recoil damage from the miss!`, "atk");
+            const crashDmg = skill.selfDamage || 2;
+            actor.hp = Math.max(0, actor.hp - crashDmg);
+            addLog(`⚠️ recoil! ${actor.species} crashed and took ${crashDmg} recoil damage from the miss!`, "atk");
             if (actor.hp <= 0) {
               actor.fainted = true;
               addLog(`💀 ${actor.species} fainted.`, "sys");
@@ -1865,6 +2416,25 @@ export default function App() {
           rawDmg = Math.max(0, rawDmg - 1);
         }
 
+        if (skill.skillName === "Eternal Radiance") {
+          const happinessVal = actor.customBar && actor.customBar.type === "Happiness" ? actor.customBar.value : 0;
+          const bonus = Math.floor(happinessVal / 5);
+          rawDmg = 5 + bonus;
+          
+          if (actor.customBar && actor.customBar.type === "Happiness") {
+            actor.customBar.value = 0;
+          }
+          
+          if (bonus > 0) {
+            list.forEach(p => {
+              if (p.player === actor.player && !p.fainted && !(p.banishedTurns && p.banishedTurns > 0)) {
+                p.hp = Math.min(p.maxHp, p.hp + bonus);
+                addLog(`💖 Eternal Radiance healed ally ${p.species} for +${bonus} HP!`, "heal");
+              }
+            });
+          }
+        }
+
         // Apply low-health skill element boosts
         let skillAbilityBonus = 0;
         if (actor.hp <= actor.maxHp * 0.5) {
@@ -1899,7 +2469,10 @@ export default function App() {
           }
           // status inflict chance
           if (skill.statusChance) {
-            const chance = getStatusChanceValue(skill.statusChance, skill);
+            let chance = getStatusChanceValue(skill.statusChance, skill);
+            if (skill.skillName === "Glaciate" && actor.customBar && actor.customBar.type === "Frost" && actor.customBar.value >= 16) {
+              chance = 0.40;
+            }
             const threshold = Math.floor(chance * 20);
             const roll = Math.floor(Math.random() * 20) + 1;
             const succ = roll <= threshold;
@@ -1907,21 +2480,21 @@ export default function App() {
             setChancePopup({ statusType: skill.statusChance, chance, roll, success: succ });
             setTimeout(() => setChancePopup(null), 3500);
 
-            if (succ && canInflictStatus(tg, skill.statusChance)) {
-              let inflictedStatus = skill.statusChance;
-              if (inflictedStatus === "paralyze") inflictedStatus = "paralysis";
-              tg.status = inflictedStatus;
-              tg.statusTurns = 0;
-              addLog(`💥 status triggered! ${tg.species} got inflicted with status ${inflictedStatus.toUpperCase()} (rolled ${roll}/20)`, "combat");
+            if (succ) {
+              if (applyStatusEffect(tg, skill.statusChance)) {
+                let inflictedStatus = skill.statusChance;
+                if (inflictedStatus === "paralyze") inflictedStatus = "paralysis";
+                addLog(`💥 status triggered! ${tg.species} got inflicted with status ${inflictedStatus.toUpperCase()} (rolled ${roll}/20)`, "combat");
 
-              const tgDb = DB[tg.species];
-              const actDb = DB[actor.species];
-              if (tgDb && tgDb.ability === "Synchronize" && canInflictStatus(actor, skill.statusChance)) {
-                let actStatus = skill.statusChance;
-                if (actStatus === "paralyze") actStatus = "paralysis";
-                actor.status = actStatus;
-                actor.statusTurns = 1;
-                addLog(`💫 Synchronize! Reflected ${actStatus.toUpperCase()} back onto ${actor.species}!`, "combat");
+                const tgDb = DB[tg.species];
+                const actDb = DB[actor.species];
+                if (tgDb && tgDb.ability === "Synchronize") {
+                  if (applyStatusEffect(actor, skill.statusChance, 1)) {
+                    let actStatus = skill.statusChance;
+                    if (actStatus === "paralyze") actStatus = "paralysis";
+                    addLog(`💫 Synchronize! Reflected ${actStatus.toUpperCase()} back onto ${actor.species}!`, "combat");
+                  }
+                }
               }
             }
           }
@@ -1963,8 +2536,27 @@ export default function App() {
           if (isValid) {
             if (target) {
               const targetDb = DB[target.species];
-              // Ally healing skills: soft-boiled, egg drink, milk drink, synthesis, aromatherapy
-              if (skill.skillHeal && (skill.skillHealTarget === "ally" || skill.skillHealTarget === "all_allies")) {
+              if (target.species === "Zygarde Cell") {
+                targetsHit++;
+                if (target.player === actor.player) {
+                  const zygUnit = list.find(z => z.player === actor.player && (z.species === "Zygarde Reassembly Unit" || z.species === "Zygarde 10%" || z.species === "Zygarde 50%"));
+                  if (zygUnit) {
+                    zygUnit.zygCellsCollected = (zygUnit.zygCellsCollected || 0) + 1;
+                    addLog(`🟢 Cell collected! Zygarde has now collected ${zygUnit.zygCellsCollected} cells.`, "heal");
+                    target.fainted = true;
+                    checkZygardeEvolution(zygUnit, list);
+                  } else {
+                    target.fainted = true;
+                    addLog(`🟢 Zygarde Cell collected (no Zygarde unit on field).`, "sys");
+                  }
+                } else {
+                  target.fainted = true;
+                  addLog(`💥 Zygarde Cell destroyed by enemy ${actor.species}'s skill!`, "atk");
+                }
+                if (actor.heldItem !== "Oval Stone") {
+                  actor.exp += 1;
+                }
+              } else if (skill.skillHeal && (skill.skillHealTarget === "ally" || skill.skillHealTarget === "all_allies")) {
                 const healing = skill.skillHeal;
                 target.hp = Math.min(target.maxHp, target.hp + healing);
                 addLog(`💚 ${actor.species} healed ${target.species} for +${healing} HP!`, "heal");
@@ -1990,7 +2582,28 @@ export default function App() {
                     if (actor.status === "burn") targetRawDmg = Math.max(0, targetRawDmg - 1);
                   }
                   
-                  netDmg = Math.max(0, targetRawDmg + typeMult + skillAbilityBonus - getModifiedStat(target, "def", list, { bySkill: true, weather: gameState.weather.type }));
+                  // Check Critical Hits
+                  const critResult = checkCriticalHit(actor, target, skill, list);
+                  const isCrit = critResult.isCrit;
+                  if (critResult.roll !== undefined) {
+                    setChancePopup({
+                      statusType: `${skill.skillName} Critical Hit Check`,
+                      chance: (20 - critResult.threshold!) / 20,
+                      roll: critResult.roll,
+                      success: isCrit
+                    });
+                    setTimeout(() => setChancePopup(null), 3500);
+                  }
+
+                  let defenderDef = getModifiedStat(target, "def", list, { bySkill: true, weather: gameState.weather.type });
+                  if (isCrit) {
+                    defenderDef = 0;
+                  }
+
+                  netDmg = Math.max(0, targetRawDmg + typeMult + skillAbilityBonus - defenderDef);
+                  if (isCrit) {
+                    netDmg += 2;
+                  }
 
                   // Volt Absorb / Water Absorb checks
                   if (adb) {
@@ -2063,16 +2676,77 @@ export default function App() {
 
                   netDmg = applyTidalBellReduction(target, netDmg, list);
 
+                  // Apply shield reduction
+                  if (target.shield && target.shield > 0 && netDmg > 0) {
+                    if (netDmg <= target.shield) {
+                      target.shield -= netDmg;
+                      addLog(`🛡️ Shield absorbed ${netDmg} damage! (Remaining Shield: ${target.shield} HP)`, "combat");
+                      netDmg = 0;
+                    } else {
+                      netDmg -= target.shield;
+                      target.shield = 0;
+                      addLog(`🛡️ Shield broke! ${netDmg} damage carried through.`, "combat");
+                    }
+                  }
+
+                  // Yveltal HP drain effects
+                  if (skill.skillName === "Oblivion Wing") {
+                    const healAmt = Math.max(0, netDmg - 2);
+                    if (healAmt > 0) {
+                      actor.hp = Math.min(actor.maxHp, actor.hp + healAmt);
+                      addLog(`🔺 Oblivion Wing drained energy! Healed ${actor.species} for +${healAmt} HP.`, "heal");
+                    }
+                  }
+                  if (skill.skillName === "Crimson Feast") {
+                    actor.hp = Math.min(actor.maxHp, actor.hp + 1);
+                    addLog(`🔺 Crimson Feast drained HP! Healed ${actor.species} for +1 HP.`, "heal");
+                  }
+                  if (skill.skillName === "Soul Drain Eclipse") {
+                    if (!target.modifiers) target.modifiers = [];
+                    target.modifiers.push({ stat: "atk", amount: -1, duration: 2, source: "Soul Drain Eclipse" });
+                    
+                    if (!actor.modifiers) actor.modifiers = [];
+                    actor.modifiers.push({ stat: "atk", amount: 1, duration: 2, source: "Soul Drain Eclipse" });
+                    
+                    const darkAllies = list.filter(p => {
+                      if (p.player !== actor.player || p.fainted || p.id === actor.id) return false;
+                      const db = DB[p.species];
+                      return db && (db.t1 === "Dark" || db.t2 === "Dark");
+                    });
+                    if (darkAllies.length > 0) {
+                      darkAllies.sort((a, b) => a.hp - b.hp);
+                      const lowestAlly = darkAllies[0];
+                      lowestAlly.hp = Math.min(lowestAlly.maxHp, lowestAlly.hp + 3);
+                      addLog(`🔺 Soul Drain Eclipse healed dark ally ${lowestAlly.species} for +3 HP!`, "heal");
+                    }
+                  }
+
+                  // Custom bar updates on hit
+                  if (target.customBar && target.customBar.type === "Angry") {
+                    target.customBar.value = Math.min(target.customBar.max, target.customBar.value + netDmg);
+                  }
+                  if (target.customBar && target.customBar.type === "Happiness") {
+                    target.customBar.value = Math.max(0, target.customBar.value - 1);
+                  }
+                  const isFireSkill = (adb && (adb.t1 === "Fire" || adb.t2 === "Fire")) || skill.skillName.toLowerCase().includes("fire") || skill.skillName.toLowerCase().includes("flame") || skill.skillName.toLowerCase().includes("burn");
+                  if (isFireSkill) {
+                    if (target.customBar && target.customBar.type === "Frost") {
+                      target.customBar.value = Math.max(0, target.customBar.value - 1);
+                    }
+                  }
+
                   const startingHp = target.hp;
                   target.hp = Math.max(0, target.hp - netDmg);
                   target.damageReceivedThisTurn = (target.damageReceivedThisTurn || 0) + netDmg;
-                  addLog(`✨ ${actor.species} casted ${skill.skillName} at ${target.species} for ${netDmg} damage!`, "combat");
+                  addLog(`✨ ${actor.species} casted ${skill.skillName} at ${target.species} for ${netDmg} damage!${isCrit ? " (CRITICAL HIT!)" : ""}`, "combat");
 
                   // Check Sturdy for skill damage
                   if (target.hp <= 0 && targetDb && targetDb.ability === "Sturdy" && startingHp === target.maxHp) {
                     target.hp = 1;
                     addLog(`🛡️ Sturdy! ${target.species} survived the lethal blow with 1 HP!`, "combat");
                   }
+
+                  checkPowerConstruct(target, list);
                 } else {
                   // Non-damaging cast
                   addLog(`✨ ${actor.species} casted ${skill.skillName} at ${target.species}!`, "combat");
@@ -2100,6 +2774,18 @@ export default function App() {
                   addLog(`🔔 Tidal Bell tolls! Granted ${target.species} +2 Def for 2 turns!`, "heal");
                 }
 
+                // Push/Pull Physics
+                const pushAmt = skill.pushAmount || 0;
+                const pullAmt = skill.pullAmount || 0;
+                if ((pushAmt > 0 || pullAmt > 0) && !target.fainted) {
+                  const pushPullResult = resolvePushPull(actor, target, pushAmt, pullAmt, list, peds, gameConfig.boardSize);
+                  if (pushPullResult.moved) {
+                    target.col = pushPullResult.col;
+                    target.row = pushPullResult.row;
+                    addLog(`💫 ${target.species} was ${pushAmt > 0 ? "pushed" : "pulled"} to ${String.fromCharCode(65 + target.col)}${target.row + 1}!`, "sys");
+                  }
+                }
+
                 triggerSkillsEffect(target);
 
                 // Gengar Cursed Body on skill hit
@@ -2115,7 +2801,9 @@ export default function App() {
                   target.fainted = true;
                   addLog(`💀 ${target.species} fainted!`, "sys");
                   if (actor.heldItem === "Lucky Egg") {
-                    actor.exp += 1;
+                    if (actor.heldItem !== "Oval Stone") {
+                      actor.exp += 1;
+                    }
                   }
                 }
               }
@@ -2157,7 +2845,9 @@ export default function App() {
           }
         }
 
-        actor.exp += 2;
+        if (actor.heldItem !== "Oval Stone") {
+          actor.exp += 2;
+        }
         actor.hasUsedSkill = true;
         if (!actor.skillUses) actor.skillUses = {};
         actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
@@ -2165,6 +2855,15 @@ export default function App() {
         if (skill.cooldown && skill.cooldown > 0) {
           if (!actor.skillCooldowns) actor.skillCooldowns = {};
           actor.skillCooldowns[skill.skillName] = skill.cooldown;
+        }
+
+        const isFairy = dbEntry && (dbEntry.t1 === "Fairy" || dbEntry.t2 === "Fairy");
+        if (isFairy) {
+          list.forEach(p => {
+            if (p.species === "Xerneas" && p.player === actor.player && !p.fainted) {
+              gainHappiness(p, 1, list);
+            }
+          });
         }
 
         const nextPokemon = [...list];
@@ -2222,6 +2921,26 @@ export default function App() {
 
     if (actor.isEgg && !actor.hasHatched) {
       addLog("The Egg is currently dormant. Spend Command EXP first to hatch it!", "sys");
+      return;
+    }
+
+    if (type === ("active_ability" as any)) {
+      if (actor.activeAbilityUsed) return;
+      let cells: { col: number; row: number; type: "atk" | "move" | "atk-preview" | "skill-preview" }[] = [];
+      if (actor.species === "Mesprit" || actor.species === "Cryogonal") {
+        cells = gameState.pokemon
+          .filter(p => !p.fainted && p.player === actor.player)
+          .map(p => ({ col: p.col, row: p.row, type: "atk" as const }));
+      } else if (actor.species === "Palkia") {
+        cells = gameState.pokemon
+          .filter(p => !p.fainted && p.player === actor.player && p.id !== actor.id)
+          .map(p => ({ col: p.col, row: p.row, type: "atk" as const }));
+      }
+      setGameState(prev => ({
+        ...prev,
+        actionMode: { type: "active_ability" as any, pokeId: id },
+        highlightedCells: cells
+      }));
       return;
     }
 
@@ -2469,7 +3188,9 @@ export default function App() {
       if (actor.hp <= 0) actor.fainted = true;
     }
 
-    actor.exp += 2;
+    if (actor.heldItem !== "Oval Stone") {
+      actor.exp += 2;
+    }
     actor.hasUsedSkill = true;
     if (!actor.skillUses) actor.skillUses = {};
     actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
@@ -2477,6 +3198,15 @@ export default function App() {
     if (skill.cooldown && skill.cooldown > 0) {
       if (!actor.skillCooldowns) actor.skillCooldowns = {};
       actor.skillCooldowns[skill.skillName] = skill.cooldown;
+    }
+
+    const isFairy = dbEntry && (dbEntry.t1 === "Fairy" || dbEntry.t2 === "Fairy");
+    if (isFairy) {
+      list.forEach(p => {
+        if (p.species === "Xerneas" && p.player === actor.player && !p.fainted) {
+          gainHappiness(p, 1, list);
+        }
+      });
     }
 
     setGameState(prev => ({
@@ -2762,23 +3492,30 @@ export default function App() {
         }
       } else {
         if (p.species !== "Clear Bell" && p.species !== "Tidal Bell" && p.species !== "Tidal bell") {
-          // Standard experience accumulation
-          p.exp += 1;
-          const dbEntry = DB[p.species];
-          if (dbEntry?.evoCost && p.exp >= dbEntry.evoCost) {
-            if (p.species === "Eevee") {
-              p.pendingEvoChoice = true;
-              addLog(`✨ Eevee is ready to evolve! Choose its evolution form durings your upcoming turns.`, "heal");
-            } else {
-              const oldName = p.species;
-              p.species = dbEntry.evoTo!;
-              const evolvedDb = DB[dbEntry.evoTo!];
-              p.maxHp = evolvedDb.hp;
-              p.hp = evolvedDb.hp;
-              p.atk = evolvedDb.atk;
-              p.def = evolvedDb.def || 0;
-              p.exp = 0;
-              addLog(`🌿 Evolution! ${oldName} evolved into ${p.species}!`, "heal");
+          if (p.heldItem === "Oval Stone") {
+            if (p.customBar && p.customBar.type === "Happiness") {
+              gainHappiness(p, 1, list);
+              addLog(`💖 Oval Stone: ${p.species} gained +1 Happiness.`, "heal");
+            }
+          } else {
+            // Standard experience accumulation
+            p.exp += 1;
+            const dbEntry = DB[p.species];
+            if (dbEntry?.evoCost && p.exp >= dbEntry.evoCost) {
+              if (p.species === "Eevee") {
+                p.pendingEvoChoice = true;
+                addLog(`✨ Eevee is ready to evolve! Choose its evolution form durings your upcoming turns.`, "heal");
+              } else {
+                const oldName = p.species;
+                p.species = dbEntry.evoTo!;
+                const evolvedDb = DB[dbEntry.evoTo!];
+                p.maxHp = evolvedDb.hp;
+                p.hp = evolvedDb.hp;
+                p.atk = evolvedDb.atk;
+                p.def = evolvedDb.def || 0;
+                p.exp = 0;
+                addLog(`🌿 Evolution! ${oldName} evolved into ${p.species}!`, "heal");
+              }
             }
           }
         }
@@ -2824,12 +3561,89 @@ export default function App() {
         p.skillCooldowns = nextCooldowns;
       }
 
+      // Curry Decay
+      if (p.curryEffect) {
+        p.curryEffect.turnsLeft -= 1;
+        if (p.curryEffect.turnsLeft <= 0) {
+          const oldMaxHp = p.maxHp;
+          p.maxHp = Math.max(1, p.maxHp - p.curryEffect.hpBoost);
+          p.hp = Math.min(p.hp, p.maxHp);
+          p.curryEffect = null;
+          addLog(`🍲 Curry effect wore off for ${p.species}. Max HP returned from ${oldMaxHp} to ${p.maxHp}.`, "sys");
+        }
+      }
+
+      // Frost Weather Ticks
+      if (gameState.weather.type === "Hail Storm") {
+        if (p.customBar && p.customBar.type === "Frost") {
+          p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 1);
+          addLog(`❄️ Hail Storm! Ice-type ${p.species} gains +1 Frost.`, "sys");
+        }
+      } else if (gameState.weather.type === "Sunlight" || gameState.weather.type === "Harsh Sunlight") {
+        if (p.customBar && p.customBar.type === "Frost") {
+          p.customBar.value = Math.max(0, p.customBar.value - 1);
+          addLog(`☀️ Sunlight! Ice-type ${p.species} loses -1 Frost.`, "sys");
+        }
+      }
+
+      // Decay Shields
+      if (p.shield !== undefined && p.shield > 0) {
+        if (p.shieldDuration !== undefined && p.shieldDuration > 0) {
+          p.shieldDuration -= 1;
+          if (p.shieldDuration === 0) {
+            p.shield = 0;
+            addLog(`🛡️ ${p.species}'s shield has expired.`, "sys");
+          } else {
+            addLog(`🛡️ ${p.species}'s shield ticking... (${p.shieldDuration} turn(s) left)`, "sys");
+          }
+        }
+      }
+
       // Clear trackers flags
       p.hasMoved = false;
       p.hasAttacked = false;
       p.hasUsedSkill = false;
       p.hasUsedMP = false;
       p.skillUses = {};
+    });
+
+    // Reset activeAbilityUsed for all units
+    list.forEach(p => {
+      p.activeAbilityUsed = false;
+    });
+
+    // Zygarde cell spawning
+    list.forEach(z => {
+      if (z.species === "Zygarde Reassembly Unit" && !z.fainted) {
+        const cells = adjCells(z.col, z.row, 3, true, gameConfig.boardSize);
+        let nextId = Math.max(0, ...list.map(p => p.id)) + 1;
+        cells.forEach(c => {
+          if (!pkAt(c.col, c.row, list) && !pedAt(c.col, c.row, peds)) {
+            if (Math.random() < 0.10) {
+              list.push({
+                id: nextId++,
+                species: "Zygarde Cell",
+                player: z.player,
+                col: c.col,
+                row: c.row,
+                hp: 1,
+                maxHp: 1,
+                atk: 0,
+                def: 0,
+                fainted: false,
+                exp: 0,
+                status: null,
+                modifiers: [],
+                heldItem: null,
+                isEgg: false,
+                hasHatched: true,
+                isSummon: true
+              });
+              addLog(`🟢 Zygarde Cell spawned at ${String.fromCharCode(65 + c.col)}${c.row + 1}!`, "heal");
+            }
+          }
+        });
+      }
     });
 
     // Clear Bell turn-end passive healing
@@ -2874,6 +3688,11 @@ export default function App() {
     const payoutTurns = [1, 6, 11, 16, 21, 26, 31, 36, 41, 46, 51, 56];
     const updatedPlayers = { ...gameState.players };
 
+    // Ending player phase-based gold income
+    const goldEarned = gameState.phase === 1 ? 3 : (gameState.phase === 2 || gameState.phase === 3) ? 4 : 5;
+    updatedPlayers[curPlayer].gold += goldEarned;
+    addLog(`🪙 Turn-End Gold Payout: Player ${curPlayer} earned +${goldEarned} Gold from phase dynamics.`, "sys");
+
     if (payoutTurns.includes(nextTurn) && nextPlayer === 1) {
       const bonusGold = nextTurn > 30 ? 7 : nextTurn > 15 ? 6 : 5;
       updatedPlayers[1].gold += bonusGold;
@@ -2883,6 +3702,30 @@ export default function App() {
 
     // Allocate 2 free command EXP points
     updatedPlayers[nextPlayer].freeExp += 2;
+
+    // Geomancy ticks
+    list.forEach(p => {
+      if (p.player === nextPlayer && !p.fainted && p.species === "Xerneas" && p.geomancyCharge !== undefined && p.geomancyCharge > 0) {
+        p.geomancyCharge -= 1;
+        if (p.geomancyCharge === 0) {
+          const aoeCells = [...adjCells(p.col, p.row, 2, true, gameConfig.boardSize), { col: p.col, row: p.row }];
+          const alliesInAoE = list.filter(a => !a.fainted && a.player === nextPlayer && aoeCells.some(c => c.col === a.col && c.row === a.row));
+          alliesInAoE.forEach(ally => {
+            ally.hp = Math.min(ally.maxHp, ally.hp + 3);
+            if (!ally.modifiers) ally.modifiers = [];
+            ally.modifiers.push({
+              stat: "atk",
+              amount: 2,
+              duration: 2,
+              source: "Geomancy"
+            });
+          });
+          addLog(`🌟 Geomancy activates for ${p.species}! Healed allies in AoE(2) by 3 HP and granted Atk +2 for 2 turns!`, "heal");
+        } else {
+          addLog(`⏳ Geomancy charging on ${p.species}... (${p.geomancyCharge} turn(s) left)`, "sys");
+        }
+      }
+    });
 
     // Weather setter abilities
     // Trigger once per active pokemon with weather abilities
@@ -2974,6 +3817,12 @@ export default function App() {
     const nextPedestals = [...peds];
     checkWinner(nextPedestals, nextPokemonList);
 
+    const hasActiveXerneasHappiness20 = nextPokemonList.some(p => p.player === nextPlayer && !p.fainted && p.species === "Xerneas" && p.customBar && p.customBar.type === "Happiness" && p.customBar.value >= 20);
+    const finalMaxE = hasActiveXerneasHappiness20 ? maxE + 1 : maxE;
+    if (hasActiveXerneasHappiness20) {
+      addLog(`🌸 Xerneas Blessing Aura! Player ${nextPlayer} starts their turn with +1 Max Energy (${finalMaxE})!`, "heal");
+    }
+
     setGameState(prev => ({
       ...prev,
       turn: nextTurn,
@@ -2989,16 +3838,16 @@ export default function App() {
       actionMode: null,
       movePoints: {
         ...(prev.movePoints || { 1: 3, 2: 3 }),
-        [nextPlayer]: 3
+        [nextPlayer]: Math.min(4, (prev.movePoints?.[nextPlayer] ?? 3) + 3)
       },
       consumablesUsedThisTurn: { total: 0, powerHerb: 0 },
       energy: {
         ...prev.energy,
-        [nextPlayer]: maxE
+        [nextPlayer]: finalMaxE
       },
       maxEnergy: {
-        1: maxE,
-        2: maxE
+        ...prev.maxEnergy,
+        [nextPlayer]: finalMaxE
       }
     }));
 
@@ -3074,6 +3923,10 @@ export default function App() {
     const list = [...gameState.pokemon];
     const p = list.find(x => x.id === id);
     if (!p) return;
+    if (p.heldItem === "Oval Stone") {
+      addLog("❌ Cannot invest command EXP! Oval Stone blocks all EXP gains.", "sys");
+      return;
+    }
     const dbEntry = DB[p.species];
 
     if (p.hasHatched && dbEntry?.legendary) {

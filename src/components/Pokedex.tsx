@@ -139,6 +139,10 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
   const [skillTargetCount, setSkillTargetCount] = useState(1); // 1 or 4
   const [customOffsets, setCustomOffsets] = useState<{ dc: number; dr: number }[]>([]);
   const [skillCost, setSkillCost] = useState(2);
+  const [skillAccuracy, setSkillAccuracy] = useState(100);
+  const [skillPushAmount, setSkillPushAmount] = useState(0);
+  const [skillPullAmount, setSkillPullAmount] = useState(0);
+  const [skillSummonConfig, setSkillSummonConfig] = useState("");
 
   // Collect all elemental types dynamically
   const allTypes = Array.from(
@@ -199,6 +203,10 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
       setSkillName(sk.skillName || "");
       setSkillEditChecked(sk.isCustom || false);
       setSkillCost(sk.skillCost !== undefined ? sk.skillCost : 2);
+      setSkillAccuracy(sk.accuracy !== undefined ? sk.accuracy : 100);
+      setSkillPushAmount(sk.pushAmount !== undefined ? sk.pushAmount : 0);
+      setSkillPullAmount(sk.pullAmount !== undefined ? sk.pullAmount : 0);
+      setSkillSummonConfig(sk.summonConfig ? JSON.stringify(sk.summonConfig, null, 2) : "");
 
       // Damage
       const hasDmg = sk.skillDmg !== undefined && sk.skillDmg !== 0 && sk.skillDmg !== "0" && sk.skillDmg !== "";
@@ -252,6 +260,10 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
       setSkillBuffChecked(false);
       setSkillTargetChecked(false);
       setCustomOffsets([]);
+      setSkillAccuracy(100);
+      setSkillPushAmount(0);
+      setSkillPullAmount(0);
+      setSkillSummonConfig("");
     }
   }, [activeSkillIdx, editSkills, isEditMode]);
 
@@ -351,6 +363,19 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
 
       // Offset grid
       sk.customOffsets = customOffsets;
+
+      sk.accuracy = skillAccuracy;
+      sk.pushAmount = skillPushAmount;
+      sk.pullAmount = skillPullAmount;
+      if (skillSummonConfig.trim() !== "") {
+        try {
+          sk.summonConfig = JSON.parse(skillSummonConfig);
+        } catch (e) {
+          delete sk.summonConfig;
+        }
+      } else {
+        delete sk.summonConfig;
+      }
 
       // Recompile skill description text
       let descParts = [];
@@ -1125,6 +1150,64 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
                                 </select>
                               </div>
                             )}
+                          </div>
+
+                          {/* Advanced Parameters (Accuracy, Push/Pull, Summons) */}
+                          <div className="flex flex-col gap-2.5 bg-[#0f0f1a] p-3 rounded-xl border border-slate-900 font-sans">
+                            <label className="text-[10px] text-gray-300 font-black uppercase tracking-wider block border-b border-slate-800 pb-1 mb-1">
+                              Advanced Parameters
+                            </label>
+                            
+                            <div className="grid grid-cols-3 gap-2">
+                              <div>
+                                <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Accuracy (%)</label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  disabled={!isEditMode || !skillEditChecked}
+                                  value={skillAccuracy}
+                                  onChange={e => setSkillAccuracy(Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 100)))}
+                                  className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1 text-center rounded focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Push (Tiles)</label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={5}
+                                  disabled={!isEditMode || !skillEditChecked}
+                                  value={skillPushAmount}
+                                  onChange={e => setSkillPushAmount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                  className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1 text-center rounded focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Pull (Tiles)</label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={5}
+                                  disabled={!isEditMode || !skillEditChecked}
+                                  value={skillPullAmount}
+                                  onChange={e => setSkillPullAmount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                  className="w-full bg-[#16213e] border border-[#2a3a5a] text-xs text-white px-2 py-1 text-center rounded focus:outline-none"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] text-gray-400 font-bold uppercase block mb-1">Summons Config (JSON)</label>
+                              <textarea
+                                disabled={!isEditMode || !skillEditChecked}
+                                value={skillSummonConfig}
+                                onChange={e => setSkillSummonConfig(e.target.value)}
+                                placeholder='e.g. { "species": "Tidal Bell", "isMini": false, "isStatic": true }'
+                                rows={3}
+                                className="w-full bg-[#16213e] border border-[#2a3a5a] text-[10px] text-white p-2 rounded focus:outline-none font-mono"
+                              />
+                            </div>
                           </div>
                         </div>
 

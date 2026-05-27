@@ -221,7 +221,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Lum Berry",
     desc: "กดใช้: ล้างสถานะผิดปกติร้ายแรงทั้งหมดออกจากตัวหมากทันที (1 ครั้ง)",
     category: "Consumable",
-    cost: 1,
+    cost: 2,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/lum-berry.png",
     type: "consumable"
   },
@@ -229,7 +229,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "White Herb",
     desc: "กดใช้: ล้างค่าดีบัฟติดลบ (Negative Modifiers) ทั้งหมดออกจากสเตตัสหมากให้เป็นศูนย์",
     category: "Consumable",
-    cost: 1,
+    cost: 2,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/white-herb.png",
     type: "consumable"
   },
@@ -245,7 +245,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Mental Herb",
     desc: "กดใช้: ปลดสถานะผิดปกติจำพวกหยุดนิ่งข้ามเทิร์น หรืออาการมึนงงสับสน (Confusion)",
     category: "Consumable",
-    cost: 1,
+    cost: 2,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/mental-herb.png",
     type: "consumable"
   },
@@ -253,8 +253,80 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Power Herb",
     desc: "กดใช้: ร่ายมนตร์มอบบัฟเพิ่ม Atk Modifier +1 ให้กับยูนิตเป็นเวลา 1 เทิร์น",
     category: "Consumable",
-    cost: 1,
+    cost: 2,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/power-herb.png",
     type: "consumable"
+  },
+  "Cheri Berry": {
+    name: "Cheri Berry",
+    desc: "กดใช้/สวมใส่: ล้างสถานะอัมพาต (Paralysis) ทันที",
+    category: "Consumable",
+    cost: 2,
+    img: "https://play.pokemonshowdown.com/sprites/itemicons/cheri-berry.png",
+    type: "consumable"
+  },
+  "Chesto Berry": {
+    name: "Chesto Berry",
+    desc: "กดใช้/สวมใส่: ล้างสถานะหลับ (Sleep) ทันที",
+    category: "Consumable",
+    cost: 2,
+    img: "https://play.pokemonshowdown.com/sprites/itemicons/chesto-berry.png",
+    type: "consumable"
+  },
+  "Pecha Berry": {
+    name: "Pecha Berry",
+    desc: "กดใช้/สวมใส่: ล้างสถานะพิษ (Poison/Toxic) ทันที",
+    category: "Consumable",
+    cost: 2,
+    img: "https://play.pokemonshowdown.com/sprites/itemicons/pecha-berry.png",
+    type: "consumable"
+  },
+  "Rawst Berry": {
+    name: "Rawst Berry",
+    desc: "กดใช้/สวมใส่: ล้างสถานะไฟไหม้ (Burn) ทันที",
+    category: "Consumable",
+    cost: 2,
+    img: "https://play.pokemonshowdown.com/sprites/itemicons/rawst-berry.png",
+    type: "consumable"
+  },
+  "Aspear Berry": {
+    name: "Aspear Berry",
+    desc: "กดใช้/สวมใส่: ล้างสถานะแช่แข็ง (Freeze) ทันที",
+    category: "Consumable",
+    cost: 2,
+    img: "https://play.pokemonshowdown.com/sprites/itemicons/aspear-berry.png",
+    type: "consumable"
+  },
+  "Persim Berry": {
+    name: "Persim Berry",
+    desc: "กดใช้/สวมใส่: ล้างสถานะสับสน (Confusion) ทันที",
+    category: "Consumable",
+    cost: 2,
+    img: "https://play.pokemonshowdown.com/sprites/itemicons/persim-berry.png",
+    type: "consumable"
+  },
+  "Curry": {
+    name: "Curry",
+    desc: "กดใช้: เพิ่ม Max HP +2 และ Happiness +5 เป็นเวลา 3 เทิร์น (ไม่ซ้อนทับ)",
+    category: "Consumable",
+    cost: 3,
+    img: "https://play.pokemonshowdown.com/sprites/itemicons/curry.png",
+    type: "consumable"
+  },
+  "Oval Stone": {
+    name: "Oval Stone",
+    desc: "สวมใส่: บล็อกการได้รับ EXP ทั้งหมดของยูนิตนี้ แต่จะได้รับ Happiness +1 เมื่อจบเทิร์น",
+    category: "Utility",
+    cost: 6,
+    img: "https://play.pokemonshowdown.com/sprites/itemicons/oval-stone.png",
+    type: "held"
   }
 };
+
+// Programmatically triple held item costs
+Object.keys(ITEMS).forEach(key => {
+  if (ITEMS[key].type === "held") {
+    ITEMS[key].cost *= 3;
+  }
+});
+

@@ -132,7 +132,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
   const filteredSpecies = Object.keys(DB).filter(name => {
     const p = DB[name];
     if (!p) return false;
-    if (name === "Clear Bell" || name === "Tidal Bell" || name === "Tidal bell") return false;
+    if (name === "Clear Bell" || name === "Tidal Bell" || name === "Tidal bell" || p.isSummon) return false;
     if (!p.base) return false; // Only base stages of evolution are allowed
     if (costFilter !== "all" && p.cost.toString() !== costFilter) return false;
     if (typeFilter !== "all" && p.t1 !== typeFilter && p.t2 !== typeFilter) return false;

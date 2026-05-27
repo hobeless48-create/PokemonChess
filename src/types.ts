@@ -32,6 +32,25 @@ export interface Skill {
   isTargetSkill?: boolean;
   targetCount?: number;
   isCustom?: boolean;
+  accuracy?: number;
+  pushAmount?: number;
+  pullAmount?: number;
+  summonConfig?: {
+    species: string;
+    isMini: boolean;
+    isStatic: boolean;
+    hp?: number;
+    atk?: number;
+    def?: number;
+    customSkill?: any; // Skill can be nested
+    hasAoe?: boolean;
+    aoeEffect?: string;
+    aoeRange?: number;
+    aoeDmg?: number;
+    aoeHeal?: number;
+    aoeCondition?: string;
+  };
+  customRadiusOffsets?: { dc: number; dr: number }[];
 }
 
 export interface PokemonDBEntry {
@@ -80,6 +99,11 @@ export interface PokemonDBEntry {
     amount: number;
     duration: number;
   };
+  isSummon?: boolean;
+  accuracy?: number;
+  pushAmount?: number;
+  pullAmount?: number;
+  summonConfig?: any;
 }
 
 export interface StatModifier {
@@ -145,6 +169,20 @@ export interface PokemonEntity {
   damageReceivedLastTurn?: number;
   pressureTriggered?: boolean;
   customSkills?: Skill[];
+  isSummon?: boolean;
+  shield?: number;
+  shieldDuration?: number;
+  activeAbilityUsed?: boolean;
+  curryEffect?: {
+    hpBoost: number;
+    turnsLeft: number;
+  } | null;
+  customBar?: {
+    type: "Happiness" | "Frost" | "Angry";
+    value: number;
+    max: number;
+  } | null;
+  zygCellsCollected?: number;
 }
 
 export interface Pedestal {
