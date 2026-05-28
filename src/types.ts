@@ -184,6 +184,7 @@ export interface PokemonEntity {
     max: number;
   } | null;
   zygCellsCollected?: number;
+  zyg10Spawned?: boolean;
   aegislashForm?: "Shield" | "Blade";
 }
 

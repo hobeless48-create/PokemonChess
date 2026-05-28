@@ -422,7 +422,7 @@ export default function App() {
 
       const buildEntity = (species: string, player: number, col: number, row: number): PokemonEntity => {
         const db = DB[species];
-        const isEgg = !!db.legendary || species === "Aerodactyl";
+        const isEgg = (!!db.legendary && !species.startsWith("Zygarde")) || species === "Aerodactyl";
         const startHp = species === "Aerodactyl" ? 5 : (isEgg ? 10 : db.hp);
         return {
           id: nextId++,
@@ -663,7 +663,7 @@ export default function App() {
 
     const buildEntity = (species: string, player: number, col: number, row: number): PokemonEntity => {
       const db = DB[species];
-      const isEgg = !!db.legendary || species === "Aerodactyl";
+      const isEgg = (!!db.legendary && !species.startsWith("Zygarde")) || species === "Aerodactyl";
       const startHp = species === "Aerodactyl" ? 5 : (isEgg ? 10 : db.hp);
       return {
         id: nextId++,
@@ -1015,43 +1015,10 @@ export default function App() {
     }
   };
 
-  const checkZygardeEvolution = (zygarde: PokemonEntity, list: PokemonEntity[]) => {
-    if (zygarde.fainted) return;
-    const cells = zygarde.zygCellsCollected || 0;
-    let newSpecies = "";
-    let newMaxHp = 0, newAtk = 0, newDef = 0;
-    if (zygarde.species === "Zygarde Reassembly Unit" && cells >= 10) {
-      newSpecies = "Zygarde 10%";
-      newMaxHp = 8; newAtk = 2; newDef = 2;
-    } else if (zygarde.species === "Zygarde 10%" && cells >= 25) {
-      newSpecies = "Zygarde 50%";
-      newMaxHp = 11; newAtk = 4; newDef = 3;
-    } else if (zygarde.species === "Zygarde 50%" && cells >= 50) {
-      newSpecies = "Zygarde Complete Forme";
-      newMaxHp = 13; newAtk = 5; newDef = 3;
-    }
-    if (newSpecies) {
-      const oldName = zygarde.species;
-      const damageTaken = zygarde.maxHp - zygarde.hp;
-      zygarde.species = newSpecies;
-      zygarde.maxHp = newMaxHp;
-      zygarde.hp = Math.max(1, newMaxHp - damageTaken);
-      zygarde.atk = newAtk;
-      zygarde.def = newDef;
-      addLog(`🟢 Reassembly! ${oldName} transformed into ${newSpecies}!`, "heal");
-      if (newSpecies === "Zygarde Complete Forme") {
-        list.forEach(p => {
-          if (p.species === "Zygarde Cell") p.fainted = true;
-        });
-        addLog(`🟢 Complete Forme Transition: All remaining Zygarde Cells destroyed!`, "sys");
-      }
-      checkZygardeEvolution(zygarde, list);
-    }
-  };
-
   const checkPowerConstruct = (zygarde: PokemonEntity, list: PokemonEntity[]) => {
     if (zygarde.fainted) return;
-    if ((zygarde.species === "Zygarde 10%" || zygarde.species === "Zygarde 50%") && zygarde.hp < zygarde.maxHp * 0.5) {
+    const cells = zygarde.zygCellsCollected || 0;
+    if (zygarde.species === "Zygarde 50%" && cells >= 100 && zygarde.hp <= zygarde.maxHp * 0.5) {
       const oldName = zygarde.species;
       const damageTaken = zygarde.maxHp - zygarde.hp;
       zygarde.species = "Zygarde Complete Forme";
@@ -1063,7 +1030,40 @@ export default function App() {
       list.forEach(p => {
         if (p.species === "Zygarde Cell") p.fainted = true;
       });
+      addLog(`🟢 Complete Forme Transition: All remaining Zygarde Cells destroyed!`, "sys");
     }
+  };
+
+  const incrementZygardeCells = (player: number, list: PokemonEntity[]) => {
+    const zygUnits = list.filter(z => z.player === player && z.species.startsWith("Zygarde"));
+    if (zygUnits.length === 0) return 1;
+
+    let currentCells = 0;
+    zygUnits.forEach(z => {
+      if ((z.zygCellsCollected || 0) > currentCells) {
+        currentCells = z.zygCellsCollected || 0;
+      }
+    });
+    const newCells = currentCells + 1;
+
+    zygUnits.forEach(z => {
+      z.zygCellsCollected = newCells;
+    });
+
+    if (newCells >= 100) {
+      const reassembly = zygUnits.find(z => z.species === "Zygarde Reassembly Unit" && !z.fainted);
+      if (reassembly) {
+        reassembly.fainted = true;
+        addLog(`🟢 Zygarde cells reached 100! Zygarde Reassembly Unit has disappeared from the battlefield.`, "sys");
+      }
+    }
+
+    const zyg50 = zygUnits.find(z => z.species === "Zygarde 50%" && !z.fainted);
+    if (zyg50) {
+      checkPowerConstruct(zyg50, list);
+    }
+
+    return newCells;
   };
 
   const spawnShedinja = (ninjask: PokemonEntity, list: PokemonEntity[], peds: Pedestal[]) => {
@@ -1332,6 +1332,57 @@ export default function App() {
 
       // 3. Active Ability Execution
       if (mode.type === "active_ability") {
+        if (actor.species === "Zygarde Reassembly Unit") {
+          const isValidCell = gameState.highlightedCells.some(c => c.col === col && c.row === row);
+          if (!isValidCell) {
+            addLog("❌ Reassemble failed: Invalid spawn tile.", "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const nextId = Math.max(0, ...list.map(x => x.id)) + 1;
+          const cells = actor.zygCellsCollected || 0;
+          const zyg10: PokemonEntity = {
+            id: nextId,
+            species: "Zygarde 10%",
+            player: actor.player,
+            col,
+            row,
+            maxHp: 8,
+            hp: 8,
+            atk: 2,
+            def: 2,
+            exp: 0,
+            status: null,
+            heldItem: null,
+            fainted: false,
+            modifiers: [],
+            isEgg: false,
+            hasHatched: true,
+            zygCellsCollected: cells,
+            zyg10Spawned: true,
+            customBar: getCustomBarForSpecies("Zygarde 10%")
+          };
+
+          list.push(zyg10);
+          actor.zyg10Spawned = true;
+          list.forEach(other => {
+            if (other.player === actor.player && other.species === "Zygarde Reassembly Unit") {
+              other.zyg10Spawned = true;
+            }
+          });
+          actor.activeAbilityUsed = true;
+          addLog(`🟢 Zygarde 10% spawned next to Reassembly Unit at ${String.fromCharCode(65 + col)}${row + 1}!`, "heal");
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: list,
+            actionMode: null,
+            highlightedCells: []
+          }));
+          return;
+        }
+
         if (actor.species === "Talonflame") {
           const teamMP = gameState.movePoints?.[gameState.currentPlayer] ?? 0;
           if (teamMP < 1) {
@@ -1568,17 +1619,11 @@ export default function App() {
         if (target) {
           // Zygarde Cell allied collection or enemy destruction
           if (target.species === "Zygarde Cell") {
-            if (target.player === actor.player) {
-              const zygUnit = list.find(z => z.player === actor.player && (z.species === "Zygarde Reassembly Unit" || z.species === "Zygarde 10%" || z.species === "Zygarde 50%"));
-              if (zygUnit) {
-                zygUnit.zygCellsCollected = (zygUnit.zygCellsCollected || 0) + 1;
-                addLog(`🟢 Cell collected! Zygarde has now collected ${zygUnit.zygCellsCollected} cells.`, "heal");
-                target.fainted = true;
-                checkZygardeEvolution(zygUnit, list);
-              } else {
-                target.fainted = true;
-                addLog(`🟢 Zygarde Cell collected (no Zygarde unit on field).`, "sys");
-              }
+            const hasZyg = list.some(z => z.player === actor.player && z.species.startsWith("Zygarde"));
+            if (hasZyg) {
+              const newCells = incrementZygardeCells(actor.player, list);
+              addLog(`🟢 Cell collected! Zygarde has now collected ${newCells} cells.`, "heal");
+              target.fainted = true;
             } else {
               target.fainted = true;
               addLog(`💥 Zygarde Cell destroyed by enemy ${actor.species}!`, "atk");
@@ -2804,18 +2849,11 @@ export default function App() {
             if (target) {
               const targetDb = DB[target.species];
               if (target.species === "Zygarde Cell") {
-                targetsHit++;
-                if (target.player === actor.player) {
-                  const zygUnit = list.find(z => z.player === actor.player && (z.species === "Zygarde Reassembly Unit" || z.species === "Zygarde 10%" || z.species === "Zygarde 50%"));
-                  if (zygUnit) {
-                    zygUnit.zygCellsCollected = (zygUnit.zygCellsCollected || 0) + 1;
-                    addLog(`🟢 Cell collected! Zygarde has now collected ${zygUnit.zygCellsCollected} cells.`, "heal");
-                    target.fainted = true;
-                    checkZygardeEvolution(zygUnit, list);
-                  } else {
-                    target.fainted = true;
-                    addLog(`🟢 Zygarde Cell collected (no Zygarde unit on field).`, "sys");
-                  }
+                const hasZyg = list.some(z => z.player === actor.player && z.species.startsWith("Zygarde"));
+                if (hasZyg) {
+                  const newCells = incrementZygardeCells(actor.player, list);
+                  addLog(`🟢 Cell collected! Zygarde has now collected ${newCells} cells.`, "heal");
+                  target.fainted = true;
                 } else {
                   target.fainted = true;
                   addLog(`💥 Zygarde Cell destroyed by enemy ${actor.species}'s skill!`, "atk");
@@ -3239,6 +3277,10 @@ export default function App() {
     if (actor.species === "Clear Bell" || actor.species === "Tidal Bell" || actor.species === "Tidal bell" || (actor.isSummon && actor.summonConfig?.isStatic)) {
       return;
     }
+    if (actor.species === "Zygarde Reassembly Unit" && type !== ("active_ability" as any)) {
+      addLog("❌ Zygarde Reassembly Unit cannot move, attack, or use skills.", "sys");
+      return;
+    }
     const dbEntry = DB[actor.species];
 
     if (actor.isEgg && !actor.hasHatched) {
@@ -3259,6 +3301,10 @@ export default function App() {
           .map(p => ({ col: p.col, row: p.row, type: "atk" as const }));
       } else if (actor.species === "Talonflame") {
         cells = adjCells(actor.col, actor.row, 2, true, gameConfig.boardSize)
+          .filter(c => !pkAt(c.col, c.row, gameState.pokemon) && !pedAt(c.col, c.row, gameState.pedestals))
+          .map(c => ({ col: c.col, row: c.row, type: "move" as const }));
+      } else if (actor.species === "Zygarde Reassembly Unit") {
+        cells = adjCells(actor.col, actor.row, 1, true, gameConfig.boardSize)
           .filter(c => !pkAt(c.col, c.row, gameState.pokemon) && !pedAt(c.col, c.row, gameState.pedestals))
           .map(c => ({ col: c.col, row: c.row, type: "move" as const }));
       }
@@ -3989,7 +4035,7 @@ export default function App() {
     // Zygarde cell spawning
     list.forEach(z => {
       if (z.species === "Zygarde Reassembly Unit" && !z.fainted) {
-        const cells = adjCells(z.col, z.row, 3, true, gameConfig.boardSize);
+        const cells = adjCells(z.col, z.row, 2, true, gameConfig.boardSize);
         let nextId = Math.max(0, ...list.map(p => p.id)) + 1;
         cells.forEach(c => {
           if (!pkAt(c.col, c.row, list) && !pedAt(c.col, c.row, peds)) {
@@ -3997,7 +4043,7 @@ export default function App() {
               list.push({
                 id: nextId++,
                 species: "Zygarde Cell",
-                player: z.player,
+                player: 0,
                 col: c.col,
                 row: c.row,
                 hp: 1,
@@ -4258,6 +4304,37 @@ export default function App() {
     const nextPokemonList = [...list];
     const nextPedestals = [...peds];
     checkWinner(nextPedestals, nextPokemonList);
+
+    // Zygarde 10% -> 50% evolution check at the end of turn
+    nextPokemonList.forEach(p => {
+      if (p.species === "Zygarde 10%" && !p.fainted) {
+        const cells = p.zygCellsCollected || 0;
+        if (cells >= 50) {
+          const oldName = p.species;
+          const damageTaken = p.maxHp - p.hp;
+          p.species = "Zygarde 50%";
+          p.maxHp = 11;
+          p.hp = Math.max(1, 11 - damageTaken);
+          p.atk = 4;
+          p.def = 3;
+          p.customBar = getCustomBarForSpecies("Zygarde 50%");
+          addLog(`🌿 Turn-End Evolution! Zygarde 10% evolved into Zygarde 50%!`, "heal");
+          
+          if (cells >= 100) {
+            checkPowerConstruct(p, nextPokemonList);
+          }
+        }
+      }
+    });
+
+    // Check existing Zygarde 50% units for Power Construct (in case they reached >= 100 cells or <= 50% HP)
+    nextPokemonList.forEach(p => {
+      if (p.species === "Zygarde 50%" && !p.fainted) {
+        checkPowerConstruct(p, nextPokemonList);
+      }
+    });
+
+
 
     // Forecast turn-start checks for Castform
     nextPokemonList.forEach(p => {

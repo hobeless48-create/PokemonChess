@@ -3384,7 +3384,7 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   ),
 
   "Zygarde Reassembly Unit": Pkmn(718, ["Dragon", "Ground"], 6, [16, 4, 3], "Def",
-    "Zygarde Reassembly Unit - A special structure placed on start. End of turn: empty tiles in AoE(3) have 10% chance to generate a Zygarde Cell. Collecting 10 cells summons Zygarde 10%.",
+    "Zygarde Reassembly Unit - A special structure placed on start. End of turn: empty tiles in AoE(2) have 10% chance to generate a Zygarde Cell. Collecting 10 cells summons Zygarde 10%.",
     [], {"base":true,"legendary":true,"evoCost":null,"evoTo":"Zygarde 10%","evoFrom":"None","color":"#5F8E4F"}
   ),
 

@@ -319,6 +319,24 @@ export const StatsCard: React.FC<StatsCardProps> = ({
     );
   }
 
+  let abilityName = db.ability;
+  let abilityDesc = db.abilityDesc;
+  if (pkMatch.species === "Zygarde Reassembly Unit") {
+    const cells = pkMatch.zygCellsCollected || 0;
+    abilityDesc = `${db.abilityDesc} (Collected: ${cells}/100 cells)`;
+  } else if (pkMatch.species === "Zygarde 10%") {
+    const cells = pkMatch.zygCellsCollected || 0;
+    abilityDesc = `${db.abilityDesc} (Collected: ${cells}/50 cells for evolution)`;
+  } else if (pkMatch.species === "Zygarde 50%") {
+    const cells = pkMatch.zygCellsCollected || 0;
+    if (cells >= 100) {
+      abilityName = "Power Construct";
+      abilityDesc = "Under 50% HP, transforms to Complete Forme. (Cells Collected: 100/100)";
+    } else {
+      abilityDesc = `${db.abilityDesc} (Collected: ${cells}/100 cells for Power Construct)`;
+    }
+  }
+
   const pct = Math.round((pkMatch.hp / pkMatch.maxHp) * 100);
   const remainingColor = pct < 25 ? "bg-red-500" : pct < 50 ? "bg-amber-500" : "bg-emerald-500";
 
@@ -329,8 +347,9 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   const isEggForm = pkMatch.isEgg && !pkMatch.hasHatched;
   const teamMP = movePoints?.[currentPlayer] ?? 0;
   const unitUsedMP = pkMatch.hasUsedMP ?? false;
-  const canMove = isMyUnit && !isEggForm && (energy >= 1 || (teamMP > 0 && !unitUsedMP));
-  const canAtk = isMyUnit && !isEggForm && energy >= 1;
+  const isZygReassembly = pkMatch.species === "Zygarde Reassembly Unit";
+  const canMove = isMyUnit && !isEggForm && !isZygReassembly && (energy >= 1 || (teamMP > 0 && !unitUsedMP));
+  const canAtk = isMyUnit && !isEggForm && !isZygReassembly && energy >= 1;
 
   // Retrieve skill configuration lists
   const skillList: Skill[] = pkMatch.customSkills || (Array.isArray(db.skills) && db.skills.length > 0
@@ -400,6 +419,9 @@ export const StatsCard: React.FC<StatsCardProps> = ({
     const isNewWeatherActive = weather === "Harsh Sunlight" || weather === "Heavy Rain" || weather === "Strong Winds";
     const isWeatherMove = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(skObj.skillName);
     if (isNewWeatherActive && isWeatherMove) {
+      return false;
+    }
+    if (pkMatch.species === "Zygarde Reassembly Unit") {
       return false;
     }
     return isMyUnit && !isEggForm && energy >= sc && !pkMatch.skillUses?.[skObj.skillName];
@@ -608,7 +630,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
 
         {/* Ability explanation row */}
         <div className="ability-text bg-[#0f0f1a] p-2.5 rounded-lg border border-slate-800 text-[11px] leading-snug">
-          <strong className="text-emerald-400">✨ {db.ability}:</strong> <span className="text-gray-300">{db.abilityDesc}</span>
+          <strong className="text-emerald-400">✨ {abilityName}:</strong> <span className="text-gray-300">{abilityDesc}</span>
         </div>
 
         {/* Action Grid commands panel */}
@@ -747,6 +769,27 @@ export const StatsCard: React.FC<StatsCardProps> = ({
               </span>
               <span className="text-[9px] opacity-75 font-mono">
                 {pkMatch.activeAbilityUsed ? "Already Used This Turn" : "Click to select target"}
+              </span>
+            </button>
+          </div>
+        )}
+
+        {isMyUnit && pkMatch.species === "Zygarde Reassembly Unit" && (pkMatch.zygCellsCollected || 0) >= 10 && !pkMatch.zyg10Spawned && (
+          <div className="mt-2">
+            <button
+              disabled={pkMatch.activeAbilityUsed}
+              onClick={() => onSelectAction("active_ability" as any, pkMatch.id)}
+              className={`w-full py-2.5 rounded-lg border flex flex-col items-center justify-center transition leading-normal outline-none focus:outline-none ${
+                !pkMatch.activeAbilityUsed
+                  ? "bg-amber-500/10 hover:bg-amber-500/25 border-amber-500/50 text-amber-400 cursor-pointer shadow-md shadow-amber-500/5 font-extrabold"
+                  : "bg-slate-800/40 border-slate-800 text-gray-500 cursor-not-allowed opacity-55"
+              }`}
+            >
+              <span className="text-xs font-black uppercase tracking-wider font-sans">
+                ⭐ Active Ability: Reassemble 10% (0⚡)
+              </span>
+              <span className="text-[9px] opacity-75 font-mono">
+                {pkMatch.activeAbilityUsed ? "Already Used This Turn" : "Click to select spawn slot"}
               </span>
             </button>
           </div>
