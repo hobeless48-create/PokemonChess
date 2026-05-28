@@ -8,6 +8,10 @@ import { DB } from "../data/pokemon";
 import { TCOL } from "../data/typeCharts";
 import { PokemonDBEntry } from "../types";
 
+function isMythical(name: string, p: PokemonDBEntry): boolean {
+  return p.hatchGroup === "Mythical" || ["Mew", "Celebi", "Jirachi", "Deoxys", "Phione", "Manaphy", "Darkrai", "Shaymin", "Arceus", "Victini", "Keldeo", "Meloetta", "Genesect", "Diancie", "Hoopa", "Volcanion"].includes(name);
+}
+
 interface SetupScreenProps {
   onStartGame: (p1Team: { species: string; col: number; row: number }[], p2Team: { species: string; col: number; row: number }[]) => void;
   p2pStatus: "disconnected" | "connecting" | "connected";
@@ -133,14 +137,25 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
     const p = DB[name];
     if (!p) return false;
     if (name === "Clear Bell" || name === "Tidal Bell" || name === "Tidal bell" || p.isSummon) return false;
-    if (!p.base) return false; // Only base stages of evolution are allowed
+    
+    const isBase = p.base || !p.evoFrom || p.evoFrom === "None" || p.evoFrom === "";
+    if (!isBase) return false; // Only base stages of evolution are allowed
+    
     if (costFilter !== "all" && p.cost.toString() !== costFilter) return false;
     if (typeFilter !== "all" && p.t1 !== typeFilter && p.t2 !== typeFilter) return false;
     if (roleFilter !== "all" && p.cls !== roleFilter) return false;
-    if (rarityFilter === "legendary" && !p.legendary) return false;
-    if (rarityFilter === "non-legendary" && p.legendary) return false;
+    
+    const isMyth = isMythical(name, p);
+    if (rarityFilter === "legendary" && (!p.legendary || isMyth)) return false;
+    if (rarityFilter === "mythical" && !isMyth) return false;
+    if (rarityFilter === "non-legendary" && (p.legendary || isMyth)) return false;
+    
     if (genFilter === "gen1" && p.dex > 151) return false;
-    if (genFilter === "gen2" && p.dex <= 151) return false;
+    if (genFilter === "gen2" && (p.dex <= 151 || p.dex > 251)) return false;
+    if (genFilter === "gen3" && (p.dex <= 251 || p.dex > 386)) return false;
+    if (genFilter === "gen4" && (p.dex <= 386 || p.dex > 493)) return false;
+    if (genFilter === "gen5" && (p.dex <= 493 || p.dex > 649)) return false;
+    if (genFilter === "gen6" && p.dex <= 649) return false;
     return true;
   }).sort();
 
@@ -375,7 +390,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
         <div className="filter-group">
           <span className="filter-group-label text-xs font-bold text-gray-400 uppercase tracking-wider block mb-2">Filter Cost (Gold)</span>
           <div className="filter-tabs flex flex-wrap gap-2">
-            {["all", "1", "2", "3", "4", "5"].map(c => (
+            {["all", "1", "2", "3", "4", "5", "6", "7"].map(c => (
               <button
                 key={c}
                 onClick={() => setCostFilter(c)}
@@ -451,12 +466,14 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
           <div className="filter-group">
             <span className="filter-group-label text-xs font-bold text-gray-400 uppercase tracking-wider block mb-2">Rarity Specification</span>
             <div className="filter-tabs flex gap-2">
-              {["all", "legendary", "non-legendary"].map(rv => {
+              {["all", "legendary", "mythical", "non-legendary"].map(rv => {
                 const isSelected = rarityFilter === rv;
                 let activeStyle = "";
                 if (isSelected) {
                   if (rv === "legendary") {
                     activeStyle = "bg-[#ffd700] text-[#1a1a2e] border-[#ffd700] font-bold";
+                  } else if (rv === "mythical") {
+                    activeStyle = "bg-purple-600 text-white border-purple-600 font-bold";
                   } else if (rv === "non-legendary") {
                     activeStyle = "bg-slate-500 text-white border-slate-500 font-bold";
                   } else {
@@ -472,7 +489,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
                     onClick={() => setRarityFilter(rv)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wider transition border flex-1 capitalize ${activeStyle}`}
                   >
-                    {rv === "all" ? "All Rarities" : rv === "legendary" ? "Legendary egg" : "Standard"}
+                    {rv === "all" ? "All" : rv === "legendary" ? "Legendary" : rv === "mythical" ? "Mythical" : "Standard"}
                   </button>
                 );
               })}
@@ -481,18 +498,18 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
 
           <div className="filter-group">
             <span className="filter-group-label text-xs font-bold text-gray-400 uppercase tracking-wider block mb-2">Generation Filter</span>
-            <div className="filter-tabs flex gap-2">
-              {["all", "gen1", "gen2"].map(g => (
+            <div className="filter-tabs flex flex-wrap gap-2">
+              {["all", "gen1", "gen2", "gen3", "gen4", "gen5", "gen6"].map(g => (
                 <button
                   key={g}
                   onClick={() => setGenFilter(g)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wider transition border flex-1 uppercase ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wider transition border flex-1 min-w-[70px] uppercase ${
                     genFilter === g
                       ? "bg-[#4fc3f7] text-[#1a1a2e] border-[#4fc3f7] font-bold"
                       : "bg-[#1a2a4a] text-gray-300 border-[#2a3a5a] hover:bg-[#1a4a7a]"
                   }`}
                 >
-                  {g === "all" ? "All Gen" : g === "gen1" ? "Gen 1" : "Gen 2"}
+                  {g === "all" ? "All" : g === "gen1" ? "Gen 1" : g === "gen2" ? "Gen 2" : g === "gen3" ? "Gen 3" : g === "gen4" ? "Gen 4" : g === "gen5" ? "Gen 5" : "Gen 6"}
                 </button>
               ))}
             </div>

@@ -213,7 +213,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Sitrus Berry",
     desc: "กดใช้: ฟื้นฟู HP 2 แต้มทันทีให้กับยูนิตโปเกมอนฝั่งคุณที่เลือก",
     category: "Consumable",
-    cost: 2,
+    cost: 5,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/sitrus-berry.png",
     type: "consumable"
   },
@@ -221,7 +221,7 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Lum Berry",
     desc: "กดใช้: ล้างสถานะผิดปกติร้ายแรงทั้งหมดออกจากตัวหมากทันที (1 ครั้ง)",
     category: "Consumable",
-    cost: 2,
+    cost: 4,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/lum-berry.png",
     type: "consumable"
   },
@@ -237,15 +237,15 @@ export const ITEMS: { [name: string]: ShopItem } = {
     name: "Berry Juice",
     desc: "กดใช้: เติมสารอาหารช่วยฟื้นฟูคืน HP 1 แต้มให้กับโปเกมอนที่ระบุ",
     category: "Consumable",
-    cost: 1,
+    cost: 3,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/berry-juice.png",
     type: "consumable"
   },
   "Mental Herb": {
     name: "Mental Herb",
-    desc: "กดใช้: ปลดสถานะผิดปกติจำพวกหยุดนิ่งข้ามเทิร์น หรืออาการมึนงงสับสน (Confusion)",
+    desc: "สวมใส่: ปลดสถานะผิดปกติจำพวกหยุดนิ่งข้ามเทิร์น หรืออาการมึนงงสับสน (Confusion) (ต้องสวมใส่ก่อนติดสถานะ)",
     category: "Consumable",
-    cost: 2,
+    cost: 3,
     img: "https://play.pokemonshowdown.com/sprites/itemicons/mental-herb.png",
     type: "consumable"
   },
@@ -305,12 +305,28 @@ export const ITEMS: { [name: string]: ShopItem } = {
     img: "https://play.pokemonshowdown.com/sprites/itemicons/persim-berry.png",
     type: "consumable"
   },
-  "Curry": {
-    name: "Curry",
-    desc: "กดใช้: เพิ่ม Max HP +2 และ Happiness +5 เป็นเวลา 3 เทิร์น (ไม่ซ้อนทับ)",
+  "Curry (Small)": {
+    name: "Curry (Small)",
+    desc: "กดใช้: เพิ่ม Max HP +1 และ Happiness +1 เป็นเวลา 2 เทิร์น (ไม่ซ้อนทับ)",
     category: "Consumable",
-    cost: 3,
-    img: "https://play.pokemonshowdown.com/sprites/itemicons/curry.png",
+    cost: 6,
+    img: "https://static.wikia.nocookie.net/pokemonwack/images/0/0f/2929MS.gif/revision/latest?cb=20240627025135",
+    type: "consumable"
+  },
+  "Curry (Medium)": {
+    name: "Curry (Medium)",
+    desc: "กดใช้: เพิ่ม Max HP +2 และ Happiness +2 เป็นเวลา 3 เทิร์น (ไม่ซ้อนทับ)",
+    category: "Consumable",
+    cost: 8,
+    img: "https://static.wikia.nocookie.net/pokemonwack/images/0/02/2930MS.gif/revision/latest?cb=20240627021757",
+    type: "consumable"
+  },
+  "Curry (Big)": {
+    name: "Curry (Big)",
+    desc: "กดใช้: เพิ่ม Max HP +3 และ Happiness +3 เป็นเวลา 3 เทิร์น (ไม่ซ้อนทับ)",
+    category: "Consumable",
+    cost: 10,
+    img: "https://static.wikia.nocookie.net/pokemonwack/images/3/34/2931MS.gif/revision/latest?cb=20240701213228",
     type: "consumable"
   },
   "Oval Stone": {

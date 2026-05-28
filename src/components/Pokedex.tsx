@@ -159,7 +159,11 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
     if (costFilter !== "all" && p.cost.toString() !== costFilter) return false;
     if (roleFilter !== "all" && p.cls !== roleFilter) return false;
     if (genFilter === "gen1" && p.dex > 151) return false;
-    if (genFilter === "gen2" && p.dex <= 151) return false;
+    if (genFilter === "gen2" && (p.dex <= 151 || p.dex > 251)) return false;
+    if (genFilter === "gen3" && (p.dex <= 251 || p.dex > 386)) return false;
+    if (genFilter === "gen4" && (p.dex <= 386 || p.dex > 493)) return false;
+    if (genFilter === "gen5" && (p.dex <= 493 || p.dex > 649)) return false;
+    if (genFilter === "gen6" && p.dex <= 649) return false;
     return true;
   }).sort((a, b) => DB[a].dex - DB[b].dex);
 
@@ -229,8 +233,14 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
         setSkillBuffType("Heal");
         setSkillBuffAmt(sk.skillHeal);
       } else if (sk.skillEffect) {
-        // Uppercase first letter
-        const statName = sk.skillEffect.stat.charAt(0).toUpperCase() + sk.skillEffect.stat.slice(1);
+        let statName = "";
+        if (sk.skillEffect.stat === "skill_dmg") {
+          statName = "Skill_dmg";
+        } else if (sk.skillEffect.stat === "normal_dmg") {
+          statName = "Normal_dmg";
+        } else {
+          statName = sk.skillEffect.stat.charAt(0).toUpperCase() + sk.skillEffect.stat.slice(1);
+        }
         setSkillBuffType(statName);
         setSkillBuffAmt(sk.skillEffect.amount);
         setSkillBuffTurns(sk.skillEffect.duration);
@@ -338,9 +348,10 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
           sk.skillHealTarget = "ally";
           delete sk.skillEffect;
         } else {
+          const lowerType = skillBuffType.toLowerCase();
           sk.skillEffect = {
-            target: skillBuffType.toLowerCase() === "atk" || skillBuffType.toLowerCase() === "def" ? "ally" : "enemy",
-            stat: skillBuffType.toLowerCase(),
+            target: ["atk", "def", "skill_dmg", "normal_dmg"].includes(lowerType) ? "ally" : "enemy",
+            stat: lowerType,
             amount: skillBuffAmt,
             duration: skillBuffTurns
           };
@@ -483,6 +494,10 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
                 <option value="all">All Generations</option>
                 <option value="gen1">Gen 1 (Kanto)</option>
                 <option value="gen2">Gen 2 (Johto)</option>
+                <option value="gen3">Gen 3 (Hoenn)</option>
+                <option value="gen4">Gen 4 (Sinnoh)</option>
+                <option value="gen5">Gen 5 (Unova)</option>
+                <option value="gen6">Gen 6 (Kalos)</option>
               </select>
             </div>
 
@@ -739,6 +754,33 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
                   </div>
                 ) : (
                   <h3 className="text-2xl font-black text-white uppercase tracking-wider mb-2">{selectedPkmn}</h3>
+                )}
+
+                {/* Zygarde Form Selection Toggle */}
+                {!isEditMode && ["Zygarde Reassembly Unit", "Zygarde 10%", "Zygarde 50%", "Zygarde Complete Forme"].includes(selectedPkmn || "") && (
+                  <div className="flex flex-col gap-1 mb-4 w-full">
+                    <span className="text-[9px] text-indigo-400 font-black uppercase tracking-wider text-center">Form Selection</span>
+                    <div className="grid grid-cols-2 gap-1 bg-slate-950/80 p-1 border border-[#0f3460]/40 rounded-xl">
+                      {[
+                        { key: "Zygarde Reassembly Unit", label: "Reassembly" },
+                        { key: "Zygarde 10%", label: "10% Form" },
+                        { key: "Zygarde 50%", label: "50% Form" },
+                        { key: "Zygarde Complete Forme", label: "Complete" }
+                      ].map(item => (
+                        <button
+                          key={item.key}
+                          onClick={() => setSelectedPkmn(item.key)}
+                          className={`py-1 px-1.5 rounded-lg text-[9px] font-bold text-center cursor-pointer transition border border-transparent ${
+                            selectedPkmn === item.key
+                              ? "bg-purple-600 text-white font-extrabold border-purple-400"
+                              : "bg-[#0f0f1a] text-gray-400 hover:text-white hover:bg-slate-900 border-slate-800"
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
 
                 {isEditMode && (
@@ -1088,6 +1130,8 @@ export const Pokedex: React.FC<PokedexProps> = ({ onBack, boardSize }) => {
                                   >
                                     <option value="Atk">Atk Buff</option>
                                     <option value="Def">Def Buff</option>
+                                    <option value="Skill_dmg">Skill Damage Buff</option>
+                                    <option value="Normal_dmg">Normal Attack Damage Buff</option>
                                     <option value="Heal">Heal target</option>
                                   </select>
                                 </div>

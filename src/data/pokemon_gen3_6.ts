@@ -347,7 +347,7 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   ),
 
   "Ninjask": Pkmn(291, ["Bug", "Flying"], 2, [11, 4, 0], "Atk",
-    "Ghost Shell - When Ninjask enters the field, summon 1 Shedinja on the nearest empty tile",
+    "Ghost Shell - When Nincada evolves into Ninjask, summon 1 Shedinja on an adjacent empty tile",
     [
       S("X-Scissor", "Line(2)(1)", 2, {"skillRaw":"X-Scissor (Target = [1(Line(2)(1))], Damage: 2)"})
     ], {"evoFrom":"Nincada","color":"#6D8E1E"}
@@ -1289,7 +1289,7 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   ),
 
   "Ambipom": Pkmn(424, ["Normal"], 2, [13, 5, 0], "Atk",
-    "Ability: Skill Link - After using a skill, roll a d20. If the result is higher than 10, use the skill again",
+    "Skill Link - After using a skill, roll a d20. If the result is higher than 10, deal +50% extra damage to the targets",
     [
       S("Double Hit", "Line(1)(1)", 5, {"skillRaw":"Double Hit (Target = [2(Line(1)(1))], Damage: 5)"})
     ], {"evoFrom":"Aipom","color":"#5F5E5A"}
@@ -1345,7 +1345,7 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   ),
 
   "Purugly": Pkmn(432, ["Normal"], 2, [13, 4, 0], "Atk",
-    "Defiant - When this Pokémon receives a debuff, gain Atk +2",
+    "Defiant - Gains Atk +2 while affected by any negative stat modifier (washes away when debuff ends)",
     [
       S("Body Slam", "Line(1)(1)", 2, {"statusChance":"paralysis","statusChanceValue":0.3,"skillRaw":"Body Slam (Target = [1(Line(1)(1))], Damage: 2, 30% Paralysis)"})
     ], {"evoFrom":"Glameow","color":"#5F5E5A"}
@@ -2995,7 +2995,7 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   ),
 
   "Talonflame": Pkmn(663, ["Fire", "Flying"], 1, [13, 5, 0], "Atk",
-    "Gale Wings - Move first on turn entered to field",
+    "Gale Wings - Click active ability to fly to any empty tile in AoE(2) range (costs 1 MP, once per turn)",
     [
       S("Flare Blitz", "Line(3)(1)", 4, {"selfDamage":1,"skillRaw":"Flare Blitz (Target = [1(Line(3)(1))], Damage: 4, Takes 1 recoil damage)"})
     ], {"evoFrom":"Fletchinder","evoTo":"None","color":"#D85A30"}
@@ -3086,7 +3086,7 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   ),
 
   "Furfrou": Pkmn(676, ["Normal"], 2, [13, 4, 3], "Def",
-    "Fur Coat - Reduces physical damage by 1",
+    "Fur Coat - Reduces incoming damage from AoE/Cone/Line skills by 1",
     [
       S("Cotton Guard", "AoE(0)", 0, {"skillRaw":"Cotton Guard (Target = [1(AoE(0))], Damage: 0, Increases Def by +2 for 2 turns)"})
     ], {"evoFrom":"None","evoTo":"None","color":"#5F5E5A"}
@@ -3121,7 +3121,7 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   ),
 
   "Aegislash": Pkmn(681, ["Steel", "Ghost"], 2, [14, 4, 3], "Def",
-    "Stance Change - Switches between Shield Form and Blade Form, modifies Def/Atk",
+    "Stance Change - Shield Form gives Def +1; Blade Form gives Atk +1. Swaps to Blade on attacks, swaps to Shield on King's Shield",
     [
       S("King's Shield", "AoE(1)", 0, {"skillRaw":"King's Shield (Target = [1(AoE(1))], Damage: 0, Blocks all damage, reduces attacker Atk by 1)"})
     ], {"evoFrom":"Doublade","evoTo":"None","color":"#3C3489"}
@@ -3156,14 +3156,14 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   ),
 
   "Inkay": Pkmn(686, ["Dark", "Psychic"], 2, [6, 2, 0], "Support",
-    "Contrary - Inverts stat changes: debuffs become buffs",
+    "Contrary - Inverts all stat changes (debuffs become buffs, buffs become debuffs)",
     [
       S("Hypnosis", "Line(2)(1)", 0, {"statusChance":"sleep","statusChanceValue":0.5,"skillRaw":"Hypnosis (Target = [1(Line(2)(1))], Damage: 0, Puts enemy to sleep for 2 turns)"})
     ], {"evoFrom":"None","evoCost":7,"evoTo":"Malamar","color":"#993556"}
   ),
 
   "Malamar": Pkmn(687, ["Dark", "Psychic"], 2, [13, 5, 0], "Atk",
-    "Contrary - Inverts all stat changes",
+    "Contrary - Inverts all stat changes (debuffs become buffs, buffs become debuffs)",
     [
       S("Superpower", "Line(1)(1)", 4, {"skillRaw":"Superpower (Target = [1(Line(1)(1))], Damage: 4, Gains Atk +1 and Def +1 from Contrary)"})
     ], {"evoFrom":"Inkay","evoTo":"None","color":"#993556"}
@@ -3240,14 +3240,14 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   ),
 
   "Amaura": Pkmn(698, ["Rock", "Ice"], 3, [8, 2, 0], "Support",
-    "Refrigerate - Converts Normal-type to Ice-type and increases damage by +1",
+    "Refrigerate - When freezing a target, target also gets Def -1 for 1 turn",
     [
       S("Powder Snow", "Cone(2)", 1, {"statusChance":"freeze","statusChanceValue":0.3,"skillRaw":"Powder Snow (Target = [1(Cone(2))], Damage: 1, 30% chance to freeze)"})
     ], {"evoFrom":"None","evoCost":8,"evoTo":"Aurorus","color":"#854F0B"}
   ),
 
   "Aurorus": Pkmn(699, ["Rock", "Ice"], 3, [16, 4, 2], "Def",
-    "Refrigerate - Converts all Normal/typeless moves to Ice-type",
+    "Refrigerate - When freezing a target, target also gets Def -1 for 1 turn",
     [
       S("Blizzard", "AoE(2)", 3, {"statusChance":"freeze","statusChanceValue":0.3,"skillRaw":"Blizzard (Target = [1(AoE(2))], Damage: 3, 30% chance to freeze for 2 turns)"})
     ], {"evoFrom":"Amaura","evoTo":"None","color":"#854F0B"}
@@ -3381,6 +3381,35 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
       S("Crimson Feast", "AoE(1)", 2, {"skillRaw":"Crimson Feast (Target = [3(AoE(1))], Damage: 2, Heal Yveltal 1 HP for each enemy hit)"}),
       S("Soul Drain Eclipse", "Line(3)(1)", 5, {"skillRaw":"Soul Drain Eclipse (Target = [1(Line(3)(1))], Damage: 5, Steal 1 Atk from target and heal the lowest HP Dark ally 3 HP)"})
     ], {"evoFrom":"None","evoCost":30,"evoTo":"None","color":"#5F5E5A"}
+  ),
+
+  "Zygarde Reassembly Unit": Pkmn(718, ["Dragon", "Ground"], 6, [16, 4, 3], "Def",
+    "Zygarde Reassembly Unit - A special structure placed on start. End of turn: empty tiles in AoE(3) have 10% chance to generate a Zygarde Cell. Collecting 10 cells summons Zygarde 10%.",
+    [], {"base":true,"legendary":true,"evoCost":null,"evoTo":"Zygarde 10%","evoFrom":"None","color":"#5F8E4F"}
+  ),
+
+  "Zygarde 10%": Pkmn(718, ["Dragon", "Ground"], 6, [8, 2, 2], "Def",
+    "Aura Break 10% - All Dark and Fairy Pokémon on the field lose 2 Atk. Under 50% HP, transforms to Complete Forme.",
+    [
+      S("Land's Wrath", "AoE(2)", 2, {"skillRaw":"Land's Wrath (Target = [3(AoE(2))], Damage: 2)"})
+    ], {"base":false,"legendary":true,"evoCost":null,"evoTo":"Zygarde 50%","evoFrom":"Zygarde Reassembly Unit","color":"#5F8E4F","img":"https://img.pokemondb.net/artwork/avif/zygarde-10.avif"}
+  ),
+
+  "Zygarde 50%": Pkmn(718, ["Dragon", "Ground"], 6, [11, 4, 3], "Def",
+    "Aura Break 50% - All Dark and Fairy Pokémon on the field lose 2 Atk. Under 50% HP, transforms to Complete Forme.",
+    [
+      S("Thousand Waves", "Cone(2)", 4, {"skillRaw":"Thousand Waves (Target = [3(Cone(2))], Damage: 4, Enemies hit cannot use Move Points next turn)"}),
+      S("Ground Lock", "Line(3)(1)", 4, {"pullAmount":1,"skillRaw":"Ground Lock (Target = [1(Line(3)(1))], Damage: 4, Pull target 1 tile and Ground them)"})
+    ], {"base":false,"legendary":true,"evoCost":null,"evoTo":"Zygarde Complete Forme","evoFrom":"Zygarde 10%","color":"#5F8E4F"}
+  ),
+
+  "Zygarde Complete Forme": Pkmn(718, ["Dragon", "Ground"], 6, [13, 5, 3], "Def",
+    "Power Construct - Complete Forme has 13 HP, 5 Atk, 3 Def. Immune to status and destroys remaining Cells.",
+    [
+      S("Thousand Arrows", "AoE(1)", 5, {"skillRaw":"Thousand Arrows (Target = [3(AoE(1))], Damage: 5, Targets become grounded)"}),
+      S("Core Enforcer", "Line(5)(1)", 6, {"skillRaw":"Core Enforcer (Target = [1(Line(5)(1))], Damage: 6, Disable target Ability for 2 turns)"}),
+      S("World Rebirth", "AoE(2)", 0, {"skillHeal":2,"skillHealTarget":"ally","skillRaw":"World Rebirth (Target = [3(AoE(2))], Heal all allies 2 HP, Remove all debuffs)"})
+    ], {"base":false,"legendary":true,"evoCost":null,"evoTo":"None","evoFrom":"Zygarde 50%","color":"#5F8E4F","img":"https://img.pokemondb.net/artwork/avif/zygarde-complete.avif"}
   ),
 
   "Diancie": Pkmn(719, ["Rock", "Fairy"], 5, [14, 4, 4], "Def",

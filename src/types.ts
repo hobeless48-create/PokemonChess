@@ -170,6 +170,7 @@ export interface PokemonEntity {
   pressureTriggered?: boolean;
   customSkills?: Skill[];
   isSummon?: boolean;
+  summonConfig?: any;
   shield?: number;
   shieldDuration?: number;
   activeAbilityUsed?: boolean;
@@ -183,6 +184,7 @@ export interface PokemonEntity {
     max: number;
   } | null;
   zygCellsCollected?: number;
+  aegislashForm?: "Shield" | "Blade";
 }
 
 export interface Pedestal {
@@ -215,7 +217,7 @@ export interface PlayerState {
 export interface Hazard {
   col: number;
   row: number;
-  type: "spikes" | "stealthRock";
+  type: "spikes" | "stealthRock" | "honey";
   duration: number;
   player: number;
 }

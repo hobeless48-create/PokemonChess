@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from "react";
-import { PokemonEntity, Pedestal, Skill } from "../types";
+import { PokemonEntity, Pedestal, Skill, Hazard } from "../types";
 import { DB } from "../data/pokemon";
 import { TCOL } from "../data/typeCharts";
 import { getModifiedStat, getSkillData, predictDamage, getAffectedCells, getSkillTargetType } from "../utils/gameEngine";
@@ -29,6 +29,7 @@ interface StatsCardProps {
   movePoints?: { [player: number]: number };
   hoveredCell: { col: number; row: number } | null;
   boardSize?: number;
+  hazards?: Hazard[];
 }
 
 export const StatsCard: React.FC<StatsCardProps> = ({
@@ -50,9 +51,11 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   terrain,
   movePoints,
   hoveredCell,
-  boardSize = 11
+  boardSize = 11,
+  hazards
 }) => {
   const [showStatBreakdown, setShowStatBreakdown] = useState<boolean>(false);
+  const [showStatusGuide, setShowStatusGuide] = useState<boolean>(false);
 
   // Check if we can display a Combat Forecast
   const actor = selectedCell ? pokemon.find(p => p.col === selectedCell.col && p.row === selectedCell.row && !p.fainted) : null;
@@ -253,6 +256,45 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   const pkMatch = pokemon.find(p => p.col === col && p.row === row && !p.fainted);
 
   if (!pkMatch) {
+    const cellHazards = (hazards || []).filter(h => h.col === col && h.row === row);
+    if (cellHazards.length > 0) {
+      return (
+        <>
+          {renderCombatForecast()}
+          <div className="stats-card bg-[#16213e] border border-[#ff9800]/50 rounded-2xl overflow-hidden shadow-lg w-full flex flex-col">
+            <div className="stats-header bg-[#ff9800] px-4 py-2 text-[#1a1a2e] font-bold text-sm uppercase tracking-wider flex justify-between items-center">
+              <span>⚠️ Hazard Intelligence</span>
+              <span className="text-[10px] bg-slate-950 text-[#ff9800] font-extrabold px-1.5 py-0.5 rounded leading-none">
+                Sector {String.fromCharCode(65 + col)}{row + 1}
+              </span>
+            </div>
+            <div className="p-4 flex flex-col gap-3">
+              <p className="text-xs text-gray-300">
+                Environmental hazards are present on this cell. Moving or targeting units here will trigger specific effects:
+              </p>
+              {cellHazards.map((h, idx) => {
+                const title = h.type === "honey" ? "🍯 Honey Tile" : h.type === "spikes" ? "🕸️ Spikes" : "⛰️ Stealth Rock";
+                const desc = h.type === "honey"
+                  ? "Sticky sweet honey. Units exiting this tile must pay +1 extra MP/Energy. Additionally, units standing on this tile cannot dodge; all attacks or skills targeting them are guaranteed to hit."
+                  : h.type === "spikes"
+                  ? "Sharp spikes on the ground. Any non-Levitate unit that steps on this tile takes 2 damage."
+                  : "Pointy rocks strewn about. Any non-Levitate unit that steps on this tile takes 2 damage.";
+                return (
+                  <div key={idx} className="bg-[#0f0f1a] p-3 rounded-lg border border-slate-800 flex flex-col gap-1 text-xs">
+                    <div className="flex justify-between items-center font-bold text-gray-200">
+                      <span className={h.type === "honey" ? "text-amber-400" : "text-rose-400"}>{title}</span>
+                      <span className="text-[10px] text-gray-400 font-mono">P{h.player} · {h.duration} turn(s) left</span>
+                    </div>
+                    <p className="text-[11px] text-gray-400 leading-relaxed mt-0.5">{desc}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      );
+    }
+
     return (
       <>
         {renderCombatForecast()}
@@ -280,7 +322,8 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   const pct = Math.round((pkMatch.hp / pkMatch.maxHp) * 100);
   const remainingColor = pct < 25 ? "bg-red-500" : pct < 50 ? "bg-amber-500" : "bg-emerald-500";
 
-  const isBell = pkMatch.species === "Clear Bell" || pkMatch.species === "Tidal Bell" || pkMatch.species === "Tidal bell";
+  const isStaticSummon = pkMatch.isSummon && pkMatch.summonConfig?.isStatic;
+  const isBell = pkMatch.species === "Clear Bell" || pkMatch.species === "Tidal Bell" || pkMatch.species === "Tidal bell" || isStaticSummon;
   const isMyTurn = myPlayerNumber === 0 || currentPlayer === myPlayerNumber;
   const isMyUnit = pkMatch.player === currentPlayer && isMyTurn && !isBell;
   const isEggForm = pkMatch.isEgg && !pkMatch.hasHatched;
@@ -410,6 +453,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
           <div className="min-w-0 flex-1">
             <h3 className="text-base font-bold text-white leading-tight capitalize">
               {pkMatch.species} {pkMatch.isEgg && !pkMatch.hasHatched ? " (Egg)" : ""}
+              {pkMatch.species === "Aegislash" && pkMatch.aegislashForm ? ` (${pkMatch.aegislashForm} Form)` : ""}
             </h3>
             <span className="text-[11px] text-gray-400 font-medium block">
               Class: {db.cls} · Sector {String.fromCharCode(65 + col)}{row + 1}
@@ -505,7 +549,17 @@ export const StatsCard: React.FC<StatsCardProps> = ({
           </div>
 
           <div className="flex justify-between items-center">
-            <span className="text-gray-400 font-medium">Status Condition</span>
+            <span className="text-gray-400 font-medium flex items-center gap-1 select-none">
+              Status Condition
+              <button
+                type="button"
+                onClick={() => setShowStatusGuide(true)}
+                className="w-4 h-4 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-[10px] text-gray-400 font-bold hover:text-white cursor-pointer transition select-none outline-none animate-pulse"
+                title="View Status Conditions Guide"
+              >
+                ?
+              </button>
+            </span>
             {pkMatch.status ? (
               <span className="text-red-400 font-bold uppercase">{getStatusName(pkMatch.status, pkMatch.statusTurns)}</span>
             ) : (
@@ -672,7 +726,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
         )}
 
         {/* Active Ability Button */}
-        {isMyUnit && ["Mesprit", "Palkia", "Cryogonal"].includes(pkMatch.species) && (
+        {isMyUnit && ["Mesprit", "Palkia", "Cryogonal", "Talonflame"].includes(pkMatch.species) && (
           <div className="mt-2">
             <button
               disabled={pkMatch.activeAbilityUsed}
@@ -687,7 +741,8 @@ export const StatsCard: React.FC<StatsCardProps> = ({
                 ⭐ Active Ability: {
                   pkMatch.species === "Mesprit" ? "Spiritual Buff (1⚡)" :
                   pkMatch.species === "Palkia" ? "Spatial Control (0⚡)" :
-                  "Shield Barrier (0⚡)"
+                  pkMatch.species === "Cryogonal" ? "Shield Barrier (0⚡)" :
+                  "Gale Wings (1 MP)"
                 }
               </span>
               <span className="text-[9px] opacity-75 font-mono">
@@ -721,6 +776,71 @@ export const StatsCard: React.FC<StatsCardProps> = ({
             </span>
           </button>
         )}
+      {showStatusGuide && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] animate-fade-in p-4">
+          <div className="bg-[#1a1c2e] border border-emerald-500/40 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4 flex justify-between items-center">
+              <h3 className="text-white font-extrabold text-base tracking-wide flex items-center gap-2">
+                📖 Status Conditions & Immunities
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowStatusGuide(false)}
+                className="text-white/80 hover:text-white text-lg font-black bg-black/20 hover:bg-black/40 rounded-full w-7 h-7 flex items-center justify-center cursor-pointer transition select-none outline-none border-none animate-pulse"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex flex-col gap-4 text-xs text-gray-300">
+              <div className="flex flex-col gap-3">
+                <h4 className="text-emerald-400 font-bold uppercase tracking-wider text-[10px]">Status Effects</h4>
+                
+                <div className="flex flex-col gap-2.5">
+                  <div className="bg-[#0f0f1a] p-2.5 rounded-lg border border-slate-800/80">
+                    <strong className="text-orange-400">🔥 Burn:</strong>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Lowers target Atk by 1 and deals 1 damage at the end of the turn (bypasses defense stats).</p>
+                  </div>
+                  <div className="bg-[#0f0f1a] p-2.5 rounded-lg border border-slate-800/80">
+                    <strong className="text-indigo-400">💤 Sleep:</strong>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Target cannot act. Has a 50% chance to wake up at the start of each turn.</p>
+                  </div>
+                  <div className="bg-[#0f0f1a] p-2.5 rounded-lg border border-slate-800/80">
+                    <strong className="text-purple-400">☠️ Poison:</strong>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Deals 1 damage at the end of the turn (bypasses defense stats).</p>
+                  </div>
+                  <div className="bg-[#0f0f1a] p-2.5 rounded-lg border border-slate-800/80">
+                    <strong className="text-rose-500">☣️ Toxic:</strong>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Deals poison damage at the end of the turn that increases by 1 each turn (bypasses defense stats).</p>
+                  </div>
+                  <div className="bg-[#0f0f1a] p-2.5 rounded-lg border border-slate-800/80">
+                    <strong className="text-yellow-400">⚡ Paralysis:</strong>
+                    <p className="text-[11px] text-gray-400 mt-0.5">25% chance to skip actions. Target's movement point (MP) is reduced by 1.</p>
+                  </div>
+                  <div className="bg-[#0f0f1a] p-2.5 rounded-lg border border-slate-800/80">
+                    <strong className="text-sky-400">❄️ Freeze:</strong>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Target cannot move or act. Thaws out after 1 turn or if hit by a Fire-type move.</p>
+                  </div>
+                  <div className="bg-[#0f0f1a] p-2.5 rounded-lg border border-slate-800/80">
+                    <strong className="text-pink-400">💫 Confusion:</strong>
+                    <p className="text-[11px] text-gray-400 mt-0.5">50% chance to hit self for 1 damage instead of performing the action.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 mt-2">
+                <h4 className="text-teal-400 font-bold uppercase tracking-wider text-[10px]">Type Immunities</h4>
+                <ul className="list-disc list-inside text-[11px] text-gray-400 flex flex-col gap-1 bg-[#0f0f1a] p-3 rounded-lg border border-slate-800/80">
+                  <li><strong className="text-sky-300">Ice-type</strong> Pokémon cannot be <span className="text-sky-400">Frozen</span>.</li>
+                  <li><strong className="text-orange-300">Fire-type</strong> Pokémon cannot be <span className="text-orange-400">Burned</span>.</li>
+                  <li><strong className="text-purple-300">Poison-type</strong> and <strong className="text-slate-300">Steel-type</strong> Pokémon cannot be <span className="text-purple-400">Poisoned</span> or <span className="text-rose-400">Toxic-poisoned</span>.</li>
+                  <li><strong className="text-yellow-300">Electric-type</strong> Pokémon cannot be <span className="text-yellow-400">Paralyzed</span>.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   </>

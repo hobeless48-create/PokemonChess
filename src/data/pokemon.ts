@@ -1017,7 +1017,7 @@ export const DB: { [species: string]: PokemonDBEntry } = {
     { base: true, evoCost: 7, evoTo: "Dragonair", color: "#5B7DD1" }
   ),
   Dragonair: Pkmn(148, ["Dragon"], 3, [11, 4, 1], "Attack",
-    "Marvel Scale - When afflicted with status, gain +2 Def",
+    "Marvel Scale - Def +1 when inflicted with a status condition",
     [S("Dragon Breath", "Line(2)(1)", 3, { statusChance: "paralysis", statusChanceValue: 0.5, skillRaw: "Dragon Breath (Line(2)(1): Deal 3 damage, 50% chance Paralyze for 3 turns)" })],
     { evoFrom: "Dratini", evoCost: 8, evoTo: "Dragonite", color: "#5B7DD1" }
   ),
@@ -1637,7 +1637,8 @@ Object.keys(DB).forEach(key => {
     const s0 = entry.skills[0];
     if (s0.skillDmg !== undefined && typeof s0.skillDmg === "number" && s0.skillDmg > 0 && s0.skillName !== "Sonic Boom") {
       const oldDmg = s0.skillDmg;
-      const newDmg = s0.statusChance ? Math.max(0, entry.atk - 1) : entry.atk;
+      const isLegendary = entry.legendary === true;
+      const newDmg = (s0.statusChance && !isLegendary) ? Math.max(0, entry.atk - 1) : entry.atk;
       s0.skillDmg = newDmg;
       entry.skillDmg = newDmg;
       

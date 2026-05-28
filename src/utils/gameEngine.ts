@@ -689,7 +689,19 @@ export function getModifiedStat(p: PokemonEntity, stat: "atk" | "def", pokemonLi
     base += 2;
   }
   if (db.ability === "Marvel Scale" && stat === "def" && p.status) {
+    base += 1;
+  }
+  if (db.ability === "Defiant" && stat === "atk" && p.modifiers && p.modifiers.some(m => m.amount < 0)) {
     base += 2;
+  }
+  if (p.species === "Aegislash") {
+    const form = p.aegislashForm || "Shield";
+    if (form === "Shield" && stat === "def") {
+      base += 1;
+    }
+    if (form === "Blade" && stat === "atk") {
+      base += 1;
+    }
   }
 
   // Burn status debuff: -1 ATK
@@ -830,7 +842,7 @@ export function isPathBlocked(
   for (let s = 1; s < steps; s++) {
     const tc = c0 + Math.round((dc * s) / steps);
     const tr = r0 + Math.round((dr * s) / steps);
-    const obstacleUnit = pokemonList.find(p => p.col === tc && p.row === tr && !p.fainted);
+    const obstacleUnit = pokemonList.find(p => p.col === tc && p.row === tr && !p.fainted && p.species !== "Zygarde Cell");
     const obstaclePed = pedestals.find(p => p.col === tc && p.row === tr);
     if (obstacleUnit || obstaclePed) {
       return true;
@@ -1193,7 +1205,8 @@ export function predictDamage(
     const effectiveDef = isCrit ? 0 : targetDef;
     damage = Math.floor(baseAtk / 2) + typeMult + abilityBonus - effectiveDef;
     if (isCrit) {
-      damage += 2;
+      const hasSniper = actorDb?.ability === "Sniper";
+      damage += hasSniper ? 3 : 2;
     }
     if (actor.status === "burn") {
       damage = damage - 1;
@@ -1203,6 +1216,16 @@ export function predictDamage(
     if (targetDb.ability === "Sheer Force" && actor.hp < tg.hp) damage -= 1;
     if (targetDb.ability === "Rock Head" && damage === 1) damage = 0;
     damage = Math.max(0, damage);
+    if (actorDb.ability === "Huge Power") {
+      damage = damage * 2;
+    }
+    if (actor.modifiers) {
+      actor.modifiers.forEach(m => {
+        if (m.stat === "normal_dmg") {
+          damage += m.amount;
+        }
+      });
+    }
   } else {
     const skill = getSkillData(actorDb, skillIdx);
     
@@ -1226,9 +1249,10 @@ export function predictDamage(
     let rawDmg = 0;
     const isAtkBase = typeof skill.skillDmg === 'string' && skill.skillDmg.toLowerCase() === 'atk';
 
+    const isLegendary = actorDb.legendary === true;
     if (isAtkBase) {
       const baseAtk = getModifiedStat(actor, "atk", pokemonList, { isSkill: true, weather, terrain });
-      if (skill.statusChance) {
+      if (skill.statusChance && !isLegendary) {
         rawDmg = Math.max(0, baseAtk - 1);
       } else {
         rawDmg = baseAtk;
@@ -1237,7 +1261,7 @@ export function predictDamage(
       if (skillIdx === 0) {
         if (skill.skillDmg && skill.skillDmg !== 0 && skill.skillDmg !== "0" && skill.skillDmg !== "") {
           const baseAtk = getModifiedStat(actor, "atk", pokemonList, { isSkill: true, weather, terrain });
-          if (skill.statusChance) {
+          if (skill.statusChance && !isLegendary) {
             rawDmg = Math.max(0, baseAtk - 1);
           } else {
             rawDmg = baseAtk;
@@ -1333,7 +1357,8 @@ export function predictDamage(
     const effectiveDef = isCrit ? 0 : targetDef;
     damage = rawDmg + typeMult + abilityBonus - effectiveDef;
     if (isCrit) {
-      damage += 2;
+      const hasSniper = actorDb?.ability === "Sniper";
+      damage += hasSniper ? 3 : 2;
     }
 
     if (skill.skillName === "Sonic Boom") damage = 2;
@@ -1346,7 +1371,30 @@ export function predictDamage(
     if (targetDb.ability === "Multiscale" && tg.hp === tg.maxHp) damage -= 3;
     if (targetDb.ability === "Sheer Force" && actor.hp < tg.hp) damage -= 1;
     damage = Math.max(0, damage);
+    if (actor.modifiers) {
+      actor.modifiers.forEach(m => {
+        if (m.stat === "skill_dmg") {
+          damage += m.amount;
+        }
+      });
+    }
     baseAtk = rawDmg;
+  }
+
+  if (actorDb.ability === "Tough Claws" && Math.max(Math.abs(actor.col - tg.col), Math.abs(actor.row - tg.row)) <= 1) {
+    damage += 1;
+  }
+
+  if (skillIdx !== undefined && targetDb.ability === "Fur Coat") {
+    const shape = parseSkillShape(actorDb, actor, skillIdx);
+    const isAoE = shape.type === "aoe" || shape.type === "cone" || (shape.type === "line" && (shape.range ?? 0) > 1);
+    if (isAoE) {
+      damage = Math.max(0, damage - 1);
+    }
+  }
+
+  if (targetDb.ability === "Wonder Guard" && typeMult <= 0) {
+    damage = 0;
   }
 
   let tidalBellReduction = 0;

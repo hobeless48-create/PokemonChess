@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from "react";
-import { GameState, PokemonEntity, Pedestal, BattleLogEntry, PlayerState, Skill } from "./types";
+import { GameState, PokemonEntity, Pedestal, BattleLogEntry, PlayerState, Skill, StatModifier } from "./types";
 import { DB } from "./data/pokemon";
 import { ITEMS } from "./data/items";
 import { Peer, DataConnection } from "peerjs";
@@ -37,6 +37,10 @@ function canInflictStatusBase(p: PokemonEntity, status: string, terrainType: str
   if (status === "sleep" && terrainType === "Electric") return false;
   const db = DB[p.species];
   if (!db) return true;
+  if (status === "freeze" && (db.t1 === "Ice" || db.t2 === "Ice")) return false;
+  if (status === "burn" && (db.t1 === "Fire" || db.t2 === "Fire")) return false;
+  if ((status === "poison" || status === "toxic") && (db.t1 === "Poison" || db.t2 === "Poison" || db.t1 === "Steel" || db.t2 === "Steel")) return false;
+  if (status === "paralysis" && (db.t1 === "Electric" || db.t2 === "Electric")) return false;
   if (db.ability === "Leaf Guard") return false;
   if (status === "sleep" && (db.ability === "Insomnia" || db.ability === "Vital Spirit")) return false;
   if (status === "confuse" && db.ability === "Inner Focus") return false;
@@ -861,6 +865,57 @@ export default function App() {
     return { isCrit: false };
   };
 
+  const processIceFrostRolls = (skill: Skill, affectedCells: { col: number; row: number }[], list: PokemonEntity[]) => {
+    if (skill.statusChance !== "freeze" && skill.skillName !== "Powder Snow") return;
+    
+    const chance = skill.skillName === "Powder Snow" ? 0.10 : getStatusChanceValue("freeze", skill);
+    if (chance <= 0) return;
+
+    list.forEach(p => {
+      if (p.fainted) return;
+      const pDb = DB[p.species];
+      if (!pDb) return;
+      
+      const isIce = pDb.t1 === "Ice" || pDb.t2 === "Ice";
+      if (!isIce || !p.customBar || p.customBar.type !== "Frost") return;
+
+      const isInArea = affectedCells.some(c => c.col === p.col && c.row === p.row);
+      if (isInArea) {
+        const threshold = Math.floor(chance * 20);
+        const roll = Math.floor(Math.random() * 20) + 1;
+        const succ = roll <= threshold;
+        if (succ) {
+          p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 1);
+          addLog(`❄️ Frost Absorption! Ice-type ${p.species} absorbed the freezing energy from ${skill.skillName} and gained +1 Frost (rolled ${roll}/20).`, "heal");
+        }
+      }
+    });
+  };
+
+  const applyHeal = (p: PokemonEntity, amount: number) => {
+    if (p.fainted || amount <= 0) return;
+    p.hp = Math.min(p.maxHp, p.hp + amount);
+    if (p.customBar && p.customBar.type === "Angry") {
+      p.customBar.value = Math.max(0, p.customBar.value - 1);
+    }
+  };
+
+  const addModifier = (p: PokemonEntity, mod: StatModifier) => {
+    if (!p.modifiers) p.modifiers = [];
+    const db = DB[p.species];
+    const isContrary = db && db.ability === "Contrary";
+    const finalAmount = isContrary ? -mod.amount : mod.amount;
+    const finalMod = { ...mod, amount: finalAmount };
+
+    // Prevent stacking from the same source and stat
+    const existing = p.modifiers.find(m => m.source === finalMod.source && m.stat === finalMod.stat && ((finalMod.amount < 0 && m.amount < 0) || (finalMod.amount > 0 && m.amount > 0)));
+    if (existing) {
+      existing.duration = Math.max(existing.duration, finalMod.duration);
+      return;
+    }
+    p.modifiers.push(finalMod);
+  };
+
   const resolvePushPull = (actor: PokemonEntity, target: PokemonEntity, pushAmount: number, pullAmount: number, list: PokemonEntity[], peds: Pedestal[], boardSize: number = 11): { col: number; row: number; moved: boolean } => {
     if (pushAmount <= 0 && pullAmount <= 0) return { col: target.col, row: target.row, moved: false };
     const colDist = target.col - actor.col;
@@ -901,20 +956,10 @@ export default function App() {
     return { col: currentCol, row: currentRow, moved };
   };
 
-  const applyStatusEffect = (p: PokemonEntity, status: string, turns: number = 0): boolean => {
-    let finalStatus = status;
-    if (finalStatus === "paralyze") finalStatus = "paralysis";
-    if (!canInflictStatus(p, finalStatus)) return false;
-    
-    // Freeze roll conversion for Ice types
-    const pDb = DB[p.species];
-    if (finalStatus === "freeze" && pDb && (pDb.t1 === "Ice" || pDb.t2 === "Ice")) {
-      if (p.customBar && p.customBar.type === "Frost") {
-        p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 5);
-        addLog(`❄️ Freeze check converted! ${p.species} gained +5 Frost instead of freeze.`, "sys");
-      }
-      return false;
-    }
+  const applyStatusEffect = (p: PokemonEntity, status: string, turns: number = 0, sourceActor?: PokemonEntity): boolean => {
+      let finalStatus = status;
+      if (finalStatus === "paralyze") finalStatus = "paralysis";
+      if (!canInflictStatus(p, finalStatus)) return false;
 
     if (p.heldItem) {
       let cured = false;
@@ -930,11 +975,19 @@ export default function App() {
         addLog(`🍃 ${p.species}'s held ${p.heldItem} was automatically consumed to cure ${finalStatus.toUpperCase()}!`, "heal");
         p.heldItem = null;
         p.status = null;
+        if (p.customBar && p.customBar.type === "Angry") {
+          p.customBar.value = Math.max(0, p.customBar.value - 1);
+        }
         return false;
       }
     }
     p.status = finalStatus;
     p.statusTurns = turns;
+    if (finalStatus === "freeze" && sourceActor && (sourceActor.species === "Aurorus" || sourceActor.species === "Amaura")) {
+      if (!p.modifiers) p.modifiers = [];
+      addModifier(p, { stat: "def", amount: -1, duration: 1, source: "Refrigerate" });
+      addLog(`❄️ Refrigerate! ${p.species} got Def -1 for 1 turn!`, "combat");
+    }
     return true;
   };
 
@@ -954,7 +1007,7 @@ export default function App() {
       p.customBar.value = 0;
       list.forEach(ally => {
         if (ally.player === p.player && !ally.fainted) {
-          ally.hp = Math.min(ally.maxHp, ally.hp + 1);
+          applyHeal(ally, 1);
           ally.status = null;
         }
       });
@@ -1011,6 +1064,38 @@ export default function App() {
         if (p.species === "Zygarde Cell") p.fainted = true;
       });
     }
+  };
+
+  const spawnShedinja = (ninjask: PokemonEntity, list: PokemonEntity[], peds: Pedestal[]) => {
+    const adj = adjCells(ninjask.col, ninjask.row, 1, true);
+    const emptyCell = adj.find(c => pkAt(c.col, c.row, list) === undefined && pedAt(c.col, c.row, peds) === undefined);
+    if (!emptyCell) {
+      addLog(`⚠️ No empty adjacent tile to summon Shedinja next to Ninjask!`, "sys");
+      return;
+    }
+    const nextId = Math.max(...list.map(p => p.id), 0) + 1;
+    const shedinjaEntity: PokemonEntity = {
+      id: nextId,
+      species: "Shedinja",
+      player: ninjask.player,
+      col: emptyCell.col,
+      row: emptyCell.row,
+      maxHp: 1,
+      hp: 1,
+      atk: 4,
+      def: 0,
+      exp: 0,
+      status: null,
+      heldItem: null,
+      fainted: false,
+      modifiers: [],
+      isEgg: false,
+      hasHatched: false,
+      isSummon: true,
+      customBar: null
+    };
+    list.push(shedinjaEntity);
+    addLog(`🟢 Ghost Shell summoned Shedinja next to evolved Ninjask at ${String.fromCharCode(65 + emptyCell.col)}${emptyCell.row + 1}!`, "heal");
   };
 
   // Status effects checker
@@ -1088,7 +1173,7 @@ export default function App() {
         };
 
         const isCureBerry = CURE_BERRY_STATUS_MAP[mode.item] !== undefined;
-        let isConsuming = mode.itemType !== "held" && mode.item !== "Oval Stone";
+        let isConsuming = mode.itemType !== "held" && mode.item !== "Oval Stone" && mode.item !== "Mental Herb";
 
         if (isCureBerry) {
           const targetStatus = CURE_BERRY_STATUS_MAP[mode.item];
@@ -1114,35 +1199,73 @@ export default function App() {
           }
 
           // Consume immediately
-          if (mode.item === "Sitrus Berry") p.hp = Math.min(p.maxHp, p.hp + 2);
-          if (mode.item === "Berry Juice") p.hp = Math.min(p.maxHp, p.hp + 1);
-          if (mode.item === "Lum Berry" || mode.item === "Mental Herb") p.status = null;
-          if (mode.item === "White Herb") p.modifiers = [];
-          if (mode.item === "Power Herb") {
-            p.modifiers.push({ stat: "atk", amount: 1, duration: 2, source: "Power Herb" });
-          }
-          if (isCureBerry) {
+          if (mode.item === "Sitrus Berry") {
+            applyHeal(p, 2);
+          } else if (mode.item === "Berry Juice") {
+            applyHeal(p, 1);
+          } else if (mode.item === "Lum Berry") {
+            p.status = null;
+            if (p.customBar && p.customBar.type === "Angry") {
+              p.customBar.value = Math.max(0, p.customBar.value - 1);
+            }
+          } else if (mode.item === "White Herb") {
+            p.modifiers = [];
+            if (p.customBar && p.customBar.type === "Angry") {
+              p.customBar.value = Math.max(0, p.customBar.value - 1);
+            }
+          } else if (mode.item === "Power Herb") {
+            addModifier(p, { stat: "atk", amount: 1, duration: 2, source: "Power Herb" });
+            if (p.customBar && p.customBar.type === "Angry") {
+              p.customBar.value = Math.max(0, p.customBar.value - 1);
+            }
+          } else if (isCureBerry) {
             p.status = null;
             p.statusTurns = 0;
-          }
-          if (mode.item === "Curry") {
-            const alreadyCurried = p.curryEffect && p.curryEffect.turnsLeft > 0;
-            if (!alreadyCurried) {
-              p.maxHp += 2;
-              p.hp = Math.min(p.maxHp, p.hp + 2);
+            if (p.customBar && p.customBar.type === "Angry") {
+              p.customBar.value = Math.max(0, p.customBar.value - 1);
             }
-            p.curryEffect = { hpBoost: 2, turnsLeft: 3 };
-            if (p.customBar && p.customBar.type === "Happiness") {
-              gainHappiness(p, 5, list);
+          } else if (mode.item.startsWith("Curry")) {
+            let hpBoost = 0;
+            let turnsLeft = 0;
+            if (mode.item === "Curry (Small)") {
+              hpBoost = 1;
+              turnsLeft = 2;
+            } else if (mode.item === "Curry (Medium)") {
+              hpBoost = 2;
+              turnsLeft = 3;
+            } else if (mode.item === "Curry (Big)") {
+              hpBoost = 3;
+              turnsLeft = 3;
             }
-          } else {
-            if (p.customBar && p.customBar.type === "Happiness") {
-              gainHappiness(p, 3, list);
+
+            if (p.curryEffect) {
+              p.maxHp = Math.max(1, p.maxHp - p.curryEffect.hpBoost);
+              p.hp = Math.min(p.hp, p.maxHp);
+              p.curryEffect = null;
             }
+
+            p.maxHp += hpBoost;
+            applyHeal(p, hpBoost);
+            p.curryEffect = { hpBoost, turnsLeft };
           }
 
-          if (p.customBar && p.customBar.type === "Angry") {
-            p.customBar.value = Math.max(0, p.customBar.value - 3);
+          // Happiness updates on consumption
+          if (p.customBar && p.customBar.type === "Happiness") {
+            let happinessGain = 0;
+            if (mode.item === "Berry Juice" || mode.item === "Sitrus Berry" || mode.item === "Lum Berry") {
+              happinessGain = 1;
+            } else if (mode.item === "Curry (Small)") {
+              happinessGain = 1;
+            } else if (mode.item === "Curry (Medium)") {
+              happinessGain = 2;
+            } else if (mode.item === "Curry (Big)") {
+              happinessGain = 3;
+            } else if (["Cheri Berry", "Chesto Berry", "Pecha Berry", "Rawst Berry", "Aspear Berry", "Persim Berry"].includes(mode.item)) {
+              happinessGain = 1;
+            }
+            if (happinessGain > 0) {
+              gainHappiness(p, happinessGain, list);
+            }
           }
 
           const idx = stateCopy.inventory.consumable.indexOf(mode.item);
@@ -1159,7 +1282,7 @@ export default function App() {
             stateCopy.inventory.held.push(p.heldItem);
           }
           p.heldItem = mode.item;
-          if (isCureBerry) {
+          if (isCureBerry || mode.item === "Mental Herb") {
             const idx = stateCopy.inventory.consumable.indexOf(mode.item);
             if (idx > -1) stateCopy.inventory.consumable.splice(idx, 1);
           } else {
@@ -1209,6 +1332,39 @@ export default function App() {
 
       // 3. Active Ability Execution
       if (mode.type === "active_ability") {
+        if (actor.species === "Talonflame") {
+          const teamMP = gameState.movePoints?.[gameState.currentPlayer] ?? 0;
+          if (teamMP < 1) {
+            addLog("❌ Gale Wings failed: Not enough MP (needs 1🚶).", "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          const isValidCell = gameState.highlightedCells.some(c => c.col === col && c.row === row);
+          if (!isValidCell) {
+            addLog("❌ Gale Wings failed: Invalid destination.", "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          actor.col = col;
+          actor.row = row;
+          actor.activeAbilityUsed = true;
+          addLog(`⭐ Gale Wings! Talonflame flew to ${String.fromCharCode(65 + col)}${row + 1}!`, "sys");
+
+          setGameState(prev => {
+            const nextMP = { ...(prev.movePoints || { 1: 3, 2: 3 }) };
+            nextMP[gameState.currentPlayer] = Math.max(0, nextMP[gameState.currentPlayer] - 1);
+            return {
+              ...prev,
+              pokemon: list,
+              selectedCell: { col, row },
+              actionMode: null,
+              highlightedCells: [],
+              movePoints: nextMP
+            };
+          });
+          return;
+        }
+
         const target = list.find(pk => pk.col === col && pk.row === row && !pk.fainted);
         if (!target) {
           addLog("❌ Active ability failed: No target found.", "sys");
@@ -1223,8 +1379,8 @@ export default function App() {
             return;
           }
           if (!target.modifiers) target.modifiers = [];
-          target.modifiers.push({ stat: "atk", amount: 1, duration: 2, source: "Spiritual Buff" });
-          target.modifiers.push({ stat: "def", amount: 1, duration: 2, source: "Spiritual Buff" });
+          addModifier(target, { stat: "atk", amount: 1, duration: 2, source: "Spiritual Buff" });
+          addModifier(target, { stat: "def", amount: 1, duration: 2, source: "Spiritual Buff" });
           actor.activeAbilityUsed = true;
           addLog(`⭐ Spiritual Buff! Mesprit buffed ${target.species} (+1 Atk, +1 Def for 2 turns)!`, "heal");
 
@@ -1337,13 +1493,13 @@ export default function App() {
 
         if (dbEntry && dbEntry.ability === "Speed Boost") {
           if (!actor.modifiers) actor.modifiers = [];
-          actor.modifiers.push({ stat: "atk", amount: 1, duration: 1, source: "Speed Boost" });
+          addModifier(actor, { stat: "atk", amount: 1, duration: 1, source: "Speed Boost" });
           addLog(`⚡ Speed Boost! ${actor.species} gained +1 Atk for 1 turn after moving!`, "heal");
         }
 
         // Stepped on hazards check
         if (gameState.hazards && gameState.hazards.length > 0) {
-          const activeHazards = gameState.hazards.filter(h => h.col === col && h.row === row && h.player !== actor.player && h.duration > 0);
+          const activeHazards = gameState.hazards.filter(h => h.col === col && h.row === row && h.player !== actor.player && h.duration > 0 && h.type !== "honey");
           if (activeHazards.length > 0 && dbEntry && dbEntry.ability !== "Levitate") {
             let hazardDmg = 0;
             activeHazards.forEach(h => {
@@ -1359,13 +1515,35 @@ export default function App() {
           }
         }
 
-        addLog(`${actor.species} moved to ${String.fromCharCode(65 + col)}${row + 1} (${consumesMP ? "used 1 MP" : `cost ${cost} Energy`})`, "sys");
+        const startsOnHoney = gameState.hazards && gameState.hazards.some(h => h.col === actor.col && h.row === actor.row && h.type === "honey" && h.duration > 0);
+        const extraCost = startsOnHoney ? 1 : 0;
+        let mpDeducted = 0;
+        let energyDeducted = cost;
+
+        if (consumesMP) {
+          if (extraCost > 0) {
+            if (teamMP >= 2) {
+              mpDeducted = 2;
+            } else {
+              mpDeducted = 1;
+              energyDeducted = 1;
+            }
+          } else {
+            mpDeducted = 1;
+          }
+        } else {
+          energyDeducted = cost + extraCost;
+        }
+
+        if (startsOnHoney) {
+          addLog(`🍯 Honey Tile! ${actor.species} paid +1 extra MP/Energy to exit the sticky honey.`, "sys");
+        }
+
+        addLog(`${actor.species} moved to ${String.fromCharCode(65 + col)}${row + 1} (${mpDeducted > 0 ? `used ${mpDeducted} MP` : ""}${mpDeducted > 0 && energyDeducted > 0 ? " and " : ""}${energyDeducted > 0 ? `cost ${energyDeducted} Energy` : ""})`, "sys");
 
         setGameState(prev => {
           const nextMP = { ...(prev.movePoints || { 1: 3, 2: 3 }) };
-          if (consumesMP) {
-            nextMP[gameState.currentPlayer] = Math.max(0, nextMP[gameState.currentPlayer] - 1);
-          }
+          nextMP[gameState.currentPlayer] = Math.max(0, nextMP[gameState.currentPlayer] - mpDeducted);
           return {
             ...prev,
             pokemon: list,
@@ -1375,7 +1553,7 @@ export default function App() {
             movePoints: nextMP,
             energy: {
               ...prev.energy,
-              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - cost)
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - energyDeducted)
             }
           };
         });
@@ -1406,7 +1584,9 @@ export default function App() {
               addLog(`💥 Zygarde Cell destroyed by enemy ${actor.species}!`, "atk");
             }
 
-            actor.exp += 1;
+            if (actor.heldItem !== "Oval Stone") {
+              actor.exp += 1;
+            }
             actor.hasAttacked = true;
 
             const nextPokemon = [...list];
@@ -1457,16 +1637,36 @@ export default function App() {
           }
 
           let netDmg = Math.max(0, Math.floor(rawAtk / 2) + bonus + abilityAtkBonus - (isCrit ? 0 : opponentDef));
+          if (actor.modifiers) {
+            actor.modifiers.forEach(m => {
+              if (m.stat === "normal_dmg") {
+                netDmg += m.amount;
+              }
+            });
+          }
           if (isCrit) {
-            netDmg += 2;
+            const hasSniper = actorDb?.ability === "Sniper";
+            netDmg += hasSniper ? 3 : 2;
           }
 
           if (actor.status === "burn") {
             netDmg = Math.max(0, netDmg - 1);
           }
 
+          if (actorDb && actorDb.ability === "Huge Power") {
+            netDmg = netDmg * 2;
+          }
+
+          if (actorDb && actorDb.ability === "Tough Claws" && Math.max(Math.abs(actor.col - target.col), Math.abs(actor.row - target.row)) <= 1) {
+            netDmg += 1;
+          }
+
           const targetDb = DB[target.species];
           if (targetDb) {
+            if (targetDb.ability === "Wonder Guard" && bonus <= 0) {
+              netDmg = 0;
+              addLog(`🛡️ Wonder Guard! ${target.species} is immune to non-super-effective attacks.`, "combat");
+            }
             if (targetDb.ability === "Multiscale" && target.hp === target.maxHp) {
               netDmg = Math.max(0, netDmg - 3);
               addLog(`🛡️ Multiscale! ${target.species} reduced the damage by 3.`, "combat");
@@ -1496,9 +1696,8 @@ export default function App() {
             }
           }
 
-          // Custom bar updates on hit
-          if (target.customBar && target.customBar.type === "Angry") {
-            target.customBar.value = Math.min(target.customBar.max, target.customBar.value + netDmg);
+          if (target.customBar && target.customBar.type === "Angry" && netDmg > 0) {
+            target.customBar.value = Math.min(target.customBar.max, target.customBar.value + 1);
           }
           if (target.customBar && target.customBar.type === "Happiness") {
             target.customBar.value = Math.max(0, target.customBar.value - 1);
@@ -1520,6 +1719,12 @@ export default function App() {
           }
 
           checkPowerConstruct(target, list);
+
+          if (targetDb && targetDb.ability === "Color Change" && netDmg > 0) {
+            const atkType = actor.reflectedType || (actorDb ? actorDb.t1 : "Normal");
+            target.reflectedType = atkType;
+            addLog(`🌈 Color Change! ${target.species} changed its type to ${atkType}!`, "sys");
+          }
 
           if (targetDb) {
             // Gengar Cursed Body контакт
@@ -1644,6 +1849,15 @@ export default function App() {
           if (target.hp <= 0) {
             target.fainted = true;
             addLog(`💀 ${target.species} has fainted!`, "sys");
+            if (targetDb && targetDb.ability === "Aftermath" && !actor.fainted) {
+              const aftermathDmg = (target.species === "Drifblim" || target.species === "Garbodor") ? 4 : 2;
+              actor.hp = Math.max(0, actor.hp - aftermathDmg);
+              addLog(`💥 Aftermath! ${target.species} dealt ${aftermathDmg} retribution damage to ${actor.species}!`, "combat");
+              if (actor.hp <= 0) {
+                actor.fainted = true;
+                addLog(`💀 ${actor.species} fainted to Aftermath!`, "sys");
+              }
+            }
             if (actor.heldItem === "Lucky Egg") {
               actor.exp += 1;
               addLog(`🎓 Lucky Egg bonus! ${actor.species} got +1 EXP.`, "heal");
@@ -1676,6 +1890,25 @@ export default function App() {
         }
         actor.hasAttacked = true;
 
+        // Honey Nest: Spawn Honey Tile under target if Vespiquen is on our team
+        const hasHoneyNest = list.some(p => p.player === actor.player && !p.fainted && DB[p.species]?.ability === "Honey Nest");
+        let nextHazards = [...(gameState.hazards || [])];
+        if (hasHoneyNest && target) {
+          const existingHoneyIdx = nextHazards.findIndex(h => h.col === target.col && h.row === target.row && h.type === "honey" && h.player === actor.player);
+          if (existingHoneyIdx >= 0) {
+            nextHazards[existingHoneyIdx].duration = 3;
+          } else {
+            nextHazards.push({
+              col: target.col,
+              row: target.row,
+              type: "honey",
+              duration: 3,
+              player: actor.player
+            });
+          }
+          addLog(`🍯 Honey Nest: Vespiquen team aura spawned a Honey Tile (3 turns) under ${target.species}!`, "heal");
+        }
+
         const nextPokemon = [...list];
         const nextPedestals = [...peds];
         checkWinner(nextPedestals, nextPokemon);
@@ -1684,6 +1917,7 @@ export default function App() {
           ...prev,
           pokemon: nextPokemon,
           pedestals: nextPedestals,
+          hazards: nextHazards,
           actionMode: null,
           highlightedCells: [],
           energy: {
@@ -1701,7 +1935,7 @@ export default function App() {
 
         if (actor.species === "Celebi") {
           if (!actor.modifiers) actor.modifiers = [];
-          actor.modifiers.push({ stat: "atk", amount: -2, duration: 1, source: "Celebi backlash" });
+          addModifier(actor, { stat: "atk", amount: -2, duration: 1, source: "Celebi backlash" });
           addLog(`🍃 Celebi suffered a -2 ATK debuff for this turn!`, "sys");
         }
 
@@ -1803,8 +2037,11 @@ export default function App() {
           addLog(`💥 Pressure! ${pressureUnit.species}'s presence increases skill cost by +1!`, "sys");
         }
 
-        // Special Skill Intercept: Clear Bell / Tidal Bell / Tidal bell
-        if (skill.skillName === "Clear Bell" || skill.skillName === "Tidal bell" || skill.skillName === "Tidal Bell") {
+        // Summoning Skill Intercept (Clear Bell / Tidal Bell / Custom Summon)
+        const isBell = skill.skillName === "Clear Bell" || skill.skillName === "Tidal bell" || skill.skillName === "Tidal Bell";
+        const hasSummonConfig = !!skill.summonConfig || isBell;
+
+        if (hasSummonConfig) {
           const targetPk = pkAt(col, row, list);
           const targetPed = pedAt(col, row, peds);
           if (targetPk || targetPed) {
@@ -1813,38 +2050,44 @@ export default function App() {
             return;
           }
 
-          const isClearBell = skill.skillName === "Clear Bell";
-          const bellSpecies = isClearBell ? "Clear Bell" : "Tidal Bell";
-          const existingBell = list.find(p => p.player === actor.player && !p.fainted && (isClearBell ? (p.species === "Clear Bell" || p.species === "Clear bell") : (p.species === "Tidal Bell" || p.species === "Tidal bell")));
-          if (existingBell) {
-            addLog(`❌ Summon failed! You already have an active ${bellSpecies} on the board.`, "sys");
+          const sc = skill.summonConfig || (skill.skillName === "Clear Bell"
+            ? { species: "Clear Bell", isMini: false, isStatic: true, hp: 3, atk: 0, def: 0 }
+            : { species: "Tidal Bell", isMini: false, isStatic: true, hp: 3, atk: 0, def: 0 });
+
+          // Prevent duplicate active summon if configured (like bells limit)
+          const existingSameSummon = list.find(p => p.player === actor.player && !p.fainted && p.species === sc.species);
+          if (existingSameSummon) {
+            addLog(`❌ Summon failed! You already have an active ${sc.species} on the board.`, "sys");
             setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
             return;
           }
 
           const nextId = Math.max(...list.map(p => p.id), 0) + 1;
 
-          const bellEntity: PokemonEntity = {
+          const summonEntity: PokemonEntity = {
             id: nextId,
-            species: isClearBell ? "Clear Bell" : "Tidal Bell",
+            species: sc.species,
             player: actor.player,
             col,
             row,
-            maxHp: 3,
-            hp: 3,
-            atk: 0,
-            def: 0,
+            maxHp: sc.hp || DB[sc.species]?.hp || 3,
+            hp: sc.hp || DB[sc.species]?.hp || 3,
+            atk: sc.atk || DB[sc.species]?.atk || 0,
+            def: sc.def || DB[sc.species]?.def || 0,
             exp: 0,
             status: null,
             heldItem: null,
             fainted: false,
             modifiers: [],
             isEgg: false,
-            hasHatched: false
+            hasHatched: false,
+            isSummon: true,
+            summonConfig: sc,
+            customSkills: sc.customSkill ? [sc.customSkill] : undefined
           };
 
-          list.push(bellEntity);
-          addLog(`🔔 Summoned ${bellEntity.species} at ${String.fromCharCode(65 + col)}${row + 1}!`, "heal");
+          list.push(summonEntity);
+          addLog(`🟢 Summoned ${summonEntity.species} at ${String.fromCharCode(65 + col)}${row + 1}!`, "heal");
 
           actor.exp += 2;
           actor.hasUsedSkill = true;
@@ -1957,56 +2200,69 @@ export default function App() {
             return;
           }
 
-          let currentCol = actor.col;
-          let currentRow = actor.row;
           const maxSteps = Math.max(Math.abs(col - actor.col), Math.abs(row - actor.row));
-          const stepsToTake = Math.min(3, maxSteps);
+          
+          if (pkAt(col, row, list)) {
+            addLog(`❌ Extreme Speed failed! Destination is occupied.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
 
-          let collided = false;
-          let hitSpecies = "";
-
-          for (let step = 1; step <= stepsToTake; step++) {
-            const nextCol = actor.col + dcol * step;
-            const nextRow = actor.row + drow * step;
-
-            const targetPk = pkAt(nextCol, nextRow, list);
-            const targetPed = pedAt(nextCol, nextRow, peds);
-
-            if (targetPk || targetPed) {
-              collided = true;
-              if (targetPk) {
-                hitSpecies = targetPk.species;
-                if (targetPk.player !== actor.player) {
-                  let dmg = 4;
-                  dmg = applyTidalBellReduction(targetPk, dmg, list);
-                  targetPk.hp = Math.max(0, targetPk.hp - dmg);
-                  addLog(`⚡ Extreme Speed! ${actor.species} collided with enemy ${targetPk.species} for ${dmg} damage!`, "combat");
-                  if (targetPk.hp <= 0) targetPk.fainted = true;
-                } else {
-                  addLog(`⚡ Extreme Speed! ${actor.species} side-swiped ally ${targetPk.species} with no damage!`, "combat");
-                }
-              } else if (targetPed) {
-                hitSpecies = "Pedestal";
-                if (targetPed.player !== actor.player) {
-                  targetPed.hp = Math.max(0, targetPed.hp - 1);
-                  addLog(`⚡ Extreme Speed! ${actor.species} collided with enemy Pedestal!`, "combat");
-                }
-              }
-              break;
-            } else {
-              currentCol = nextCol;
-              currentRow = nextRow;
+          for (let step = 1; step <= maxSteps; step++) {
+            const c = actor.col + dcol * step;
+            const r = actor.row + drow * step;
+            if (pedAt(c, r, peds)) {
+              addLog(`❌ Extreme Speed blocked by Pedestal!`, "sys");
+              setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+              return;
             }
           }
 
-          actor.col = currentCol;
-          actor.row = currentRow;
+          for (let step = 1; step < maxSteps; step++) {
+            const c = actor.col + dcol * step;
+            const r = actor.row + drow * step;
+            const targetPk = pkAt(c, r, list);
+            if (targetPk && !targetPk.fainted) {
+              if (targetPk.player !== actor.player) {
+                let dmg = typeof skill.skillDmg === "number" ? skill.skillDmg : 4;
+                
+                const targetDb = DB[targetPk.species];
+                if (targetDb && targetDb.ability === "Wonder Guard") {
+                  const tMult = typeBonus(actor, targetPk);
+                  if (tMult <= 0) dmg = 0;
+                }
 
-          if (collided) {
-            addLog(`⚡ ${actor.species} dashed to ${String.fromCharCode(65 + currentCol)}${currentRow + 1} after colliding with ${hitSpecies}!`, "combat");
-          } else {
-            addLog(`⚡ ${actor.species} used Extreme Speed to dash to ${String.fromCharCode(65 + currentCol)}${currentRow + 1}!`, "combat");
+                dmg = applyTidalBellReduction(targetPk, dmg, list);
+
+                if (targetPk.shield && targetPk.shield > 0 && dmg > 0) {
+                  if (dmg <= targetPk.shield) {
+                    targetPk.shield -= dmg;
+                    dmg = 0;
+                  } else {
+                    dmg -= targetPk.shield;
+                    targetPk.shield = 0;
+                  }
+                }
+
+                if (dmg > 0) {
+                  targetPk.hp = Math.max(0, targetPk.hp - dmg);
+                  addLog(`⚡ Extreme Speed! ${actor.species} passed through enemy ${targetPk.species} for ${dmg} damage!`, "combat");
+                  if (targetPk.hp <= 0) {
+                    targetPk.fainted = true;
+                  }
+                  checkPowerConstruct(targetPk, list);
+                } else {
+                  addLog(`⚡ Extreme Speed! ${actor.species} passed through enemy ${targetPk.species} (0 damage).`, "combat");
+                }
+              } else {
+                addLog(`⚡ Extreme Speed! ${actor.species} passed through ally ${targetPk.species} (no damage).`, "combat");
+              }
+            }
           }
+
+          actor.col = col;
+          actor.row = row;
+          addLog(`⚡ ${actor.species} used Extreme Speed to dash to ${String.fromCharCode(65 + col)}${row + 1}!`, "combat");
 
           actor.exp += 2;
           actor.hasUsedSkill = true;
@@ -2279,7 +2535,7 @@ export default function App() {
           targetPk.customBar!.value -= 10;
           
           // Heal 6 HP
-          targetPk.hp = Math.min(targetPk.maxHp, targetPk.hp + 6);
+          applyHeal(targetPk, 6);
           addLog(`💖 Heart Sacrifice! Deducted 10 Happiness from ${targetPk.species} and healed them for 6 HP!`, "heal");
 
           actor.exp += 2;
@@ -2334,7 +2590,18 @@ export default function App() {
         }
 
         // Skill Accuracy Roll checking (d20)
-        const accResult = checkAccuracy(actor, skill);
+        const targetPkOnHoney = list.some(p => {
+          const isAffected = affectedCells.some(c => c.col === p.col && c.row === p.row);
+          if (!isAffected || p.fainted || p.player === actor.player) return false;
+          return gameState.hazards && gameState.hazards.some(h => h.col === p.col && h.row === p.row && h.type === "honey" && h.duration > 0);
+        });
+
+        let accResult = checkAccuracy(actor, skill);
+        if (targetPkOnHoney) {
+          accResult = { isHit: true, roll: 20, threshold: 0, chance: 1.0 };
+          addLog(`🍯 Honey Tile! Bypassed accuracy checks on sticky target for a guaranteed hit!`, "sys");
+        }
+
         setChancePopup({
           statusType: `${skill.skillName} Accuracy`,
           chance: accResult.chance,
@@ -2384,7 +2651,7 @@ export default function App() {
 
         if (isAtkBase) {
           const baseAtk = getModifiedStat(actor, "atk", list, { isSkill: true, weather: gameState.weather.type });
-          if (skill.statusChance) {
+          if (skill.statusChance && dbEntry && !dbEntry.legendary) {
             rawDmg = Math.max(0, baseAtk - 1);
           } else {
             rawDmg = baseAtk;
@@ -2393,7 +2660,7 @@ export default function App() {
           if (mode.skillIdx === 0) {
             if (skill.skillDmg && skill.skillDmg !== 0 && skill.skillDmg !== "0" && skill.skillDmg !== "") {
               const baseAtk = getModifiedStat(actor, "atk", list, { isSkill: true, weather: gameState.weather.type });
-              if (skill.statusChance) {
+              if (skill.statusChance && dbEntry && !dbEntry.legendary) {
                 rawDmg = Math.max(0, baseAtk - 1);
               } else {
                 rawDmg = baseAtk;
@@ -2428,7 +2695,7 @@ export default function App() {
           if (bonus > 0) {
             list.forEach(p => {
               if (p.player === actor.player && !p.fainted && !(p.banishedTurns && p.banishedTurns > 0)) {
-                p.hp = Math.min(p.maxHp, p.hp + bonus);
+                applyHeal(p, bonus);
                 addLog(`💖 Eternal Radiance healed ally ${p.species} for +${bonus} HP!`, "heal");
               }
             });
@@ -2458,7 +2725,7 @@ export default function App() {
             const isTargetAlly = eff.target === "ally" || eff.target === "self" || eff.target === "all_allies";
             const isTargetMatch = (isTargetAlly && tg.player === actor.player) || (!isTargetAlly && tg.player !== actor.player);
             if (isTargetMatch) {
-              tg.modifiers.push({
+              addModifier(tg, {
                 stat: eff.stat,
                 amount: eff.amount,
                 duration: eff.duration,
@@ -2481,7 +2748,7 @@ export default function App() {
             setTimeout(() => setChancePopup(null), 3500);
 
             if (succ) {
-              if (applyStatusEffect(tg, skill.statusChance)) {
+              if (applyStatusEffect(tg, skill.statusChance, 0, actor)) {
                 let inflictedStatus = skill.statusChance;
                 if (inflictedStatus === "paralyze") inflictedStatus = "paralysis";
                 addLog(`💥 status triggered! ${tg.species} got inflicted with status ${inflictedStatus.toUpperCase()} (rolled ${roll}/20)`, "combat");
@@ -2601,8 +2868,30 @@ export default function App() {
                   }
 
                   netDmg = Math.max(0, targetRawDmg + typeMult + skillAbilityBonus - defenderDef);
+                  if (actor.modifiers) {
+                    actor.modifiers.forEach(m => {
+                      if (m.stat === "skill_dmg") {
+                        netDmg += m.amount;
+                      }
+                    });
+                  }
                   if (isCrit) {
-                    netDmg += 2;
+                    const hasSniper = adb?.ability === "Sniper";
+                    netDmg += hasSniper ? 3 : 2;
+                  }
+
+                  if (adb && adb.ability === "Tough Claws" && Math.max(Math.abs(actor.col - target.col), Math.abs(actor.row - target.row)) <= 1) {
+                    netDmg += 1;
+                  }
+
+                  if (adb && adb.ability === "Skill Link" && netDmg > 0) {
+                    const roll = Math.floor(Math.random() * 20) + 1;
+                    if (roll > 10) {
+                      netDmg = Math.floor(netDmg * 1.5);
+                      addLog(`🎯 Skill Link! Rolled a ${roll} (needed > 10) - deals +50% extra damage! (New Damage: ${netDmg})`, "combat");
+                    } else {
+                      addLog(`🎯 Skill Link! Rolled a ${roll} (needed > 10) - failed.`, "combat");
+                    }
                   }
 
                   // Volt Absorb / Water Absorb checks
@@ -2628,7 +2917,7 @@ export default function App() {
                       addLog(`❌ Dream Eater failed! ${target.species} is not asleep.`, "sys");
                     } else {
                       const healAmt = 3;
-                      actor.hp = Math.min(actor.maxHp, actor.hp + healAmt);
+                      applyHeal(actor, healAmt);
                       addLog(`💤 Dream Eater drained the nightmare! ${actor.species} healed +${healAmt} HP.`, "heal");
                     }
                   }
@@ -2652,6 +2941,18 @@ export default function App() {
 
                   // Multiscale / Sheer Force / Shield / Levitate checks
                   if (targetDb) {
+                    if (targetDb.ability === "Wonder Guard" && typeMult <= 0) {
+                      netDmg = 0;
+                      addLog(`🛡️ Wonder Guard! ${target.species} is immune to non-super-effective skill.`, "combat");
+                    }
+                    if (targetDb.ability === "Fur Coat") {
+                      const shape = parseSkillShape(adb, actor, mode.skillIdx);
+                      const isAoE = shape.type === "aoe" || shape.type === "cone" || (shape.type === "line" && (shape.range ?? 0) > 1);
+                      if (isAoE) {
+                        netDmg = Math.max(0, netDmg - 1);
+                        addLog(`🛡️ Fur Coat! ${target.species} reduced the AoE/Cone/Line skill damage by 1.`, "combat");
+                      }
+                    }
                     if (targetDb.ability === "Multiscale" && target.hp === target.maxHp) {
                       netDmg = Math.max(0, netDmg - 3);
                       addLog(`🛡️ Multiscale! ${target.species} reduced the skill damage by 3.`, "combat");
@@ -2693,20 +2994,20 @@ export default function App() {
                   if (skill.skillName === "Oblivion Wing") {
                     const healAmt = Math.max(0, netDmg - 2);
                     if (healAmt > 0) {
-                      actor.hp = Math.min(actor.maxHp, actor.hp + healAmt);
+                      applyHeal(actor, healAmt);
                       addLog(`🔺 Oblivion Wing drained energy! Healed ${actor.species} for +${healAmt} HP.`, "heal");
                     }
                   }
                   if (skill.skillName === "Crimson Feast") {
-                    actor.hp = Math.min(actor.maxHp, actor.hp + 1);
+                    applyHeal(actor, 1);
                     addLog(`🔺 Crimson Feast drained HP! Healed ${actor.species} for +1 HP.`, "heal");
                   }
                   if (skill.skillName === "Soul Drain Eclipse") {
                     if (!target.modifiers) target.modifiers = [];
-                    target.modifiers.push({ stat: "atk", amount: -1, duration: 2, source: "Soul Drain Eclipse" });
+                    addModifier(target, { stat: "atk", amount: -1, duration: 2, source: "Soul Drain Eclipse" });
                     
                     if (!actor.modifiers) actor.modifiers = [];
-                    actor.modifiers.push({ stat: "atk", amount: 1, duration: 2, source: "Soul Drain Eclipse" });
+                    addModifier(actor, { stat: "atk", amount: 1, duration: 2, source: "Soul Drain Eclipse" });
                     
                     const darkAllies = list.filter(p => {
                       if (p.player !== actor.player || p.fainted || p.id === actor.id) return false;
@@ -2716,14 +3017,14 @@ export default function App() {
                     if (darkAllies.length > 0) {
                       darkAllies.sort((a, b) => a.hp - b.hp);
                       const lowestAlly = darkAllies[0];
-                      lowestAlly.hp = Math.min(lowestAlly.maxHp, lowestAlly.hp + 3);
+                      applyHeal(lowestAlly, 3);
                       addLog(`🔺 Soul Drain Eclipse healed dark ally ${lowestAlly.species} for +3 HP!`, "heal");
                     }
                   }
 
                   // Custom bar updates on hit
-                  if (target.customBar && target.customBar.type === "Angry") {
-                    target.customBar.value = Math.min(target.customBar.max, target.customBar.value + netDmg);
+                  if (target.customBar && target.customBar.type === "Angry" && netDmg > 0) {
+                    target.customBar.value = Math.min(target.customBar.max, target.customBar.value + 1);
                   }
                   if (target.customBar && target.customBar.type === "Happiness") {
                     target.customBar.value = Math.max(0, target.customBar.value - 1);
@@ -2747,6 +3048,12 @@ export default function App() {
                   }
 
                   checkPowerConstruct(target, list);
+
+                  if (targetDb && targetDb.ability === "Color Change" && netDmg > 0) {
+                    const atkType = actor.reflectedType || adb.t1;
+                    target.reflectedType = atkType;
+                    addLog(`🌈 Color Change! ${target.species} changed its type to ${atkType}!`, "sys");
+                  }
                 } else {
                   // Non-damaging cast
                   addLog(`✨ ${actor.species} casted ${skill.skillName} at ${target.species}!`, "combat");
@@ -2755,7 +3062,7 @@ export default function App() {
                 // Custom Unique Skill Behavior: Roar
                 if (skill.skillName === "Roar") {
                   if (!target.modifiers) target.modifiers = [];
-                  target.modifiers.push({ stat: "atk", amount: -1, duration: 2, source: "Roar" });
+                  addModifier(target, { stat: "atk", amount: -1, duration: 2, source: "Roar" });
                   addLog(`🔊 Roar! ${target.species}'s Attack was lowered by 1 for 2 turns!`, "atk");
                 }
 
@@ -2764,13 +3071,13 @@ export default function App() {
                   target.status = null;
                   target.statusTurns = 0;
                   target.modifiers = target.modifiers.filter(m => m.amount >= 0);
-                  target.modifiers.push({ stat: "def", amount: 1, duration: 2, source: "Mist" });
+                  addModifier(target, { stat: "def", amount: 1, duration: 2, source: "Mist" });
                   addLog(`🌫️ Mist! Cleansed all debuffs from ${target.species} (+1 Def for 2 turns)!`, "heal");
                 }
 
                 // Custom Unique Skill Behavior: Tidal bell
                 if (skill.skillName === "Tidal bell" && target.player === actor.player) {
-                  target.modifiers.push({ stat: "def", amount: 2, duration: 2, source: "Tidal bell" });
+                  addModifier(target, { stat: "def", amount: 2, duration: 2, source: "Tidal bell" });
                   addLog(`🔔 Tidal Bell tolls! Granted ${target.species} +2 Def for 2 turns!`, "heal");
                 }
 
@@ -2800,6 +3107,18 @@ export default function App() {
                 if (target.hp <= 0) {
                   target.fainted = true;
                   addLog(`💀 ${target.species} fainted!`, "sys");
+                  if (targetDb && targetDb.ability === "Aftermath" && !actor.fainted) {
+                    const distance = Math.max(Math.abs(actor.col - target.col), Math.abs(actor.row - target.row));
+                    if (distance <= 1) {
+                      const aftermathDmg = (target.species === "Drifblim" || target.species === "Garbodor") ? 4 : 2;
+                      actor.hp = Math.max(0, actor.hp - aftermathDmg);
+                      addLog(`💥 Aftermath! ${target.species} dealt ${aftermathDmg} retribution damage to ${actor.species}!`, "combat");
+                      if (actor.hp <= 0) {
+                        actor.fainted = true;
+                        addLog(`💀 ${actor.species} fainted to Aftermath!`, "sys");
+                      }
+                    }
+                  }
                   if (actor.heldItem === "Lucky Egg") {
                     if (actor.heldItem !== "Oval Stone") {
                       actor.exp += 1;
@@ -2817,6 +3136,9 @@ export default function App() {
           }
         });
 
+        // Ice-type freeze-to-Frost conversion check for all Ice-types in the skill area
+        processIceFrostRolls(skill, affectedCells, list);
+
         // Custom Unique Skill Behavior: Hidden Power
         if (skill.skillName === "Hidden Power") {
           const adjacentAllies = list.filter(other => {
@@ -2826,7 +3148,7 @@ export default function App() {
           });
           adjacentAllies.forEach(ally => {
             if (!ally.modifiers) ally.modifiers = [];
-            ally.modifiers.push({ stat: "atk", amount: 1, duration: 2, source: "Hidden Power" });
+            addModifier(ally, { stat: "atk", amount: 1, duration: 2, source: "Hidden Power" });
             addLog(`✨ Hidden Power boosted ${ally.species}'s Atk by 1 for 2 turns!`, "heal");
           });
         }
@@ -2914,7 +3236,7 @@ export default function App() {
     }
     const actor = gameState.pokemon.find(p => p.id === id);
     if (!actor) return;
-    if (actor.species === "Clear Bell" || actor.species === "Tidal Bell" || actor.species === "Tidal bell") {
+    if (actor.species === "Clear Bell" || actor.species === "Tidal Bell" || actor.species === "Tidal bell" || (actor.isSummon && actor.summonConfig?.isStatic)) {
       return;
     }
     const dbEntry = DB[actor.species];
@@ -2935,6 +3257,10 @@ export default function App() {
         cells = gameState.pokemon
           .filter(p => !p.fainted && p.player === actor.player && p.id !== actor.id)
           .map(p => ({ col: p.col, row: p.row, type: "atk" as const }));
+      } else if (actor.species === "Talonflame") {
+        cells = adjCells(actor.col, actor.row, 2, true, gameConfig.boardSize)
+          .filter(c => !pkAt(c.col, c.row, gameState.pokemon) && !pedAt(c.col, c.row, gameState.pedestals))
+          .map(c => ({ col: c.col, row: c.row, type: "move" as const }));
       }
       setGameState(prev => ({
         ...prev,
@@ -3036,7 +3362,7 @@ export default function App() {
 
     if (actor.species === "Celebi") {
       if (!actor.modifiers) actor.modifiers = [];
-      actor.modifiers.push({ stat: "atk", amount: -2, duration: 1, source: "Celebi backlash" });
+      addModifier(actor, { stat: "atk", amount: -2, duration: 1, source: "Celebi backlash" });
       addLog(`🍃 Celebi suffered a -2 ATK debuff for this turn!`, "sys");
     }
 
@@ -3075,7 +3401,7 @@ export default function App() {
 
     // Apply self heals
     if (skill.skillHeal && skill.skillHealTarget === "self") {
-      actor.hp = Math.min(actor.maxHp, actor.hp + skill.skillHeal);
+      applyHeal(actor, skill.skillHeal);
       addLog(`💚 Self restore! ${actor.species} recovered +${skill.skillHeal} HP.`, "heal");
     }
 
@@ -3121,7 +3447,7 @@ export default function App() {
     if (skill.skillName === "Life Dew" || targetType === "all_allies") {
       list.forEach(p => {
         if (!p.fainted && p.player === actor.player) {
-          p.hp = Math.min(p.maxHp, p.hp + 2);
+          applyHeal(p, 2);
           addLog(`💧 Life Dew restored +2 HP to ally ${p.species}!`, "heal");
         }
       });
@@ -3130,7 +3456,7 @@ export default function App() {
     if (targetType === "all_ice") {
       list.forEach(p => {
         if (!p.fainted && (DB[p.species].t1 === "Ice" || DB[p.species].t2 === "Ice")) {
-          p.modifiers.push({ stat: "def", amount: 1, duration: 2, source: "Snow Scape" });
+          addModifier(p, { stat: "def", amount: 1, duration: 2, source: "Snow Scape" });
           addLog(`${p.species} gained +1 Def from Snow Scape.`, "heal");
         }
       });
@@ -3140,7 +3466,7 @@ export default function App() {
       const eff = skill.skillEffect || dbEntry.skillEffect;
       if (eff) {
         if (!actor.modifiers) actor.modifiers = [];
-        actor.modifiers.push({
+        addModifier(actor, {
           stat: eff.stat,
           amount: eff.amount,
           duration: eff.duration,
@@ -3174,13 +3500,21 @@ export default function App() {
             setTimeout(() => setChancePopup(null), 3500);
 
             if (succ) {
-              p.status = "freeze";
-              p.statusTurns = 0;
-              addLog(`❄️ Status triggered! ${p.species} got frozen! (rolled ${roll}/20)`, "combat");
+              if (applyStatusEffect(p, "freeze", 0, actor)) {
+                addLog(`❄️ Status triggered! ${p.species} got frozen! (rolled ${roll}/20)`, "combat");
+              }
             }
           }
         }
       });
+
+      const allCells: { col: number; row: number }[] = [];
+      for (let c = 0; c < gameConfig.boardSize; c++) {
+        for (let r = 0; r < gameConfig.boardSize; r++) {
+          allCells.push({ col: c, row: r });
+        }
+      }
+      processIceFrostRolls(skill, allCells, list);
     }
 
     if (skill.selfDamage) {
@@ -3209,12 +3543,37 @@ export default function App() {
       });
     }
 
+    let nextHazards = [...(gameState.hazards || [])];
+    const hasHoneyNest = list.some(p => p.player === actor.player && !p.fainted && DB[p.species]?.ability === "Honey Nest");
+    if (hasHoneyNest) {
+      const affectedCells = skill.skillName === "Powder Snow" ? list.filter(p => p.player !== actor.player && !p.fainted).map(p => ({ col: p.col, row: p.row })) : [];
+      affectedCells.forEach(cell => {
+        const target = pkAt(cell.col, cell.row, list);
+        if (target && target.player !== actor.player && !target.fainted) {
+          const existingHoneyIdx = nextHazards.findIndex(h => h.col === cell.col && h.row === cell.row && h.type === "honey" && h.player === actor.player);
+          if (existingHoneyIdx >= 0) {
+            nextHazards[existingHoneyIdx].duration = 3;
+          } else {
+            nextHazards.push({
+              col: cell.col,
+              row: cell.row,
+              type: "honey",
+              duration: 3,
+              player: actor.player
+            });
+          }
+          addLog(`🍯 Honey Nest: Vespiquen team aura spawned a Honey Tile (3 turns) under enemy ${target.species}!`, "heal");
+        }
+      });
+    }
+
     setGameState(prev => ({
       ...prev,
       pokemon: list,
       pedestals: peds,
       actionMode: null,
       highlightedCells: [],
+      hazards: nextHazards,
       energy: {
         ...prev.energy,
         [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
@@ -3248,6 +3607,7 @@ export default function App() {
             p.exp = 0;
             p.pendingEvoChoice = false;
             p.pendingEvoTo = undefined;
+            p.customBar = getCustomBarForSpecies(p.species);
             addLog(`🌿 Turn-End Evolution! Eevee has evolved into ${p.species}!`, "heal");
           }
         } else if (p.pendingEvo) {
@@ -3263,7 +3623,11 @@ export default function App() {
               p.def = evolvedDb.def || 0;
               p.exp = 0;
               p.pendingEvo = false;
+              p.customBar = getCustomBarForSpecies(p.species);
               addLog(`🌿 Turn-End Evolution! ${oldName} has evolved into ${p.species}!`, "heal");
+              if (oldName === "Nincada" && p.species === "Ninjask") {
+                spawnShedinja(p, list, peds);
+              }
             }
           }
         }
@@ -3348,8 +3712,11 @@ export default function App() {
         const seedSource = list.find(s => s.id === p.leechSeed?.sourceId && !s.fainted);
         p.hp = Math.max(0, p.hp - 1);
         addLog(`☠️ Leech Seed drain! ${p.species} loses -1 HP.`, "atk");
+        if (p.customBar && p.customBar.type === "Angry") {
+          p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 1);
+        }
         if (seedSource) {
-          seedSource.hp = Math.min(seedSource.maxHp, seedSource.hp + 1);
+          applyHeal(seedSource, 1);
         }
         if (p.hp <= 0) {
           p.fainted = true;
@@ -3361,6 +3728,9 @@ export default function App() {
       if (p.status === "poison" || p.status === "toxic" || p.status === "burn") {
         p.hp = Math.max(0, p.hp - 1);
         addLog(`❤️ affliction! ${p.species} takes -1 HP from ${p.status.toUpperCase()}`, "atk");
+        if (p.customBar && p.customBar.type === "Angry") {
+          p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 1);
+        }
         if (p.hp <= 0) {
           p.fainted = true;
           addLog(`${p.species} fainted from damage over time!`, "sys");
@@ -3379,7 +3749,7 @@ export default function App() {
 
       // Leftovers
       if (p.heldItem === "Leftovers" && p.hp < p.maxHp) {
-        p.hp = Math.min(p.maxHp, p.hp + 1);
+        applyHeal(p, 1);
         addLog(`🍏 leftovers! ${p.species} recovered +1 HP.`, "heal");
       }
 
@@ -3388,12 +3758,12 @@ export default function App() {
       if (dbEntry && !p.fainted) {
         // Rain Dish
         if (dbEntry.ability === "Rain Dish" && (gameState.weather.type === "Rain" || gameState.weather.type === "Heavy Rain") && p.hp < p.maxHp) {
-          p.hp = Math.min(p.maxHp, p.hp + 1);
+          applyHeal(p, 1);
           addLog(`🌧️ Rain Dish! ${p.species} recovered +1 HP in rain.`, "heal");
         }
         // Regenerator
         if (dbEntry.ability === "Regenerator" && p.hp < p.maxHp) {
-          p.hp = Math.min(p.maxHp, p.hp + 1);
+          applyHeal(p, 1);
           addLog(`🌱 Regenerator! ${p.species} recovered +1 HP.`, "heal");
         }
         // Solar Power decay
@@ -3452,7 +3822,7 @@ export default function App() {
           }
         }
         if (!p.modifiers) p.modifiers = [];
-        p.modifiers.push({
+        addModifier(p, {
           stat,
           amount: change,
           duration: 9999, // Permanent
@@ -3514,7 +3884,11 @@ export default function App() {
                 p.atk = evolvedDb.atk;
                 p.def = evolvedDb.def || 0;
                 p.exp = 0;
+                p.customBar = getCustomBarForSpecies(p.species);
                 addLog(`🌿 Evolution! ${oldName} evolved into ${p.species}!`, "heal");
+                if (oldName === "Nincada" && p.species === "Ninjask") {
+                  spawnShedinja(p, list, peds);
+                }
               }
             }
           }
@@ -3655,7 +4029,7 @@ export default function App() {
             const dr = Math.abs(ally.row - bell.row);
             if (dc <= 1 && dr <= 1) {
               if (ally.hp < ally.maxHp) {
-                ally.hp = Math.min(ally.maxHp, ally.hp + 1);
+                applyHeal(ally, 1);
                 addLog(`🔔 Clear Bell healed ${ally.species} for +1 HP!`, "heal");
               }
             }
@@ -3664,8 +4038,76 @@ export default function App() {
       }
     });
 
+    // Generic end of turn abilities for player's summoned units
+    list.forEach(summon => {
+      if (summon.isSummon && !summon.fainted && summon.player === curPlayer) {
+        const sc = summon.summonConfig;
+        if (sc && sc.aoeCondition === "end_turn") {
+          const range = sc.aoeRange || 1;
+          const cells = adjCells(summon.col, summon.row, range, true, gameConfig.boardSize);
+          cells.push({ col: summon.col, row: summon.row });
+          list.forEach(target => {
+            if (target.fainted || (target.banishedTurns && target.banishedTurns > 0)) return;
+            const isInArea = cells.some(c => c.col === target.col && c.row === target.row);
+            if (!isInArea) return;
+
+            const isAlly = target.player === summon.player;
+            const isNotSelf = target.id !== summon.id;
+
+            if (sc.aoeEffect === "heal" && isAlly && isNotSelf) {
+              const amount = sc.aoeHeal || 1;
+              if (target.hp < target.maxHp) {
+                applyHeal(target, amount);
+                addLog(`🔔 ${summon.species} healed ally ${target.species} for +${amount} HP!`, "heal");
+              }
+            } else if (sc.aoeEffect === "damage" && !isAlly) {
+              const amount = sc.aoeDmg || 1;
+              const reducedDmg = applyTidalBellReduction(target, amount, list);
+              target.hp = Math.max(0, target.hp - reducedDmg);
+              addLog(`🔔 ${summon.species} dealt ${reducedDmg} damage to enemy ${target.species}!`, "combat");
+              if (target.hp <= 0) target.fainted = true;
+            }
+          });
+        }
+      }
+    });
+
     // B. Swap players
     const nextPlayer = curPlayer === 1 ? 2 : 1;
+
+    // Generic start of turn abilities for the NEXT player's summoned units
+    list.forEach(summon => {
+      if (summon.isSummon && !summon.fainted && summon.player === nextPlayer) {
+        const sc = summon.summonConfig;
+        if (sc && sc.aoeCondition === "start_turn") {
+          const range = sc.aoeRange || 1;
+          const cells = adjCells(summon.col, summon.row, range, true, gameConfig.boardSize);
+          cells.push({ col: summon.col, row: summon.row });
+          list.forEach(target => {
+            if (target.fainted || (target.banishedTurns && target.banishedTurns > 0)) return;
+            const isInArea = cells.some(c => c.col === target.col && c.row === target.row);
+            if (!isInArea) return;
+
+            const isAlly = target.player === summon.player;
+            const isNotSelf = target.id !== summon.id;
+
+            if (sc.aoeEffect === "heal" && isAlly && isNotSelf) {
+              const amount = sc.aoeHeal || 1;
+              if (target.hp < target.maxHp) {
+                applyHeal(target, amount);
+                addLog(`🔔 ${summon.species} healed ally ${target.species} for +${amount} HP!`, "heal");
+              }
+            } else if (sc.aoeEffect === "damage" && !isAlly) {
+              const amount = sc.aoeDmg || 1;
+              const reducedDmg = applyTidalBellReduction(target, amount, list);
+              target.hp = Math.max(0, target.hp - reducedDmg);
+              addLog(`🔔 ${summon.species} dealt ${reducedDmg} damage to enemy ${target.species}!`, "combat");
+              if (target.hp <= 0) target.fainted = true;
+            }
+          });
+        }
+      }
+    });
     let nextTurn = gameState.turn;
     if (nextPlayer === 1) {
       nextTurn += 1;
@@ -3711,9 +4153,9 @@ export default function App() {
           const aoeCells = [...adjCells(p.col, p.row, 2, true, gameConfig.boardSize), { col: p.col, row: p.row }];
           const alliesInAoE = list.filter(a => !a.fainted && a.player === nextPlayer && aoeCells.some(c => c.col === a.col && c.row === a.row));
           alliesInAoE.forEach(ally => {
-            ally.hp = Math.min(ally.maxHp, ally.hp + 3);
+            applyHeal(ally, 3);
             if (!ally.modifiers) ally.modifiers = [];
-            ally.modifiers.push({
+            addModifier(ally, {
               stat: "atk",
               amount: 2,
               duration: 2,
@@ -3816,6 +4258,39 @@ export default function App() {
     const nextPokemonList = [...list];
     const nextPedestals = [...peds];
     checkWinner(nextPedestals, nextPokemonList);
+
+    // Forecast turn-start checks for Castform
+    nextPokemonList.forEach(p => {
+      if (p.species === "Castform" && !p.fainted && p.player === nextPlayer) {
+        const isSunny = nextWeather.type === "Sunlight" || nextWeather.type === "Harsh Sunlight";
+        const isRain = nextWeather.type === "Rain" || nextWeather.type === "Heavy Rain";
+        const isHail = nextWeather.type === "Hail Storm";
+        if (isSunny || isRain || isHail) {
+          const adj = adjCells(p.col, p.row, 1, true, gameConfig.boardSize);
+          const adjacentAllies = nextPokemonList.filter(ally => {
+            if (ally.player !== p.player || ally.fainted || ally.id === p.id) return false;
+            return adj.some(c => c.col === ally.col && c.row === ally.row);
+          });
+
+          adjacentAllies.forEach(ally => {
+            if (isSunny) {
+              if (!ally.modifiers) ally.modifiers = [];
+              addModifier(ally, { stat: "atk", amount: 1, duration: 1, source: "Forecast" });
+              addLog(`☀️ Forecast: Castform gave adjacent ally ${ally.species} Atk +1 for this turn!`, "sys");
+            } else if (isRain) {
+              if (ally.hp < ally.maxHp) {
+                applyHeal(ally, 1);
+                addLog(`🌧️ Forecast: Castform healed adjacent ally ${ally.species} for 1 HP!`, "sys");
+              }
+            } else if (isHail) {
+              if (!ally.modifiers) ally.modifiers = [];
+              addModifier(ally, { stat: "def", amount: 1, duration: 1, source: "Forecast" });
+              addLog(`❄️ Forecast: Castform gave adjacent ally ${ally.species} Def +1 for this turn!`, "sys");
+            }
+          });
+        }
+      }
+    });
 
     const hasActiveXerneasHappiness20 = nextPokemonList.some(p => p.player === nextPlayer && !p.fainted && p.species === "Xerneas" && p.customBar && p.customBar.type === "Happiness" && p.customBar.value >= 20);
     const finalMaxE = hasActiveXerneasHappiness20 ? maxE + 1 : maxE;
@@ -4434,12 +4909,12 @@ export default function App() {
               <div className="text-center">
                 <div className="text-[10px] text-gray-400 uppercase font-black leading-none">Move Points</div>
                 <div className="text-xs text-cyan-400 font-extrabold font-mono mt-0.5 leading-none">
-                  {gameState.movePoints?.[gameState.currentPlayer] ?? 0} / 3 🚶
+                  {gameState.movePoints?.[gameState.currentPlayer] ?? 0} / 4 🚶
                 </div>
               </div>
 
               <div className="stars flex gap-1.5">
-                {Array.from({ length: 3 }).map((_, sIdx) => (
+                {Array.from({ length: 4 }).map((_, sIdx) => (
                   <div
                     key={sIdx}
                     className={`w-3.5 h-3.5 rounded transition ${sIdx < (gameState.movePoints?.[gameState.currentPlayer] ?? 0)
@@ -4577,6 +5052,7 @@ export default function App() {
                 movePoints={gameState.movePoints}
                 hoveredCell={hoveredCell}
                 boardSize={gameConfig.boardSize}
+                hazards={gameState.hazards}
               />
             </div>
 

@@ -98,8 +98,14 @@ export const Board: React.FC<BoardProps> = ({
               const pkMatch = pokemon.find(p => p.col === colIdx && p.row === rowIdx && !p.fainted);
               const pedMatch = pedestals.find(pd => pd.col === colIdx && pd.row === rowIdx);
 
+              const cellHazards = hazards?.filter(h => h.col === colIdx && h.row === rowIdx) || [];
+              const hasHoney = cellHazards.some(h => h.type === "honey");
+
               // Setup CSS layout
               let cellBg = alternateDark ? "bg-[#1a2a4a]" : "bg-[#2a3a5a]";
+              if (hasHoney) {
+                cellBg = "bg-[#d48c00]/40";
+              }
               let borderStyle = "border border-slate-700/50";
               let animationClass = "";
 
@@ -174,18 +180,19 @@ export const Board: React.FC<BoardProps> = ({
 
                   {/* Hazard graphic */}
                   {(() => {
-                    const cellHazards = hazards?.filter(h => h.col === colIdx && h.row === rowIdx) || [];
                     if (cellHazards.length > 0) {
                       const hasSpikes = cellHazards.some(h => h.type === "spikes");
                       const hasStealthRock = cellHazards.some(h => h.type === "stealthRock");
+                      const hasHoneyVal = cellHazards.some(h => h.type === "honey");
                       
-                      let icon = "";
-                      if (hasSpikes && hasStealthRock) icon = "🕸️⛰️";
-                      else if (hasSpikes) icon = "🕸️";
-                      else if (hasStealthRock) icon = "⛰️";
+                      const icons: string[] = [];
+                      if (hasSpikes) icons.push("🕸️");
+                      if (hasStealthRock) icons.push("⛰️");
+                      if (hasHoneyVal) icons.push("🍯");
+                      const icon = icons.join("");
                       
                       return (
-                        <div className="absolute bottom-1 left-1 text-[10px] pointer-events-none select-none z-5" title={cellHazards.map(h => `${h.type === "spikes" ? "Spikes" : "Stealth Rock"} (P${h.player}: ${h.duration}t)`).join(", ")}>
+                        <div className="absolute bottom-1 left-1 text-[10px] pointer-events-none select-none z-5" title={cellHazards.map(h => `${h.type === "spikes" ? "Spikes" : h.type === "stealthRock" ? "Stealth Rock" : "Honey"} (P${h.player}: ${h.duration}t)`).join(", ")}>
                           {icon}
                         </div>
                       );
