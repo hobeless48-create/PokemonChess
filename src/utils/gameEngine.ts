@@ -176,33 +176,79 @@ export function getConeCells(col: number, row: number, range: number, dir: numbe
   return out;
 }
 
-export function getEvolutionLineStages(species: string): { totalStages: number; currentStage: number } {
-  const db = DB[species];
-  if (!db) return { totalStages: 1, currentStage: 1 };
+let cachedEvoMap: { [species: string]: { evoFrom: string | null; evoTo: string | null } } | null = null;
 
-  // Find the base species by climbing up evoFrom
-  let baseName = species;
-  let baseDb = db;
-  while (baseDb.evoFrom && DB[baseDb.evoFrom]) {
-    baseName = baseDb.evoFrom;
-    baseDb = DB[baseName];
+function buildEvoMap() {
+  const map: { [species: string]: { evoFrom: string | null; evoTo: string | null } } = {};
+  
+  const cleanName = (name: string | null | undefined) => {
+    if (!name) return null;
+    let cleaned = name.trim();
+    if (cleaned === "None" || cleaned === "") return null;
+    if (cleaned.includes(" Ability:")) {
+      cleaned = cleaned.split(" Ability:")[0].trim();
+    }
+    return cleaned;
+  };
+
+  // Step 1: Initialize all species with their declared links
+  for (const species in DB) {
+    const db = DB[species];
+    map[species] = {
+      evoFrom: cleanName(db.evoFrom),
+      evoTo: cleanName(db.evoTo)
+    };
   }
 
-  // Count total stages climbing down evoTo
+  // Step 2: Synchronize/fill missing links bidirectionally
+  for (const species in map) {
+    const entry = map[species];
+    if (entry.evoTo && map[entry.evoTo]) {
+      if (!map[entry.evoTo].evoFrom) {
+        map[entry.evoTo].evoFrom = species;
+      }
+    }
+    if (entry.evoFrom && map[entry.evoFrom]) {
+      if (!map[entry.evoFrom].evoTo) {
+        map[entry.evoFrom].evoTo = species;
+      }
+    }
+  }
+
+  cachedEvoMap = map;
+}
+
+export function getEvolutionLineStages(species: string): { totalStages: number; currentStage: number } {
+  if (!cachedEvoMap) {
+    buildEvoMap();
+  }
+
+  const entry = cachedEvoMap ? cachedEvoMap[species] : null;
+  if (!entry) return { totalStages: 1, currentStage: 1 };
+
+  // Climb up to find the base species
+  let baseName = species;
+  let current = entry;
+  while (current.evoFrom && cachedEvoMap && cachedEvoMap[current.evoFrom]) {
+    baseName = current.evoFrom;
+    current = cachedEvoMap[baseName];
+  }
+
+  // Count total stages climbing down
   let totalStages = 1;
-  let currentDb = baseDb;
   let currentStage = (species === baseName) ? 1 : 2;
   
-  if (currentDb.evoTo && DB[currentDb.evoTo]) {
+  const baseEntry = cachedEvoMap ? cachedEvoMap[baseName] : null;
+  if (baseEntry && baseEntry.evoTo && cachedEvoMap && cachedEvoMap[baseEntry.evoTo]) {
     totalStages = 2;
-    const secondName = currentDb.evoTo;
-    const secondDb = DB[secondName];
+    const secondName = baseEntry.evoTo;
+    const secondEntry = cachedEvoMap[secondName];
     if (species === secondName) {
       currentStage = 2;
     }
-    if (secondDb.evoTo && DB[secondDb.evoTo]) {
+    if (secondEntry.evoTo && cachedEvoMap[secondEntry.evoTo]) {
       totalStages = 3;
-      const thirdName = secondDb.evoTo;
+      const thirdName = secondEntry.evoTo;
       if (species === thirdName) {
         currentStage = 3;
       }
@@ -216,9 +262,7 @@ export function getSpeciesStage(species: string): number {
   const db = DB[species];
   if (!db) return 1;
   if (db.legendary || species === "Aerodactyl") return 3;
-  if (!db.evoFrom) return 1;
-  if (db.evoTo) return 2;
-  return 3;
+  return getEvolutionLineStages(species).currentStage;
 }
 
 export function pkAt(col: number, row: number, pokemonList: PokemonEntity[]): PokemonEntity | undefined {
@@ -260,7 +304,9 @@ export function getRoleBasedMoves(p: PokemonEntity, pokemonList: PokemonEntity[]
     }
   };
 
-  const cls = (db && db.cls) || 'Attack';
+  let cls = (db && db.cls) || 'Attack';
+  if (cls === 'Atk') cls = 'Attack';
+  if (cls === 'Def') cls = 'Defense';
   
   let pattern: { dc: number; dr: number }[] = [];
   if (db && db.customMoveOffsets && db.customMoveOffsets.length > 0) {
@@ -278,7 +324,7 @@ export function getRoleBasedMoves(p: PokemonEntity, pokemonList: PokemonEntity[]
       ];
     } else if (evoInfo.totalStages === 2 && !isLegendary) {
       // 2-stage evolution
-      const role = db?.cls || "Attack";
+      const role = cls;
       if (role === "Attack") {
         if (evoInfo.currentStage === 1) {
           pattern = [

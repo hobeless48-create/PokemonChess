@@ -1622,6 +1622,10 @@ export const DB: { [species: string]: PokemonDBEntry } = {
 // Post-process DB to scale evolution costs for a longer 20-turn game duration
 Object.keys(DB).forEach(key => {
   const entry = DB[key];
+  if (entry) {
+    if (entry.cls === "Atk") entry.cls = "Attack";
+    if (entry.cls === "Def") entry.cls = "Defense";
+  }
   if (entry && entry.evoCost !== null && typeof entry.evoCost === "number") {
     if (entry.evoCost <= 4) {
       entry.evoCost = entry.evoCost * 2.5; // caterpillars: 3->8, 4->10
