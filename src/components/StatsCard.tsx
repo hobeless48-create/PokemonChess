@@ -30,6 +30,7 @@ interface StatsCardProps {
   hoveredCell: { col: number; row: number } | null;
   boardSize?: number;
   hazards?: Hazard[];
+  turn: number;
 }
 
 export const StatsCard: React.FC<StatsCardProps> = ({
@@ -51,8 +52,9 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   terrain,
   movePoints,
   hoveredCell,
-  boardSize = 11,
-  hazards
+  boardSize,
+  hazards,
+  turn
 }) => {
   const [showStatBreakdown, setShowStatBreakdown] = useState<boolean>(false);
   const [showStatusGuide, setShowStatusGuide] = useState<boolean>(false);
@@ -348,8 +350,9 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   const teamMP = movePoints?.[currentPlayer] ?? 0;
   const unitUsedMP = pkMatch.hasUsedMP ?? false;
   const isZygReassembly = pkMatch.species === "Zygarde Reassembly Unit";
-  const canMove = isMyUnit && !isEggForm && !isZygReassembly && (energy >= 1 || (teamMP > 0 && !unitUsedMP));
-  const canAtk = isMyUnit && !isEggForm && !isZygReassembly && energy >= 1;
+  const isLocked = pkMatch.regigigasLocked ?? false;
+  const canMove = isMyUnit && !isEggForm && !isZygReassembly && !isLocked && (energy >= 1 || (teamMP > 0 && !unitUsedMP));
+  const canAtk = isMyUnit && !isEggForm && !isZygReassembly && !isLocked && energy >= 1;
 
   // Retrieve skill configuration lists
   const skillList: Skill[] = pkMatch.customSkills || (Array.isArray(db.skills) && db.skills.length > 0
@@ -424,13 +427,13 @@ export const StatsCard: React.FC<StatsCardProps> = ({
     if (pkMatch.species === "Zygarde Reassembly Unit") {
       return false;
     }
-    return isMyUnit && !isEggForm && energy >= sc && !pkMatch.skillUses?.[skObj.skillName];
+    return isMyUnit && !isEggForm && !isLocked && energy >= sc && !pkMatch.skillUses?.[skObj.skillName];
   };
 
   const canInvestExp = isMyUnit && freeExp > 0 && !pkMatch.pendingEvo && !pkMatch.pendingEvoChoice && (
     pkMatch.isEgg
       ? (pkMatch.hatchProgress || 0) < (db?.hatchCost || 30)
-      : (!!db.evoCost && (pkMatch.exp || 0) < db.evoCost)
+      : (!!db.evoCost && db.evoTo && db.evoTo !== "None" && (pkMatch.exp || 0) < db.evoCost)
   );
 
   const totalAtk = getModifiedStat(pkMatch, "atk", pokemon, { weather, terrain });
@@ -549,7 +552,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
           <div className="stat-row bg-[#0f0f1a] p-2 rounded-lg border border-slate-800 text-xs flex justify-between">
             <span className="text-gray-400 uppercase tracking-wider text-[10px] font-bold">Evolution Progress</span>
             <span className="text-white font-mono font-bold">
-              {pkMatch.pendingEvo ? "Ready to Evolve" : (db.evoTo ? `${pkMatch.exp} / ${db.evoCost} EXP` : "Max evolved form")}
+              {pkMatch.pendingEvo ? "Ready to Evolve" : (db.evoTo && db.evoTo !== "None" ? `${pkMatch.exp} / ${db.evoCost} EXP` : "Max evolved form")}
             </span>
           </div>
         )}
@@ -748,13 +751,21 @@ export const StatsCard: React.FC<StatsCardProps> = ({
         )}
 
         {/* Active Ability Button */}
-        {isMyUnit && ["Mesprit", "Palkia", "Cryogonal", "Talonflame"].includes(pkMatch.species) && (
+        {isMyUnit && ["Mesprit", "Palkia", "Cryogonal", "Talonflame", "Giratina", "Regigigas", "Hoopa"].includes(pkMatch.species) && (
           <div className="mt-2">
             <button
-              disabled={pkMatch.activeAbilityUsed}
+              disabled={
+                pkMatch.activeAbilityUsed ||
+                (pkMatch.species === "Giratina" && pkMatch.giratinaSummoned) ||
+                (pkMatch.species === "Regigigas" && (!pkMatch.regigigasLocked || turn < 16))
+              }
               onClick={() => onSelectAction("active_ability" as any, pkMatch.id)}
               className={`w-full py-2.5 rounded-lg border flex flex-col items-center justify-center transition leading-normal outline-none focus:outline-none ${
-                !pkMatch.activeAbilityUsed
+                !(
+                  pkMatch.activeAbilityUsed ||
+                  (pkMatch.species === "Giratina" && pkMatch.giratinaSummoned) ||
+                  (pkMatch.species === "Regigigas" && (!pkMatch.regigigasLocked || turn < 16))
+                )
                   ? "bg-amber-500/10 hover:bg-amber-500/25 border-amber-500/50 text-amber-400 cursor-pointer shadow-md shadow-amber-500/5 font-extrabold"
                   : "bg-slate-800/40 border-slate-800 text-gray-500 cursor-not-allowed opacity-55"
               }`}
@@ -764,11 +775,20 @@ export const StatsCard: React.FC<StatsCardProps> = ({
                   pkMatch.species === "Mesprit" ? "Spiritual Buff (1⚡)" :
                   pkMatch.species === "Palkia" ? "Spatial Control (0⚡)" :
                   pkMatch.species === "Cryogonal" ? "Shield Barrier (0⚡)" :
+                  pkMatch.species === "Giratina" ? "Summon Soul Prison (0⚡)" :
+                  pkMatch.species === "Regigigas" ? "Awake (0⚡)" :
+                  pkMatch.species === "Hoopa" ? "Ring of Distortion (0⚡)" :
                   "Gale Wings (1 MP)"
                 }
               </span>
               <span className="text-[9px] opacity-75 font-mono">
-                {pkMatch.activeAbilityUsed ? "Already Used This Turn" : "Click to select target"}
+                {pkMatch.activeAbilityUsed
+                  ? "Already Used This Turn"
+                  : pkMatch.species === "Regigigas"
+                  ? (turn < 16 ? "Available from Turn 16" : "Click to Awake")
+                  : pkMatch.species === "Giratina" && pkMatch.giratinaSummoned
+                  ? "Already Summoned"
+                  : "Click to select target"}
               </span>
             </button>
           </div>

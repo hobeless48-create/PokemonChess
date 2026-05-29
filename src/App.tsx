@@ -400,6 +400,85 @@ export default function App() {
     }
   }, [chancePopup, p2pStatus, myPlayerNumber, gameState.currentPlayer]);
 
+  // Reactive faint checkers
+  const prevPokemonRef = React.useRef<PokemonEntity[]>([]);
+  React.useEffect(() => {
+    const prev = prevPokemonRef.current;
+    const curr = gameState.pokemon;
+    prevPokemonRef.current = curr;
+
+    if (prev.length === 0) return;
+
+    const newlyFainted: PokemonEntity[] = [];
+    curr.forEach(p => {
+      if (p.fainted) {
+        const wasActive = prev.some(old => old.id === p.id && !old.fainted);
+        if (wasActive) {
+          newlyFainted.push(p);
+        }
+      }
+    });
+
+    if (newlyFainted.length > 0) {
+      setGameState(prev => {
+        const nextPokemon = prev.pokemon.map(p => ({ ...p }));
+        const nextEnergy = { ...prev.energy };
+        let stateChanged = false;
+
+        newlyFainted.forEach(fP => {
+          // 1. Dialga active: grant +1 Energy to Dialga's player (max 5)
+          const dialga = nextPokemon.find(d => d.species === "Dialga" && !d.fainted);
+          if (dialga) {
+            nextEnergy[dialga.player] = Math.min(5, (nextEnergy[dialga.player] || 0) + 1);
+            addLog(`⌛ Dialga's Time Distortion! Defeat of ${fP.species} granted Player ${dialga.player} +1 Energy Point!`, "heal");
+            stateChanged = true;
+          }
+
+          // 2. Soul Prison HP growth
+          nextPokemon.forEach(other => {
+            if (other.species === "Soul Prison" && !other.fainted) {
+              other.maxHp += 2;
+              other.hp += 2;
+              addLog(`👻 Soul Prison grows! Max HP increased to ${other.maxHp} (+2 HP).`, "heal");
+              stateChanged = true;
+            }
+          });
+
+          // 3. Giratina stat growth
+          const giratina = nextPokemon.find(g => g.species === "Giratina" && !g.fainted);
+          if (giratina) {
+            giratina.hp = Math.min(giratina.maxHp, giratina.hp + 2);
+            if (!giratina.modifiers) giratina.modifiers = [];
+            const currentSkillDmgMod = giratina.modifiers
+              .filter(m => m.stat === "skill_dmg" && m.source === "Soul Prison Harvest")
+              .reduce((sum, m) => sum + m.amount, 0);
+            if (currentSkillDmgMod < 8) {
+              addModifier(giratina, {
+                stat: "skill_dmg",
+                amount: 1,
+                duration: 9999, // Permanent
+                source: "Soul Prison Harvest"
+              });
+              addLog(`👻 Soul Prison Harvest! Giratina heals +2 HP and gains +1 permanent Skill Damage (Total Buff: +${currentSkillDmgMod + 1}).`, "heal");
+            } else {
+              addLog(`👻 Soul Prison Harvest! Giratina heals +2 HP (Skill Damage buff is already maxed at +8).`, "heal");
+            }
+            stateChanged = true;
+          }
+        });
+
+        if (stateChanged) {
+          return {
+            ...prev,
+            pokemon: nextPokemon,
+            energy: nextEnergy
+          };
+        }
+        return prev;
+      });
+    }
+  }, [gameState.pokemon]);
+
   // Host setup ready checker to launch game
   React.useEffect(() => {
     if (p2pStatus === "connected" && myPlayerNumber === 1 && p1Ready && p2Ready) {
@@ -422,7 +501,7 @@ export default function App() {
 
       const buildEntity = (species: string, player: number, col: number, row: number): PokemonEntity => {
         const db = DB[species];
-        const isEgg = (!!db.legendary && !species.startsWith("Zygarde")) || species === "Aerodactyl";
+        const isEgg = (!!db.legendary && !species.startsWith("Zygarde") && species !== "Regigigas") || species === "Aerodactyl";
         const startHp = species === "Aerodactyl" ? 5 : (isEgg ? 10 : db.hp);
         return {
           id: nextId++,
@@ -445,7 +524,8 @@ export default function App() {
           hatchProgress: 0,
           skillUses: {},
           skillCooldowns: {},
-          customBar: getCustomBarForSpecies(species)
+          customBar: getCustomBarForSpecies(species),
+          regigigasLocked: species === "Regigigas" ? true : undefined
         };
       };
 
@@ -663,7 +743,7 @@ export default function App() {
 
     const buildEntity = (species: string, player: number, col: number, row: number): PokemonEntity => {
       const db = DB[species];
-      const isEgg = (!!db.legendary && !species.startsWith("Zygarde")) || species === "Aerodactyl";
+      const isEgg = (!!db.legendary && !species.startsWith("Zygarde") && species !== "Regigigas") || species === "Aerodactyl";
       const startHp = species === "Aerodactyl" ? 5 : (isEgg ? 10 : db.hp);
       return {
         id: nextId++,
@@ -686,7 +766,8 @@ export default function App() {
         hatchProgress: 0,
         skillUses: {},
         skillCooldowns: {},
-        customBar: getCustomBarForSpecies(species)
+        customBar: getCustomBarForSpecies(species),
+        regigigasLocked: species === "Regigigas" ? true : undefined
       };
     };
 
@@ -835,7 +916,7 @@ export default function App() {
     let threshold: number | null = null;
     let hasCritMention = false;
     if (skill) {
-      const desc = skill.skillDesc?.toLowerCase() || "";
+      const desc = (skill.skillRaw || skill.skillDesc || "").toLowerCase();
       if (desc.includes("crit on 14+")) {
         threshold = 13;
         hasCritMention = true;
@@ -1383,6 +1464,49 @@ export default function App() {
           return;
         }
 
+        if (actor.species === "Giratina") {
+          const isValidCell = gameState.highlightedCells.some(c => c.col === col && c.row === row);
+          if (!isValidCell) {
+            addLog("❌ Summon Soul Prison failed: Invalid tile.", "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const nextId = Math.max(0, ...list.map(x => x.id)) + 1;
+          const soulPrison: PokemonEntity = {
+            id: nextId,
+            species: "Soul Prison",
+            player: actor.player,
+            col,
+            row,
+            maxHp: 5,
+            hp: 5,
+            atk: 0,
+            def: 0,
+            exp: 0,
+            status: null,
+            heldItem: null,
+            fainted: false,
+            modifiers: [],
+            isEgg: false,
+            hasHatched: true,
+            isSummon: true
+          };
+
+          list.push(soulPrison);
+          actor.giratinaSummoned = true;
+          actor.activeAbilityUsed = true;
+          addLog(`⭐ Summon Soul Prison! Giratina summoned a Soul Prison at ${String.fromCharCode(65 + col)}${row + 1}!`, "heal");
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: list,
+            actionMode: null,
+            highlightedCells: []
+          }));
+          return;
+        }
+
         if (actor.species === "Talonflame") {
           const teamMP = gameState.movePoints?.[gameState.currentPlayer] ?? 0;
           if (teamMP < 1) {
@@ -1472,6 +1596,22 @@ export default function App() {
           }));
           addLog(`⭐ Spatial Control: Choose an empty cell in Palkia's AoE(2) range to teleport ${target.species}.`, "sys");
           return;
+        } else if (actor.species === "Hoopa") {
+          const emptyCells = [];
+          for (let c = 0; c < gameConfig.boardSize; c++) {
+            for (let r = 0; r < gameConfig.boardSize; r++) {
+              if (!pkAt(c, r, list) && !pedAt(c, r, peds)) {
+                emptyCells.push({ col: c, row: r });
+              }
+            }
+          }
+          setGameState(prev => ({
+            ...prev,
+            actionMode: { type: "active_ability_hoopa_teleport" as any, pokeId: actor.id, targetId: target.id },
+            highlightedCells: emptyCells.map(c => ({ col: c.col, row: c.row, type: "move" as const }))
+          }));
+          addLog(`⭐ Ring of Distortion: Choose any empty cell on the board to teleport ${target.species}.`, "sys");
+          return;
         }
       }
 
@@ -1488,6 +1628,37 @@ export default function App() {
         targetAlly.row = row;
         actor.activeAbilityUsed = true;
         addLog(`⭐ Spatial Control: Palkia teleported ally ${targetAlly.species} from ${String.fromCharCode(65 + oldCol)}${oldRow + 1} to ${String.fromCharCode(65 + col)}${row + 1}!`, "heal");
+
+        setGameState(prev => ({
+          ...prev,
+          pokemon: list,
+          actionMode: null,
+          highlightedCells: []
+        }));
+        return;
+      }
+
+      if (mode.type === ("active_ability_hoopa_teleport" as any)) {
+        const targetAlly = list.find(pk => pk.id === mode.targetId);
+        if (!targetAlly || targetAlly.fainted) {
+          addLog("❌ Teleport failed: Target ally fainted or missing.", "sys");
+          setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+          return;
+        }
+        const oldCol = targetAlly.col;
+        const oldRow = targetAlly.row;
+        targetAlly.col = col;
+        targetAlly.row = row;
+        
+        if (!targetAlly.modifiers) targetAlly.modifiers = [];
+        addModifier(targetAlly, { stat: "def", amount: 1, duration: 1, source: "Ring of Distortion" });
+        targetAlly.hasAttacked = true;
+        targetAlly.hasUsedSkill = true;
+        
+        actor.atk += 2;
+        actor.activeAbilityUsed = true;
+        
+        addLog(`⭐ Ring of Distortion: Hoopa teleported ally ${targetAlly.species} to ${String.fromCharCode(65 + col)}${row + 1}! It gains +1 Def for 1 turn but cannot act this turn. Hoopa gains permanent +2 Atk!`, "heal");
 
         setGameState(prev => ({
           ...prev,
@@ -2690,6 +2861,14 @@ export default function App() {
           return;
         }
 
+        const accumulatedRolls: {
+          statusType: string;
+          targetName: string;
+          chance: number;
+          roll: number;
+          success: boolean;
+        }[] = [];
+
         // Compute raw damage:
         let rawDmg = 0;
         const isAtkBase = typeof skill.skillDmg === 'string' && skill.skillDmg.toLowerCase() === 'atk';
@@ -2789,8 +2968,13 @@ export default function App() {
             const roll = Math.floor(Math.random() * 20) + 1;
             const succ = roll <= threshold;
 
-            setChancePopup({ statusType: skill.statusChance, chance, roll, success: succ });
-            setTimeout(() => setChancePopup(null), 3500);
+            accumulatedRolls.push({
+              statusType: skill.statusChance,
+              targetName: tg.species,
+              chance,
+              roll,
+              success: succ
+            });
 
             if (succ) {
               if (applyStatusEffect(tg, skill.statusChance, 0, actor)) {
@@ -2891,13 +3075,13 @@ export default function App() {
                   const critResult = checkCriticalHit(actor, target, skill, list);
                   const isCrit = critResult.isCrit;
                   if (critResult.roll !== undefined) {
-                    setChancePopup({
-                      statusType: `${skill.skillName} Critical Hit Check`,
+                    accumulatedRolls.push({
+                      statusType: "Critical Hit Check",
+                      targetName: target.species,
                       chance: (20 - critResult.threshold!) / 20,
                       roll: critResult.roll,
                       success: isCrit
                     });
-                    setTimeout(() => setChancePopup(null), 3500);
                   }
 
                   let defenderDef = getModifiedStat(target, "def", list, { bySkill: true, weather: gameState.weather.type });
@@ -2977,6 +3161,43 @@ export default function App() {
                     netDmg = dmgReceived > 0 ? (dmgReceived + 1) : 0;
                   }
 
+                  // Custom Unique Skill Behavior: Dimensional Gate
+                  if (skill.skillName === "Dimensional Gate") {
+                    if (target.player === actor.player && target.id !== actor.id) {
+                      const emptyCells = adjCells(actor.col, actor.row, 2, true, gameConfig.boardSize)
+                        .filter(c => !pkAt(c.col, c.row, list) && !pedAt(c.col, c.row, peds));
+                      if (emptyCells.length > 0) {
+                        const randCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+                        const oldCol = target.col;
+                        const oldRow = target.row;
+                        target.col = randCell.col;
+                        target.row = randCell.row;
+                        addLog(`🌀 Dimensional Gate: Teleported ally ${target.species} from ${String.fromCharCode(65 + oldCol)}${oldRow + 1} to a random cell ${String.fromCharCode(65 + randCell.col)}${randCell.row + 1} around Hoopa!`, "heal");
+                      } else {
+                        addLog(`🌀 Dimensional Gate: No empty cells around Hoopa to teleport ${target.species}!`, "sys");
+                      }
+                    }
+                  }
+
+                  // Custom Unique Skill Behavior: Spatial Collapse
+                  if (skill.skillName === "Spatial Collapse") {
+                    if (target.player !== actor.player) {
+                      const emptyCells = adjCells(actor.col, actor.row, 2, true, gameConfig.boardSize)
+                        .filter(c => !pkAt(c.col, c.row, list) && !pedAt(c.col, c.row, peds));
+                      if (emptyCells.length > 0) {
+                        const randCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+                        const oldCol = target.col;
+                        const oldRow = target.row;
+                        target.col = randCell.col;
+                        target.row = randCell.row;
+                        addLog(`🌀 Spatial Collapse: Teleported enemy ${target.species} from ${String.fromCharCode(65 + oldCol)}${oldRow + 1} to a random cell ${String.fromCharCode(65 + randCell.col)}${randCell.row + 1} around Hoopa!`, "atk");
+                      } else {
+                        addLog(`🌀 Spatial Collapse: No empty cells around Hoopa to teleport ${target.species}!`, "sys");
+                      }
+                      netDmg = 3; // Deals 3 true damage
+                    }
+                  }
+
                   // Multiscale / Sheer Force / Shield / Levitate checks
                   if (targetDb) {
                     if (targetDb.ability === "Wonder Guard" && typeMult <= 0) {
@@ -3006,7 +3227,7 @@ export default function App() {
                     skill.skillName === "Earthquake" ||
                     skill.skillName === "Mud Shot" ||
                     skill.skillName === "Bone Rush" ||
-                    skill.skillDesc.toLowerCase().includes("ground");
+                    (skill.skillRaw || skill.skillDesc || "").toLowerCase().includes("ground");
 
                   if (targetDb && targetDb.ability === "Levitate" && isGroundSkill) {
                     netDmg = 0;
@@ -3014,6 +3235,21 @@ export default function App() {
                   }
 
                   netDmg = applyTidalBellReduction(target, netDmg, list);
+
+                  // Volcanion Steam Pressure: If taking damage from a Fire or Water skill, heal 1 HP instead
+                  const isVolcanion = target.species === "Volcanion" || (targetDb && targetDb.ability === "Steam Pressure");
+                  if (isVolcanion && netDmg > 0) {
+                    const isFireOrWaterSkill = 
+                      (adb && (adb.t1 === "Fire" || adb.t2 === "Fire" || adb.t1 === "Water" || adb.t2 === "Water")) ||
+                      skill.skillName.toLowerCase().includes("fire") || skill.skillName.toLowerCase().includes("flame") || skill.skillName.toLowerCase().includes("burn") ||
+                      skill.skillName.toLowerCase().includes("water") || skill.skillName.toLowerCase().includes("hydro") || skill.skillName.toLowerCase().includes("bubble") || skill.skillName.toLowerCase().includes("scald") || skill.skillName.toLowerCase().includes("surf");
+                    
+                    if (isFireOrWaterSkill) {
+                      netDmg = 0; // Negate the damage
+                      applyHeal(target, 1);
+                      addLog(`💨 Steam Pressure! Volcanion absorbed the Fire/Water skill and healed +1 HP!`, "heal");
+                    }
+                  }
 
                   // Apply shield reduction
                   if (target.shield && target.shield > 0 && netDmg > 0) {
@@ -3131,6 +3367,18 @@ export default function App() {
                   }
                 }
 
+                // Volcanion Steam Pressure: target gains a steam stack
+                if (actor.species === "Volcanion" && target.player !== actor.player && !target.fainted) {
+                  target.steamStacks = (target.steamStacks || 0) + 1;
+                  addLog(`💨 Steam Pressure: ${target.species} gained 1 Steam stack (Total: ${target.steamStacks}/3)`, "sys");
+                  if (target.steamStacks >= 3) {
+                    target.steamStacks = 0;
+                    if (applyStatusEffect(target, "burn", 0, actor)) {
+                      addLog(`🔥 Steam Pressure: ${target.species} reached 3 Steam stacks and is Burned for 2 turns!`, "combat");
+                    }
+                  }
+                }
+
                 triggerSkillsEffect(target);
 
                 // Gengar Cursed Body on skill hit
@@ -3173,6 +3421,14 @@ export default function App() {
             }
           }
         });
+
+        if (accumulatedRolls.length > 0) {
+          setChancePopup({
+            statusType: skill.statusChance || "Critical Hit Check",
+            rolls: accumulatedRolls
+          } as any);
+          setTimeout(() => setChancePopup(null), 3500);
+        }
 
         // Ice-type freeze-to-Frost conversion check for all Ice-types in the skill area
         processIceFrostRolls(skill, affectedCells, list);
@@ -3290,6 +3546,31 @@ export default function App() {
 
     if (type === ("active_ability" as any)) {
       if (actor.activeAbilityUsed) return;
+      if (actor.species === "Regigigas") {
+        if (!actor.regigigasLocked || gameState.turn < 16) {
+          addLog("❌ Regigigas cannot awake yet or is already awake.", "sys");
+          return;
+        }
+        const updatedPokemon = gameState.pokemon.map(p => {
+          if (p.id === actor.id) {
+            return {
+              ...p,
+              regigigasLocked: false,
+              activeAbilityUsed: true
+            };
+          }
+          return p;
+        });
+        addLog(`⭐ Awake! Regigigas woke up early from its slumber!`, "sys");
+        setGameState(prev => ({
+          ...prev,
+          pokemon: updatedPokemon,
+          actionMode: null,
+          highlightedCells: []
+        }));
+        return;
+      }
+
       let cells: { col: number; row: number; type: "atk" | "move" | "atk-preview" | "skill-preview" }[] = [];
       if (actor.species === "Mesprit" || actor.species === "Cryogonal") {
         cells = gameState.pokemon
@@ -3307,6 +3588,18 @@ export default function App() {
         cells = adjCells(actor.col, actor.row, 1, true, gameConfig.boardSize)
           .filter(c => !pkAt(c.col, c.row, gameState.pokemon) && !pedAt(c.col, c.row, gameState.pedestals))
           .map(c => ({ col: c.col, row: c.row, type: "move" as const }));
+      } else if (actor.species === "Giratina") {
+        if (actor.giratinaSummoned) {
+          addLog("❌ Giratina's Soul Prison was already summoned this match.", "sys");
+          return;
+        }
+        cells = adjCells(actor.col, actor.row, 1, true, gameConfig.boardSize)
+          .filter(c => !pkAt(c.col, c.row, gameState.pokemon) && !pedAt(c.col, c.row, gameState.pedestals))
+          .map(c => ({ col: c.col, row: c.row, type: "move" as const }));
+      } else if (actor.species === "Hoopa") {
+        cells = gameState.pokemon
+          .filter(p => !p.fainted && p.player === actor.player)
+          .map(p => ({ col: p.col, row: p.row, type: "atk" as const }));
       }
       setGameState(prev => ({
         ...prev,
@@ -3523,6 +3816,7 @@ export default function App() {
     }
 
     if (skill.skillName === "Powder Snow") {
+      const accumulatedRolls: any[] = [];
       list.forEach(p => {
         if (!p.fainted) {
           const pDb = DB[p.species];
@@ -3542,8 +3836,14 @@ export default function App() {
             const threshold = Math.floor(chance * 20);
             const roll = Math.floor(Math.random() * 20) + 1;
             const succ = roll <= threshold;
-            setChancePopup({ statusType: "freeze", chance, roll, success: succ });
-            setTimeout(() => setChancePopup(null), 3500);
+            
+            accumulatedRolls.push({
+              statusType: "freeze",
+              targetName: p.species,
+              chance,
+              roll,
+              success: succ
+            });
 
             if (succ) {
               if (applyStatusEffect(p, "freeze", 0, actor)) {
@@ -3553,6 +3853,14 @@ export default function App() {
           }
         }
       });
+
+      if (accumulatedRolls.length > 0) {
+        setChancePopup({
+          statusType: "freeze",
+          rolls: accumulatedRolls
+        } as any);
+        setTimeout(() => setChancePopup(null), 3500);
+      }
 
       const allCells: { col: number; row: number }[] = [];
       for (let c = 0; c < gameConfig.boardSize; c++) {
@@ -3783,6 +4091,22 @@ export default function App() {
         }
       }
 
+      // Bad Dreams sleep ticks
+      if (p.status === "sleep") {
+        const isDarkraiActive = list.some(d => d.species === "Darkrai" && !d.fainted);
+        if (isDarkraiActive) {
+          p.hp = Math.max(0, p.hp - 1);
+          addLog(`🔮 Bad Dreams! Sleeping ${p.species} takes -1 true damage from the nightmare.`, "atk");
+          if (p.customBar && p.customBar.type === "Angry") {
+            p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 1);
+          }
+          if (p.hp <= 0) {
+            p.fainted = true;
+            addLog(`${p.species} fainted to Bad Dreams!`, "sys");
+          }
+        }
+      }
+
       // Burn status maximum 2 turns limit
       if (p.status === "burn" && !p.fainted) {
         p.statusTurns = (p.statusTurns || 0) + 1;
@@ -3907,6 +4231,19 @@ export default function App() {
           }
         }
       } else {
+        // Regigigas Slumber Growth
+        if (p.species === "Regigigas" && p.regigigasLocked) {
+          if (gameState.turn >= 16 && gameState.turn <= 19) {
+            p.maxHp += 2;
+            p.hp += 2;
+            p.atk += 1;
+            addLog(`⏳ Regigigas grows in its slumber (Max HP +2, Atk +1)!`, "heal");
+          } else if (gameState.turn >= 20) {
+            p.regigigasLocked = false;
+            addLog(`⭐ Regigigas awoke automatically from its slumber! It is now fully active, immune to push/pull, and increases team Max MP and MP regen!`, "heal");
+          }
+        }
+
         if (p.species !== "Clear Bell" && p.species !== "Tidal Bell" && p.species !== "Tidal bell") {
           if (p.heldItem === "Oval Stone") {
             if (p.customBar && p.customBar.type === "Happiness") {
@@ -4375,6 +4712,10 @@ export default function App() {
       addLog(`🌸 Xerneas Blessing Aura! Player ${nextPlayer} starts their turn with +1 Max Energy (${finalMaxE})!`, "heal");
     }
 
+    const hasRegigigasAwake = nextPokemonList.some(p => p.player === nextPlayer && !p.fainted && p.species === "Regigigas" && !p.regigigasLocked);
+    const maxMP = hasRegigigasAwake ? 5 : 4;
+    const regenMP = hasRegigigasAwake ? 4 : 3;
+
     setGameState(prev => ({
       ...prev,
       turn: nextTurn,
@@ -4390,7 +4731,7 @@ export default function App() {
       actionMode: null,
       movePoints: {
         ...(prev.movePoints || { 1: 3, 2: 3 }),
-        [nextPlayer]: Math.min(4, (prev.movePoints?.[nextPlayer] ?? 3) + 3)
+        [nextPlayer]: Math.min(maxMP, (prev.movePoints?.[nextPlayer] ?? 3) + regenMP)
       },
       consumablesUsedThisTurn: { total: 0, powerHerb: 0 },
       energy: {
@@ -4982,26 +5323,32 @@ export default function App() {
             </div>
 
             {/* Move Points indicator */}
-            <div className="mp-box bg-[#0f3460] py-1.5 px-4 rounded-xl border border-slate-700 flex items-center gap-3">
-              <div className="text-center">
-                <div className="text-[10px] text-gray-400 uppercase font-black leading-none">Move Points</div>
-                <div className="text-xs text-cyan-400 font-extrabold font-mono mt-0.5 leading-none">
-                  {gameState.movePoints?.[gameState.currentPlayer] ?? 0} / 4 🚶
-                </div>
-              </div>
+            {(() => {
+              const currentRegigigasAwake = gameState.pokemon.some(p => p.player === gameState.currentPlayer && !p.fainted && p.species === "Regigigas" && !p.regigigasLocked);
+              const maxMPForCurrent = currentRegigigasAwake ? 5 : 4;
+              return (
+                <div className="mp-box bg-[#0f3460] py-1.5 px-4 rounded-xl border border-slate-700 flex items-center gap-3">
+                  <div className="text-center">
+                    <div className="text-[10px] text-gray-400 uppercase font-black leading-none">Move Points</div>
+                    <div className="text-xs text-cyan-400 font-extrabold font-mono mt-0.5 leading-none">
+                      {gameState.movePoints?.[gameState.currentPlayer] ?? 0} / {maxMPForCurrent} 🚶
+                    </div>
+                  </div>
 
-              <div className="stars flex gap-1.5">
-                {Array.from({ length: 4 }).map((_, sIdx) => (
-                  <div
-                    key={sIdx}
-                    className={`w-3.5 h-3.5 rounded transition ${sIdx < (gameState.movePoints?.[gameState.currentPlayer] ?? 0)
-                        ? "bg-[#4fc3f7] ring-2 ring-[#4fc3f7]/20 scale-110 shadow-md shadow-[#4fc3f7]/20"
-                        : "bg-slate-700"
-                      }`}
-                  />
-                ))}
-              </div>
-            </div>
+                  <div className="stars flex gap-1.5">
+                    {Array.from({ length: maxMPForCurrent }).map((_, sIdx) => (
+                      <div
+                        key={sIdx}
+                        className={`w-3.5 h-3.5 rounded transition ${sIdx < (gameState.movePoints?.[gameState.currentPlayer] ?? 0)
+                            ? "bg-[#4fc3f7] ring-2 ring-[#4fc3f7]/20 scale-110 shadow-md shadow-[#4fc3f7]/20"
+                            : "bg-slate-700"
+                          }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Energy points indicators stars */}
             <div className="energy-box bg-[#0f3460] py-1.5 px-4 rounded-xl border border-slate-700 flex items-center gap-3">
@@ -5130,6 +5477,7 @@ export default function App() {
                 hoveredCell={hoveredCell}
                 boardSize={gameConfig.boardSize}
                 hazards={gameState.hazards}
+                turn={gameState.turn}
               />
             </div>
 
@@ -5253,37 +5601,54 @@ export default function App() {
       })()}
 
       {/* Chance pop-ups visual modifier element */}
-      {chancePopup && (
-        <div className="fixed bottom-6 right-6 bg-slate-900 border border-slate-700 p-4 rounded-xl shadow-2xl z-[2000] animate-bounce w-[220px]">
-          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1 flex justify-between">
-            <span>Status Roller</span>
-            <span className="text-amber-400 font-mono">D20</span>
-          </h4>
-          <div className="text-xs text-gray-200">
-            Applying <span className="font-bold text-indigo-400 uppercase">{chancePopup.statusType}</span>
-          </div>
+      {chancePopup && (() => {
+        const rollsList = (chancePopup as any).rolls || [{
+          statusType: chancePopup.statusType,
+          targetName: undefined,
+          chance: chancePopup.chance,
+          roll: chancePopup.roll,
+          success: chancePopup.success
+        }];
+        return (
+          <div className="fixed bottom-6 right-6 bg-slate-900 border border-slate-700 p-4 rounded-xl shadow-2xl z-[2000] animate-bounce w-[240px] max-h-[320px] overflow-y-auto custom-scrollbar animate-fade-in-up">
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1 flex justify-between">
+              <span>Status Roller</span>
+              <span className="text-amber-400 font-mono">D20</span>
+            </h4>
+            <div className="text-xs text-gray-200 mb-2">
+              Applying <span className="font-bold text-indigo-400 uppercase">{chancePopup.statusType}</span>
+            </div>
 
-          <div className="relative h-2 bg-slate-800 rounded-full mt-2 overflow-hidden border border-slate-950">
-            {/* Threshold marker */}
-            <div
-              className="absolute h-full bg-[#43a047]"
-              style={{ width: `${chancePopup.chance * 100}%` }}
-            />
-            {/* Roll pointer marker */}
-            <div
-              className={`absolute top-0 bottom-0 w-1 bg-white ${chancePopup.success ? "shadow-md shadow-emerald-500/50" : "shadow-md shadow-red-500/50"}`}
-              style={{ left: `${(chancePopup.roll / 20) * 100}%` }}
-            />
-          </div>
+            {rollsList.map((item: any, idx: number) => (
+              <div key={idx} className="mt-2 border-t border-slate-800 pt-2 first:mt-0 first:border-0 first:pt-0">
+                <div className="text-[10px] text-gray-300 font-semibold mb-1 flex justify-between">
+                  <span>🎯 {item.targetName || "Target"}</span>
+                  <span className="text-indigo-400 uppercase font-bold">{item.statusType}</span>
+                </div>
+                <div className="relative h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-950">
+                  {/* Threshold marker */}
+                  <div
+                    className="absolute h-full bg-[#43a047]"
+                    style={{ width: `${item.chance * 100}%` }}
+                  />
+                  {/* Roll pointer marker */}
+                  <div
+                    className={`absolute top-0 bottom-0 w-1 bg-white ${item.success ? "shadow-md shadow-emerald-500/50" : "shadow-md shadow-red-500/50"}`}
+                    style={{ left: `${(item.roll / 20) * 100}%` }}
+                  />
+                </div>
 
-          <div className="flex justify-between items-center text-[10px] mt-1.5 leading-none">
-            <span className="text-gray-400 font-semibold font-mono">Roll: {chancePopup.roll}/20</span>
-            <span className={`font-black uppercase tracking-wider ${chancePopup.success ? "text-emerald-400" : "text-red-400"}`}>
-              {chancePopup.success ? "Success" : "Failed"}
-            </span>
+                <div className="flex justify-between items-center text-[10px] mt-1 leading-none">
+                  <span className="text-gray-400 font-semibold font-mono">Roll: {item.roll}/20</span>
+                  <span className={`font-black uppercase tracking-wider ${item.success ? "text-emerald-400" : "text-red-400"}`}>
+                    {item.success ? "Success" : "Failed"}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Turn Transition Notice Popup */}
       {turnNotice !== null && (myPlayerNumber === 0 || myPlayerNumber === turnNotice) && (

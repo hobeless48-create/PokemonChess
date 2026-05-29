@@ -275,7 +275,7 @@ export function pedAt(col: number, row: number, pedestals: Pedestal[]): Pedestal
 
 export function getRoleBasedMoves(p: PokemonEntity, pokemonList: PokemonEntity[], pedestals: Pedestal[], boardSize: number = 11): { col: number; row: number }[] {
   const db = DB[p.species];
-  if (db && db.legendary && p.isEgg && !p.hasHatched) return [];
+  if (p.isEgg && !p.hasHatched) return [];
 
   // Shadow Tag trapping check
   if (db && db.ability !== "Run Away") {
@@ -670,7 +670,9 @@ export function getSkillData(db: PokemonDBEntry, skillIdx?: number, customSkills
 }
 
 export function getSkillTargetType(skill: Skill, dbAll: PokemonDBEntry): string | null {
-  if (skill?.skillName === "Baton Pass") return "ally";
+  if (skill?.skillName === "Baton Pass" || skill?.skillName === "Dimensional Gate") return "ally";
+  if (skill?.skillName === "Spatial Collapse") return "enemy";
+  if (skill?.statusChance || dbAll?.statusChance) return "enemy";
   return (
     skill?.skillEffect?.target ||
     skill?.skillHealTarget ||
@@ -686,6 +688,10 @@ export function getModifiedStat(p: PokemonEntity, stat: "atk" | "def", pokemonLi
   const db = DB[p.species];
   if (!db) return stat === 'atk' ? p.atk : p.def;
   
+  if (p.regigigasLocked) {
+    return stat === 'atk' ? p.atk : p.def;
+  }
+
   // Unhatched eggs have 0 defense
   if (p.isEgg && !p.hasHatched && stat === "def") {
     return 0;
@@ -694,12 +700,30 @@ export function getModifiedStat(p: PokemonEntity, stat: "atk" | "def", pokemonLi
   let base = stat === 'atk' ? p.atk : p.def;
 
   // Dark Aura ability
-  if (pokemonList && pokemonList.length > 0) {
+  if (stat === "atk" && pokemonList && pokemonList.length > 0) {
     const hasActiveYveltal = pokemonList.some(other => {
       return other.species === "Yveltal" && !other.fainted;
     });
     if (hasActiveYveltal && (db.t1 === "Dark" || db.t2 === "Dark" || db.t1 === "Flying" || db.t2 === "Flying" || p.reflectedType === "Dark" || p.reflectedType === "Flying")) {
       base += 2;
+    }
+  }
+
+  // Keldeo's Resolute Blade Def debuff
+  if (stat === "def" && pokemonList && pokemonList.length > 0) {
+    const hasActiveKeldeo = pokemonList.some(other => {
+      return other.species === "Keldeo" && !other.fainted;
+    });
+    if (hasActiveKeldeo) {
+      const t1 = p.reflectedType || db.t1;
+      const t2 = p.reflectedType ? null : db.t2;
+      const isType1 = t1 === "Psychic" || t1 === "Grass" || t1 === "Flying" || t2 === "Psychic" || t2 === "Grass" || t2 === "Flying";
+      const isType2 = t1 === "Ice" || t1 === "Ground" || t1 === "Steel" || t1 === "Rock" || t2 === "Ice" || t2 === "Ground" || t2 === "Steel" || t2 === "Rock";
+      if (isType2) {
+        base = Math.max(0, base - 2);
+      } else if (isType1) {
+        base = Math.max(0, base - 1);
+      }
     }
   }
 
@@ -778,20 +802,24 @@ export function getModifiedStat(p: PokemonEntity, stat: "atk" | "def", pokemonLi
 
   // Active Weather adjustments
   if (stat === "atk") {
-    const activeType = p.reflectedType || db.t1;
-    if (context.weather === "Sunlight" && activeType === "Fire") {
+    const t1 = p.reflectedType || db.t1;
+    const t2 = p.reflectedType ? null : db.t2;
+    const isFire = t1 === "Fire" || t2 === "Fire";
+    const isWater = t1 === "Water" || t2 === "Water";
+
+    if (context.weather === "Sunlight" && isFire) {
       base += 1;
     }
     if (context.weather === "Harsh Sunlight") {
-      if (activeType === "Fire") base += 1;
-      if (activeType === "Water") base = Math.max(0, base - 2);
+      if (isFire) base += 1;
+      if (isWater) base = Math.max(0, base - 2);
     }
-    if (context.weather === "Rain" && activeType === "Water") {
+    if (context.weather === "Rain" && isWater) {
       base += 1;
     }
     if (context.weather === "Heavy Rain") {
-      if (activeType === "Water") base += 1;
-      if (activeType === "Fire") base = Math.max(0, base - 2);
+      if (isWater) base += 1;
+      if (isFire) base = Math.max(0, base - 2);
     }
     if (isHail && context.action === "melee") {
       base = Math.max(0, base - 1);
@@ -802,11 +830,10 @@ export function getModifiedStat(p: PokemonEntity, stat: "atk" | "def", pokemonLi
     
     // Active Terrain adjustments
     if (context.terrain) {
-      const activeType = p.reflectedType || db.t1;
-      const isElectric = activeType === "Electric" || db.t2 === "Electric";
-      const isGrass = activeType === "Grass" || db.t2 === "Grass";
-      const isPsychic = activeType === "Psychic" || db.t2 === "Psychic";
-      const isDragon = activeType === "Dragon" || db.t2 === "Dragon";
+      const isElectric = t1 === "Electric" || t2 === "Electric";
+      const isGrass = t1 === "Grass" || t2 === "Grass";
+      const isPsychic = t1 === "Psychic" || t2 === "Psychic";
+      const isDragon = t1 === "Dragon" || t2 === "Dragon";
 
       if (context.terrain === "Electric" && isElectric) {
         base += 1;
@@ -1379,7 +1406,7 @@ export function predictDamage(
       };
     }
 
-    const isGroundSkill = skill.skillName === "Earthquake" || skill.skillName === "Mud Shot" || skill.skillName === "Bone Rush" || skill.skillDesc.toLowerCase().includes("ground");
+    const isGroundSkill = skill.skillName === "Earthquake" || skill.skillName === "Mud Shot" || skill.skillName === "Bone Rush" || (skill.skillRaw || skill.skillDesc || "").toLowerCase().includes("ground");
     if (targetDb.ability === "Levitate" && isGroundSkill) {
       isLevitateMiss = true;
       return {

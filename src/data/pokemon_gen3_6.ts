@@ -1022,10 +1022,16 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   ),
 
   "Deoxys": Pkmn(386, ["Psychic"], 5, [12, 6, 0], "Atk (Normal Form setup)",
-    "DNA Mutation - ",
+    "DNA Mutation - DNA Mutation",
     [
-      S("Psycho Boost (Psycho Boost", "Psycho Boost (Psycho Boost", 0, {"skillRaw":"Psycho Boost (Psycho Boost"}),
-      S("Cosmic Wall", "Cosmic Wall", 0, {"skillRaw":"Cosmic Wall"})
+      S("Psycho Boost", "Target = [1(Line(4)(1))]", 6, {
+        "skillEffect": {"stat": "atk", "amount": -1, "duration": 2, "target": "self"},
+        "skillRaw": "Psycho Boost (Target = [1(Line(4)(1))]), Damage: 6, user Atk -1 for 2 turns"
+      }),
+      S("Cosmic Wall", "Target = [1(self)]", 0, {
+        "skillEffect": {"stat": "def", "amount": 2, "duration": 2, "target": "self"},
+        "skillRaw": "Cosmic Wall (Target = [1(self)]), Gives user +2 Def for 2 turns"
+      })
     ], {"legendary":true,"hatchCost":30,"hatchGroup":"Legendary","color":"#993556"}
   ),
 
@@ -1713,35 +1719,47 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   "Palkia": Pkmn(484, ["Water", "Dragon"], 6, [16, 6, 0], "Atk",
     "Spatial Control - Once per turn, choose 1 ally on the field and teleport it into Palkia's AoE(2) range",
     [
-      S("Spacial Rend", "Line(4)(1)", 6, {"skillRaw":"Spacial Rend (Target = [1(Line(4)(1))], Damage: 6, Ingore Def.)"}),
-      S("Aqua Ring , for 3 turn.", "self", 0, {"skillHeal":1,"skillHealTarget":"self","skillRaw":"Aqua Ring , for 3 turn. (Heal 1 hp to self and nearest ally.)"}),
-      S("Chilling Water , Aoe (2) deal 2 damage, inflcit atk -1 debuff for 2 turn.", "Chilling Water , Aoe (2) deal 2 damage, inflcit atk -1 debuff for 2 turn.", 0, {"skillRaw":"Chilling Water , Aoe (2) deal 2 damage, inflcit atk -1 debuff for 2 turn."})
+      S("Spacial Rend", "Target = [1(Line(4)(1))]", 6, {"skillRaw":"Spacial Rend (Target = [1(Line(4)(1))]), Damage: 6, Ignore Def."}),
+      S("Aqua Ring", "Target = [1(self)]", 0, {"skillHeal":1,"skillHealTarget":"self","skillRaw":"Aqua Ring (Target = [1(self)]), Heal 1 HP to self"}),
+      S("Chilling Water", "Target = [1(AoE(2))]", 2, {
+        "skillEffect": {"stat": "atk", "amount": -1, "duration": 2, "target": "enemy"},
+        "skillRaw": "Chilling Water (Target = [1(AoE(2))]), Damage: 2, Atk -1 for 2 turns"
+      })
     ], {"color":"#185FA5"}
   ),
 
   "Heatran": Pkmn(485, ["Fire", "Steel"], 5, [15, 4, 3], "Def",
     "Flash Fire - Immune to Fire, receiving Fire skills boosts Fire skill power",
     [
-      S("Magma Storm", "AoE(1)", 2, {"statusChance":"burn","statusChanceValue":0.3,"skillRaw":"Magma Storm (Target = [1(AoE(1))], Damage: 2, Traps enemies inside burn hazard)"}),
-      S("Overheat Aoe(2),Damage:6 deal damage to self = 2.", "Overheat Aoe(2),Damage:6 deal damage to self = 2.", 0, {"skillRaw":"Overheat Aoe(2),Damage:6 deal damage to self = 2."})
+      S("Magma Storm", "Target = [1(AoE(1))]", 2, {"statusChance":"burn","statusChanceValue":0.3,"skillRaw":"Magma Storm (Target = [1(AoE(1))]), Damage: 2, 30% Burn"}),
+      S("Overheat", "Target = [1(AoE(2))]", 6, {
+        "selfDamage": 2,
+        "skillRaw": "Overheat (Target = [1(AoE(2))]), Damage: 6, User takes 2 recoil damage."
+      })
     ], {"color":"#D85A30"}
   ),
 
   "Regigigas": Pkmn(486, ["Normal"], 6, [12, 4, 3], "Def",
-    " - ",
+    "Slow Start - Regigigas is locked for the first 15 turns. Click Awake at turn 16+ to unlock early. At turn 21 it wakes automatically, gaining push/pull immunity and +1 team Max MP and MP regen. Each turn asleep from 16 to 19, it gains +2 Max HP, +2 HP, and +1 Atk.",
     [
-      S("Double Edge (Target = [Line(3)(1)], Deal 8 Dmg. Reduce self current HP by 3.", "Double Edge (Target = [Line(3)(1)], Deal 8 Dmg. Reduce self current HP by 3.", 0, {"skillRaw":"Double Edge (Target = [Line(3)(1)], Deal 8 Dmg. Reduce self current HP by 3."}),
-      S("Crush Grip", "Line(3)(1)", 0, {"skillCost":3,"skillRaw":"Crush Grip (Target = [1(Line(3)(1))], Damage based on target current HP) (Cost 3)"}),
-      S("Giga Impact", "Line(2)(1)", 12, {"skillCost":4,"skillRaw":"Giga Impact (Target = [1(Line(2)(1))], Damage: 12, Can't use attack or skill next turn) (Cost 4)"})
+      S("Double Edge", "Target = [1(Line(3)(1))]", 8, {
+        "selfDamage": 3,
+        "skillRaw": "Double Edge (Target = [1(Line(3)(1))]), Damage: 8, User takes 3 recoil damage."
+      }),
+      S("Crush Grip", "Target = [1(Line(3)(1))]", 0, {"skillCost":3,"skillRaw":"Crush Grip (Target = [1(Line(3)(1))]), Damage based on target current HP (Cost: 3)"}),
+      S("Giga Impact", "Target = [1(Line(2)(1))]", 12, {"skillCost":4,"skillRaw":"Giga Impact (Target = [1(Line(2)(1))]), Damage: 12, Recharge next turn (Cost: 4)"})
     ], {"color":"#5F5E5A"}
   ),
 
   "Giratina": Pkmn(487, ["Ghost", "Dragon"], 6, [16, 5, 3], "Def",
-    "Soul Prison When Giratina is summoned, create a movable Soul Prison adjacent to Giratina Whenever a Pokémon faints, Soul Prison gains 2 Max HP, Giratina heals 2 HP, and gains permanent Skill Damage +1 - max 8",
+    "Pressure - When Giratina is summoned, create a movable Soul Prison adjacent to Giratina. Whenever a Pokémon faints, Soul Prison gains 2 Max HP, Giratina heals 2 HP, and gains permanent Skill Damage +1 (max +8).",
     [
-      S("Distortion Rift", "AoE(2)", 0, {"skillRaw":"Distortion Rift (Target = [1(AoE(2))], Damage  : 5, Reduce enemy movement points by 1)"}),
-      S("Shadow Force", "Line(3)(1)", 0, {"skillRaw":"Shadow Force (Target = [1(Line(3)(1))], Damage : 3, Ignores shields and protection effects)"}),
-      S("Phantom Grasp", "Line(3)(1)", 3, {"skillRaw":"Phantom Grasp (Target = [1(Line(3)(1))], Damage: 3, Pull target 1 tile toward Giratina)"})
+      S("Distortion Rift", "Target = [1(AoE(2))]", 5, {"skillRaw":"Distortion Rift (Target = [1(AoE(2))]), Damage: 5, Reduce enemy movement points by 1"}),
+      S("Shadow Force", "Target = [1(Line(3)(1))]", 3, {"skillRaw":"Shadow Force (Target = [1(Line(3)(1))]), Damage: 3, Ignores shields and protection effects"}),
+      S("Phantom Grasp", "Target = [1(Line(3)(1))]", 3, {
+        "pullAmount": 1,
+        "skillRaw": "Phantom Grasp (Target = [1(Line(3)(1))]), Damage: 3, Pull target 1 tile toward Giratina"
+      })
     ], {"legendary":true,"hatchCost":30,"hatchGroup":"Legendary","color":"#3C3489"}
   ),
 
@@ -1922,7 +1940,9 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   "Simisage": Pkmn(512, ["Grass"], 2, [13, 4, 0], "Support",
     "Jungle Spirit - Allied Simi Pokémon gain +1 Max HP",
     [
-      S("Grass Pledge ((Target = [1(Line(3)(1))], Damage: 2) If Fire Pledge or Water Pledge was used first by an allied Simi Pokémon this battle, this skill deals +2 damage", "Grass Pledge ((Target = [1(Line(3)(1))], Damage: 2) If Fire Pledge or Water Pledge was used first by an allied Simi Pokémon this battle, this skill deals +2 damage", 0, {"skillRaw":"Grass Pledge ((Target = [1(Line(3)(1))], Damage: 2) If Fire Pledge or Water Pledge was used first by an allied Simi Pokémon this battle, this skill deals +2 damage"})
+      S("Grass Pledge", "Target = [1(Line(3)(1))]", 2, {
+        "skillRaw": "Grass Pledge (Target = [1(Line(3)(1))]), Damage: 2, deals +2 damage if Fire or Water Pledge was used first"
+      })
     ], {"evoFrom":"Pansage","color":"#3B6D11"}
   ),
 
@@ -2870,9 +2890,13 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   "Kyurem": Pkmn(646, ["Dragon", "Ice"], 5, [16, 5, 2], "Def",
     "Frozen Core - At the start of your turn, allied Ice Pokémon gain 1 Frost",
     [
-      S("Dragon Breath", "Line(3)(1)", 5, {"statusChance":"freeze","statusChanceValue":0.05,"skillRaw":"Dragon Breath(Target = [1(Line(3)(1))], Damage: 5, Deal +1 damage to Frozen targets, 5% chance to Freeze)"}),
-      S("Glaciate", "All Enemies", 0, {"statusChance":"freeze","statusChanceValue":0.25,"skillRaw":"Glaciate (Target = [All Enemies], Damage: 0 , 25% chance to Freeze enemies hit, If Frost bar is >=16 Freeze chance will increase to 40% instead 25%)"}),
-      S("Blizzard(Target = [1(AoE(2))], Damage: 4, 15% chance to Freeze enemies hit", "Blizzard(Target = [1(AoE(2))], Damage: 4, 15% chance to Freeze enemies hit", 0, {"skillRaw":"Blizzard(Target = [1(AoE(2))], Damage: 4, 15% chance to Freeze enemies hit"})
+      S("Dragon Breath", "Target = [1(Line(3)(1))]", 5, {"statusChance":"freeze","statusChanceValue":0.05,"skillRaw":"Dragon Breath (Target = [1(Line(3)(1))]), Damage: 5, 5% Freeze"}),
+      S("Glaciate", "Target = [All Enemies]", 0, {"statusChance":"freeze","statusChanceValue":0.25,"skillRaw":"Glaciate (Target = [All Enemies]), 25% Freeze (40% if Frost >= 16)"}),
+      S("Blizzard", "Target = [1(AoE(2))]", 4, {
+        "statusChance": "freeze",
+        "statusChanceValue": 0.15,
+        "skillRaw": "Blizzard (Target = [1(AoE(2))]), Damage: 4, 15% Freeze"
+      })
     ], {"legendary":true,"hatchCost":30,"hatchGroup":"Legendary","color":"#8CD16D"}
   ),
 
@@ -3424,18 +3448,23 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
   "Hoopa": Pkmn(720, ["Psychic", "Ghost"], 5, [13, 5, 1], "Support",
     "Ring of Distortion - At the start of each turn, Hoopa may use this ability once per turn. Hoopa can teleport 1 allied unit to any empty tile anywhere on the map. When a unit is teleported, Hoopa gains +2 Atk. The teleported ally cannot attack for 1 turn but gains +1 Def for 1 turn.",
     [
-      S("Hyperspace Hole (Target = [1(Line(5)(1))]) Deal 5 damage. This attack ignores Shield and damage reduction effects.", "Hyperspace Hole (Target = [1(Line(5)(1))]) Deal 5 damage. This attack ignores Shield and damage reduction effects.", 0, {"skillRaw":"Hyperspace Hole (Target = [1(Line(5)(1))]) Deal 5 damage. This attack ignores Shield and damage reduction effects."}),
-      S("Dimensional Gate (Target = [1(AoE(2))]) Teleport all allied units inside the area to random empty tiles within AoE(2) around Hoopa. Allies gain Def 1 after being teleported.", "Dimensional Gate (Target = [1(AoE(2))]) Teleport all allied units inside the area to random empty tiles within AoE(2) around Hoopa. Allies gain Def 1 after being teleported.", 0, {"skillRaw":"Dimensional Gate (Target = [1(AoE(2))]) Teleport all allied units inside the area to random empty tiles within AoE(2) around Hoopa. Allies gain Def 1 after being teleported."}),
-      S("Spatial Collapse (Target = [1(AoE(2))]) Teleport all enemy units inside the area to empty tiles within the same AoE(2), placed by Hoopa. Hoopa chooses the destination tiles for each enemy. After being teleported, enemies take 3 Truedamage.", "Spatial Collapse (Target = [1(AoE(2))]) Teleport all enemy units inside the area to empty tiles within the same AoE(2), placed by Hoopa. Hoopa chooses the destination tiles for each enemy. After being teleported, enemies take 3 Truedamage.", 0, {"skillRaw":"Spatial Collapse (Target = [1(AoE(2))]) Teleport all enemy units inside the area to empty tiles within the same AoE(2), placed by Hoopa. Hoopa chooses the destination tiles for each enemy. After being teleported, enemies take 3 Truedamage."})
+      S("Hyperspace Hole", "Target = [1(Line(5)(1))]", 5, {"skillRaw":"Hyperspace Hole (Target = [1(Line(5)(1))]), Damage: 5, Ignores shields and protection"}),
+      S("Dimensional Gate", "Target = [1(AoE(2))]", 0, {"skillRaw":"Dimensional Gate (Target = [1(AoE(2))]), Teleport allies in range randomly within AoE(2) around Hoopa"}),
+      S("Spatial Collapse", "Target = [1(AoE(2))]", 0, {"skillRaw":"Spatial Collapse (Target = [1(AoE(2))]), Teleport enemies in range, deals 3 True damage"})
     ], {"evoFrom":"None","evoCost":30,"evoTo":"None","color":"#993556"}
   ),
 
   "Volcanion": Pkmn(721, ["Fire", "Water"], 5, [15, 5, 1], "Atk",
     "Steam Pressure - Whenever Volcanion uses a skill, all enemies hit gain 1 Steam stack. At 3 Steam stacks, the target becomes Burned for 2 turns ,Volcanion is immune to Burn. If Volcanion takes damage from a Fire or Water skill,Heal 1 hp",
     [
-      S("Steam Cannon (Target = [1(Line(5)(1))]) Deal 6 damage. Enemies hit gain 1 Steam stack.", "Steam Cannon (Target = [1(Line(5)(1))]) Deal 6 damage. Enemies hit gain 1 Steam stack.", 0, {"skillRaw":"Steam Cannon (Target = [1(Line(5)(1))]) Deal 6 damage. Enemies hit gain 1 Steam stack."}),
-      S("Hydro Eruption (Target = [3(Cone(3))]) Deal 4 damage. Only enemy units inside the area gain 1 Steam stack.", "Hydro Eruption (Target = [3(Cone(3))]) Deal 4 damage. Only enemy units inside the area gain 1 Steam stack.", 0, {"skillRaw":"Hydro Eruption (Target = [3(Cone(3))]) Deal 4 damage. Only enemy units inside the area gain 1 Steam stack."}),
-      S("Magma Flood (Target = [5(AoE(2))]) Deal 2 damage. Only enemy units inside the area gain 1 Steam stack.", "Magma Flood (Target = [5(AoE(2))]) Deal 2 damage. Only enemy units inside the area gain 1 Steam stack.", 0, {"skillRaw":"Magma Flood (Target = [5(AoE(2))]) Deal 2 damage. Only enemy units inside the area gain 1 Steam stack."})
+      S("Steam Cannon", "Target = [1(Line(5)(1))]", 6, {"skillRaw":"Steam Cannon (Target = [1(Line(5)(1))]), Damage: 6, Enemies gain 1 Steam stack"}),
+      S("Hydro Eruption", "Target = [3(Cone(3))]", 4, {"skillRaw":"Hydro Eruption (Target = [3(Cone(3))]), Damage: 4, Enemies gain 1 Steam stack"}),
+      S("Magma Flood", "Target = [5(AoE(2))]", 2, {"skillRaw":"Magma Flood (Target = [5(AoE(2))]), Damage: 2, Enemies gain 1 Steam stack"})
     ], {"evoFrom":"None","evoCost":30,"evoTo":"None","color":"#D85A30"}
+  ),
+
+  "Soul Prison": Pkmn(999, ["Ghost"], 0, [5, 0, 0], "Support",
+    "Prisoner of War - Movable unit. Does not attack or use skills.",
+    [], {"evoFrom":"None","evoCost":0,"evoTo":"None","color":"#3C3489"}
   )
 };

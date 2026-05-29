@@ -186,6 +186,16 @@ export interface PokemonEntity {
   zygCellsCollected?: number;
   zyg10Spawned?: boolean;
   aegislashForm?: "Shield" | "Blade";
+  regigigasLocked?: boolean;
+  regigigasImmune?: boolean;
+  regigigasMoveRegen?: boolean;
+  arceusBonuses?: {
+    atk: number;
+    def: number;
+    maxHp: number;
+  };
+  steamStacks?: number;
+  giratinaSummoned?: boolean;
 }
 
 export interface Pedestal {
