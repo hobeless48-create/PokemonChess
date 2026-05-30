@@ -7,7 +7,7 @@ import React, { useState } from "react";
 import { PokemonEntity, Pedestal, Skill, Hazard } from "../types";
 import { DB } from "../data/pokemon";
 import { TCOL } from "../data/typeCharts";
-import { getModifiedStat, getSkillData, predictDamage, getAffectedCells, getSkillTargetType } from "../utils/gameEngine";
+import { getModifiedStat, getSkillData, predictDamage, getAffectedCells, getSkillTargetType, getPokemonTypes } from "../utils/gameEngine";
 
 interface StatsCardProps {
   selectedCell: { col: number; row: number } | null;
@@ -337,6 +337,35 @@ export const StatsCard: React.FC<StatsCardProps> = ({
     } else {
       abilityDesc = `${db.abilityDesc} (Collected: ${cells}/100 cells for Power Construct)`;
     }
+  } else if (pkMatch.species === "Arceus") {
+    const teammates = pokemon.filter(p => p.player === pkMatch.player && p.id !== pkMatch.id && !p.fainted);
+    const counts: { [t: string]: number } = {};
+    teammates.forEach(tm => {
+      const types = getPokemonTypes(tm);
+      types.forEach(t => {
+        counts[t] = (counts[t] || 0) + 1;
+      });
+    });
+    const currentType = pkMatch.reflectedType || "Normal";
+    const countsStr = Object.entries(counts)
+      .map(([t, c]) => `${t}: ${c}`)
+      .join(", ");
+    abilityDesc = `Divine Origin - Counts other team members' types. Current Counts: [${countsStr || "None"}]. Shifted to: ${currentType}. At the start of battle, Arceus gains bonuses based on the types present on the board. Fire: +1 Skill Damage, Water: Heal 1 HP after casting a skill, Grass: +2 Max HP, Electric: The first movement each turn costs no movement points, Ghost: Skills ignore shields, Steel: +1 Def, Dragon: Skills cost 1 less Energy, Psychic: Skills have -1 cooldown, Dark: Deal +1 true damage, Fairy: Adjacent allies take -1 damage.`;
+  } else if (pkMatch.species === "Rotom") {
+    const teammates = pokemon.filter(p => p.player === pkMatch.player && p.id !== pkMatch.id && !p.fainted);
+    const counts: { [t: string]: number } = { Fire: 0, Water: 0, Ice: 0, Flying: 0, Grass: 0 };
+    teammates.forEach(tm => {
+      const types = getPokemonTypes(tm);
+      types.forEach(t => {
+        if (t in counts) {
+          counts[t]++;
+        }
+      });
+    });
+    const relevantTypes = ["Fire", "Water", "Ice", "Flying", "Grass"];
+    const relevantCountsStr = relevantTypes.map(t => `${t}: ${counts[t] || 0}`).join(", ");
+    const currentForm = pkMatch.rotomForm || "Normal";
+    abilityDesc = `Appliance Shift - Rotom changes form based on the most common type on your team. Counts: [${relevantCountsStr}]. Current Form: ${currentForm}. (Fire → Heat Rotom, Water → Wash, Ice → Frost, Flying → Fan, Grass → Mow Rotom. If tied or no matches, remains Normal (Ghost)).`;
   }
 
   const pct = Math.round((pkMatch.hp / pkMatch.maxHp) * 100);
@@ -379,7 +408,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
     
     const isChosen = actionMode?.type === "skill" && actionMode?.pokeId === pkMatch.id && actionMode?.skillIdx === idx;
     const isWeatherSkill = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(sk.skillName);
-    const targetType = getSkillTargetType(sk, db);
+    const targetType = getSkillTargetType(sk, db, pkMatch.rotomForm);
     const isInstant = (
       sk.skillDesc === "All" ||
       targetType === "self" ||

@@ -642,7 +642,7 @@ export const DB: { [species: string]: PokemonDBEntry } = {
     { base: true, evoCost: 6, evoTo: "Cloyster", color: "#185FA5" }
   ),
   Cloyster: Pkmn(91, ["Water", "Ice"], 1, [11, 4, 3], "Defense",
-    "Skill Link - Multi-hit skills always hit max times",
+    "Shell Armor - Critical hit damage doesn't apply on this target.",
     [S("Spike Cannon", "Line(3)(1)", 2, { skillRaw: "Spike Cannon (Line(3)(1): Deal 2 damage, hits 2-5 times)" })],
     { evoFrom: "Shellder", color: "#185FA5" }
   ),
@@ -1570,6 +1570,7 @@ export const DB: { [species: string]: PokemonDBEntry } = {
     "Sand Stream - Sets Sandstorm weather conditions at start of active fight",
     [
       S("Stone Edge", "Line(2)(1)", 5),
+      S("Stealth Rock", "AoE(2)", 0),
       S("Sandstorm", "Self", 0, { skillCost: 2, skillRaw: "Sandstorm (Self): Summons Sandstorm weather on the zone for 5 turns." })
     ],
     { evoFrom: "Pupitar", color: "#4E544A" }
@@ -1615,6 +1616,11 @@ export const DB: { [species: string]: PokemonDBEntry } = {
     "Tidal Bell - Reduces incoming damage to adjacent allies (except Lugia) by 2 per hit, consuming 1 charge.",
     [],
     { base: true, color: "#00bcd4" }
+  ),
+  "Stone Pillar": Pkmn(503, ["Rock"], 1, [3, 0, 0], "Defense",
+    "Stone Pillar - Deals 2 damage to any opponent standing in a Plus symbol of the pillar at the end of the opponent's turn.",
+    [],
+    { base: true, color: "#8E9199" }
   ),
   ...DB_GEN3_6
 };

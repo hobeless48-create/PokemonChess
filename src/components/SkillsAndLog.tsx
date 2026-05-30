@@ -67,7 +67,7 @@ export const SkillsAndLog: React.FC<SkillsAndLogProps> = ({
     
     const isChosen = actionMode?.type === "skill" && actionMode?.pokeId === pkMatch.id && actionMode?.skillIdx === idx;
     const isWeatherSkill = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(sk.skillName);
-    const targetType = getSkillTargetType(sk, db);
+    const targetType = getSkillTargetType(sk, db, pkMatch.rotomForm);
     const isInstant = (
       sk.skillDesc === "All" ||
       targetType === "self" ||

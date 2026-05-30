@@ -21,7 +21,9 @@ import {
   pedAt,
   getSkillData,
   getSkillTargetType,
-  adjCells
+  adjCells,
+  hasType,
+  getPokemonTypes
 } from "./utils/gameEngine";
 
 import { SetupScreen } from "./components/SetupScreen";
@@ -33,14 +35,15 @@ import { Modals } from "./components/Modals";
 import { Pokedex } from "./components/Pokedex";
 
 function canInflictStatusBase(p: PokemonEntity, status: string, terrainType: string | null = null): boolean {
+  if (p.species === "Zygarde Complete Forme") return false;
   if (terrainType === "Misty") return false;
   if (status === "sleep" && terrainType === "Electric") return false;
   const db = DB[p.species];
   if (!db) return true;
-  if (status === "freeze" && (db.t1 === "Ice" || db.t2 === "Ice")) return false;
-  if (status === "burn" && (db.t1 === "Fire" || db.t2 === "Fire")) return false;
-  if ((status === "poison" || status === "toxic") && (db.t1 === "Poison" || db.t2 === "Poison" || db.t1 === "Steel" || db.t2 === "Steel")) return false;
-  if (status === "paralysis" && (db.t1 === "Electric" || db.t2 === "Electric")) return false;
+  if (status === "freeze" && hasType(p, "Ice")) return false;
+  if (status === "burn" && hasType(p, "Fire")) return false;
+  if ((status === "poison" || status === "toxic") && (hasType(p, "Poison") || hasType(p, "Steel"))) return false;
+  if (status === "paralysis" && hasType(p, "Electric")) return false;
   if (db.ability === "Leaf Guard") return false;
   if (status === "sleep" && (db.ability === "Insomnia" || db.ability === "Vital Spirit")) return false;
   if (status === "confuse" && db.ability === "Inner Focus") return false;
@@ -85,7 +88,7 @@ export default function App() {
   });
 
   // Core game states
-  const [gameState, setGameState] = useState<GameState>({
+  const [gameState, setGameStateInternal] = useState<GameState>({
     turn: 1,
     phase: 1,
     currentPlayer: 1,
@@ -107,6 +110,81 @@ export default function App() {
     actionMode: null,
     skillMenuFor: null
   });
+
+  const updateTypeChangingAbilities = (list: PokemonEntity[]) => {
+    list.forEach(p => {
+      if (p.species === "Arceus" && !p.fainted) {
+        const teammates = list.filter(other => other.player === p.player && other.id !== p.id && !other.fainted);
+        const counts: { [t: string]: number } = {};
+        teammates.forEach(tm => {
+          const types = getPokemonTypes(tm);
+          types.forEach(t => {
+            counts[t] = (counts[t] || 0) + 1;
+          });
+        });
+        
+        let maxType = "Normal";
+        let maxCount = 0;
+        const sortedTypes = Object.keys(counts).sort((a, b) => {
+          if (counts[a] !== counts[b]) {
+            return counts[b] - counts[a];
+          }
+          return a.localeCompare(b);
+        });
+        if (sortedTypes.length > 0) {
+          maxType = sortedTypes[0];
+          maxCount = counts[maxType];
+        }
+        p.reflectedType = maxType;
+      }
+      
+      if (p.species === "Rotom" && !p.fainted) {
+        const teammates = list.filter(other => other.player === p.player && other.id !== p.id && !other.fainted);
+        const counts: { [t: string]: number } = { Fire: 0, Water: 0, Ice: 0, Flying: 0, Grass: 0 };
+        teammates.forEach(tm => {
+          const types = getPokemonTypes(tm);
+          types.forEach(t => {
+            if (t in counts) {
+              counts[t]++;
+            }
+          });
+        });
+        
+        let maxType: string | null = null;
+        let maxCount = 0;
+        let isTie = false;
+        for (const [t, c] of Object.entries(counts)) {
+          if (c > maxCount) {
+            maxCount = c;
+            maxType = t;
+            isTie = false;
+          } else if (c === maxCount && c > 0) {
+            isTie = true;
+          }
+        }
+        
+        if (maxCount > 0 && !isTie && maxType) {
+          if (maxType === "Fire") p.rotomForm = "Heat";
+          else if (maxType === "Water") p.rotomForm = "Wash";
+          else if (maxType === "Ice") p.rotomForm = "Frost";
+          else if (maxType === "Flying") p.rotomForm = "Fan";
+          else if (maxType === "Grass") p.rotomForm = "Mow";
+        } else {
+          p.rotomForm = "Normal";
+        }
+      }
+    });
+  };
+
+  const setGameState = (val: GameState | ((prev: GameState) => GameState)) => {
+    setGameStateInternal(prev => {
+      const nextState = typeof val === "function" ? val(prev) : val;
+      if (nextState.pokemon) {
+        updateTypeChangingAbilities(nextState.pokemon);
+      }
+      return nextState;
+    });
+  };
 
   const [shopOpen, setShopOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
@@ -1099,14 +1177,18 @@ export default function App() {
   const checkPowerConstruct = (zygarde: PokemonEntity, list: PokemonEntity[]) => {
     if (zygarde.fainted) return;
     const cells = zygarde.zygCellsCollected || 0;
-    if (zygarde.species === "Zygarde 50%" && cells >= 100 && zygarde.hp <= zygarde.maxHp * 0.5) {
+    const isZyg50 = zygarde.species === "Zygarde 50%";
+    const isZyg10 = zygarde.species === "Zygarde 10%";
+    if ((isZyg50 || isZyg10) && cells >= 100 && zygarde.hp <= zygarde.maxHp * 0.5) {
       const oldName = zygarde.species;
       const damageTaken = zygarde.maxHp - zygarde.hp;
       zygarde.species = "Zygarde Complete Forme";
-      zygarde.maxHp = 13;
-      zygarde.hp = Math.max(1, 13 - damageTaken);
+      zygarde.maxHp = 30;
+      zygarde.hp = Math.max(1, 30 - damageTaken);
       zygarde.atk = 5;
       zygarde.def = 3;
+      zygarde.status = null;
+      zygarde.statusTurns = 0;
       addLog(`🟢 Power Construct! ${oldName} assembled into Zygarde Complete Forme!`, "heal");
       list.forEach(p => {
         if (p.species === "Zygarde Cell") p.fainted = true;
@@ -1142,6 +1224,10 @@ export default function App() {
     const zyg50 = zygUnits.find(z => z.species === "Zygarde 50%" && !z.fainted);
     if (zyg50) {
       checkPowerConstruct(zyg50, list);
+    }
+    const zyg10 = zygUnits.find(z => z.species === "Zygarde 10%" && !z.fainted);
+    if (zyg10) {
+      checkPowerConstruct(zyg10, list);
     }
 
     return newCells;
@@ -1719,6 +1805,12 @@ export default function App() {
           addLog(`⚡ Speed Boost! ${actor.species} gained +1 Atk for 1 turn after moving!`, "heal");
         }
 
+        const hasWhimsicott = list.some(p => p.player === actor.player && p.species === "Whimsicott" && !p.fainted);
+        if (hasWhimsicott && hasType(actor, "Fairy")) {
+          gainHappiness(actor, 1, list);
+          addLog(`🍃 Fairy Wind! Whimsicott on the field granted +1 Happiness to ${actor.species}!`, "heal");
+        }
+
         // Stepped on hazards check
         if (gameState.hazards && gameState.hazards.length > 0) {
           const activeHazards = gameState.hazards.filter(h => h.col === col && h.row === row && h.player !== actor.player && h.duration > 0 && h.type !== "honey");
@@ -2162,7 +2254,7 @@ export default function App() {
           return;
         }
 
-        let targetType = getSkillTargetType(skill, dbEntry);
+        let targetType = getSkillTargetType(skill, dbEntry, actor.rotomForm);
         const isWeatherSkill = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(skill.skillName);
         const isTerrainSkill = ["Electric Terrain", "Grassy Terrain", "Misty Terrain", "Psychic Terrain"].includes(skill.skillName);
         const isInstantSkill = (
@@ -2212,7 +2304,7 @@ export default function App() {
           scCost = Math.max(0, scCost - 1);
         }
 
-        targetType = getSkillTargetType(skill, dbEntry);
+        targetType = getSkillTargetType(skill, dbEntry, actor.rotomForm);
         const shape = parseSkillShape(dbEntry, actor, mode.skillIdx);
         const isAoE = shape.type === "aoe" || shape.type === "cone" || (shape.type === "line" && shape.range && shape.range > 1);
 
@@ -2253,9 +2345,10 @@ export default function App() {
           addLog(`💥 Pressure! ${pressureUnit.species}'s presence increases skill cost by +1!`, "sys");
         }
 
-        // Summoning Skill Intercept (Clear Bell / Tidal Bell / Custom Summon)
+        // Summoning Skill Intercept (Clear Bell / Tidal Bell / Stealth Rock / Custom Summon)
         const isBell = skill.skillName === "Clear Bell" || skill.skillName === "Tidal bell" || skill.skillName === "Tidal Bell";
-        const hasSummonConfig = !!skill.summonConfig || isBell;
+        const isStealthRock = skill.skillName === "Stealth Rock";
+        const hasSummonConfig = !!skill.summonConfig || isBell || isStealthRock;
 
         if (hasSummonConfig) {
           const targetPk = pkAt(col, row, list);
@@ -2266,9 +2359,17 @@ export default function App() {
             return;
           }
 
-          const sc = skill.summonConfig || (skill.skillName === "Clear Bell"
-            ? { species: "Clear Bell", isMini: false, isStatic: true, hp: 3, atk: 0, def: 0 }
-            : { species: "Tidal Bell", isMini: false, isStatic: true, hp: 3, atk: 0, def: 0 });
+          let sc = skill.summonConfig;
+          if (!sc) {
+            if (skill.skillName === "Clear Bell") {
+              sc = { species: "Clear Bell", isMini: false, isStatic: true, hp: 3, atk: 0, def: 0 };
+            } else if (isStealthRock) {
+              const shape = actor.species === "Steelix" ? "plus" : "aoe1";
+              sc = { species: "Stone Pillar", isMini: false, isStatic: true, hp: 3, atk: 0, def: 0, duration: 3, shape };
+            } else {
+              sc = { species: "Tidal Bell", isMini: false, isStatic: true, hp: 3, atk: 0, def: 0 };
+            }
+          }
 
           // Prevent duplicate active summon if configured (like bells limit)
           const existingSameSummon = list.find(p => p.player === actor.player && !p.fainted && p.species === sc.species);
@@ -2299,7 +2400,8 @@ export default function App() {
             hasHatched: false,
             isSummon: true,
             summonConfig: sc,
-            customSkills: sc.customSkill ? [sc.customSkill] : undefined
+            customSkills: sc.customSkill ? [sc.customSkill] : undefined,
+            summonDurationLeft: sc.duration || undefined
           };
 
           list.push(summonEntity);
@@ -2680,13 +2782,13 @@ export default function App() {
           return;
         }
 
-        // Special Skill Intercept: Spikes / Stealth Rock
-        if (skill.skillName === "Spikes" || skill.skillName === "Stealth Rock") {
+        // Special Skill Intercept: Spikes
+        if (skill.skillName === "Spikes") {
           if (!gameState.hazards) gameState.hazards = [];
           const nextHazards = [...(gameState.hazards || [])];
 
           affectedCells.forEach(cell => {
-            const type = skill.skillName === "Spikes" ? "spikes" : "stealthRock";
+            const type = "spikes";
             const existingIdx = nextHazards.findIndex(h => h.col === cell.col && h.row === cell.row && h.type === type && h.player === actor.player);
             if (existingIdx !== -1) {
               nextHazards[existingIdx].duration = 3;
@@ -2701,7 +2803,7 @@ export default function App() {
             }
           });
 
-          addLog(`🕸️ ${actor.species} set ${skill.skillName} hazards in the targeted area for 3 turns!`, "heal");
+          addLog(`🕸️ ${actor.species} set Spikes hazards in the targeted area for 3 turns!`, "heal");
 
           actor.exp += 2;
           actor.hasUsedSkill = true;
@@ -3355,6 +3457,27 @@ export default function App() {
                   addLog(`🔔 Tidal Bell tolls! Granted ${target.species} +2 Def for 2 turns!`, "heal");
                 }
 
+                // Custom Unique Skill Behavior: Appliance Pulse (Normal, Heat, Fan forms)
+                if (skill.skillName === "Appliance Pulse") {
+                  const form = actor.rotomForm || "Normal";
+                  if (form === "Normal" && target.player !== actor.player && !target.fainted) {
+                    if (applyStatusEffect(target, "paralysis", 0, actor)) {
+                      addLog(`⚡ Appliance Pulse! Inflicted Paralysis on ${target.species}!`, "combat");
+                    }
+                  } else if (form === "Heat" && target.player !== actor.player && !target.fainted) {
+                    if (applyStatusEffect(target, "burn", 0, actor)) {
+                      addLog(`🔥 Appliance Pulse! Inflicted Burn on ${target.species}!`, "combat");
+                    }
+                  } else if (form === "Fan" && !target.fainted) {
+                    const pushPullResult = resolvePushPull(actor, target, 2, 0, list, peds, gameConfig.boardSize);
+                    if (pushPullResult.moved) {
+                      target.col = pushPullResult.col;
+                      target.row = pushPullResult.row;
+                      addLog(`💫 Appliance Pulse! ${target.species} was pushed 2 tiles to ${String.fromCharCode(65 + target.col)}${target.row + 1}!`, "sys");
+                    }
+                  }
+                }
+
                 // Push/Pull Physics
                 const pushAmt = skill.pushAmount || 0;
                 const pullAmt = skill.pullAmount || 0;
@@ -3473,13 +3596,17 @@ export default function App() {
           actor.skillCooldowns[skill.skillName] = skill.cooldown;
         }
 
-        const isFairy = dbEntry && (dbEntry.t1 === "Fairy" || dbEntry.t2 === "Fairy");
-        if (isFairy) {
+        if (hasType(actor, "Fairy")) {
           list.forEach(p => {
             if (p.species === "Xerneas" && p.player === actor.player && !p.fainted) {
               gainHappiness(p, 1, list);
             }
           });
+          const hasWhimsicott = list.some(p => p.player === actor.player && p.species === "Whimsicott" && !p.fainted);
+          if (hasWhimsicott) {
+            gainHappiness(actor, 1, list);
+            addLog(`🍃 Fairy Wind! Whimsicott on the field granted +1 Happiness to ${actor.species}!`, "heal");
+          }
         }
 
         const nextPokemon = [...list];
@@ -3641,7 +3768,7 @@ export default function App() {
         return;
       }
 
-      const targetType = getSkillTargetType(skill, dbEntry);
+      const targetType = getSkillTargetType(skill, dbEntry, actor.rotomForm);
 
       const isTerrainSkill = ["Electric Terrain", "Grassy Terrain", "Misty Terrain", "Psychic Terrain"].includes(skill.skillName);
       const isWeatherSkill = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(skill.skillName);
@@ -3781,7 +3908,7 @@ export default function App() {
     }
 
     // Apply stat modifier buffs to matching allies
-    const targetType = getSkillTargetType(skill, dbEntry);
+    const targetType = getSkillTargetType(skill, dbEntry, actor.rotomForm);
 
     if (skill.skillName === "Life Dew" || targetType === "all_allies") {
       list.forEach(p => {
@@ -3794,7 +3921,7 @@ export default function App() {
 
     if (targetType === "all_ice") {
       list.forEach(p => {
-        if (!p.fainted && (DB[p.species].t1 === "Ice" || DB[p.species].t2 === "Ice")) {
+        if (!p.fainted && hasType(p, "Ice")) {
           addModifier(p, { stat: "def", amount: 1, duration: 2, source: "Snow Scape" });
           addLog(`${p.species} gained +1 Def from Snow Scape.`, "heal");
         }
@@ -3812,6 +3939,39 @@ export default function App() {
           source: skill.skillName
         });
         addLog(`🛡️ ${actor.species} gained +${eff.amount} ${eff.stat.toUpperCase()} from ${skill.skillName} for ${eff.duration} turns!`, "heal");
+      }
+    }
+
+    const updatedPlayers = { ...gameState.players };
+
+    // Custom Unique Skill Behavior: Appliance Pulse (Wash, Frost, Mow forms)
+    if (skill.skillName === "Appliance Pulse") {
+      const form = actor.rotomForm || "Normal";
+      if (form === "Wash") {
+        const adj = adjCells(actor.col, actor.row, 1, true, gameConfig.boardSize);
+        let healCount = 0;
+        list.forEach(p => {
+          if (!p.fainted && p.player === actor.player && adj.some(c => c.col === p.col && c.row === p.row)) {
+            if (healCount < 3) {
+              applyHeal(p, 1);
+              addLog(`💦 Wash Rotom healed ${p.species} for 1 HP!`, "heal");
+              healCount++;
+            }
+          }
+        });
+        if (healCount === 0) {
+          addLog(`💦 Wash Rotom casted Appliance Pulse, but no adjacent allies were found.`, "sys");
+        }
+      } else if (form === "Frost") {
+        const enemyPlayer = actor.player === 1 ? 2 : 1;
+        updatedPlayers[enemyPlayer] = {
+          ...updatedPlayers[enemyPlayer],
+          frostRotomDebuff: true
+        };
+        addLog(`❄️ Frost Rotom's Appliance Pulse will reduce Player ${enemyPlayer}'s MP next turn!`, "sys");
+      } else if (form === "Mow") {
+        applyHeal(actor, 3);
+        addLog(`🌿 Mow Rotom healed itself for 3 HP!`, "heal");
       }
     }
 
@@ -3888,13 +4048,17 @@ export default function App() {
       actor.skillCooldowns[skill.skillName] = skill.cooldown;
     }
 
-    const isFairy = dbEntry && (dbEntry.t1 === "Fairy" || dbEntry.t2 === "Fairy");
-    if (isFairy) {
+    if (hasType(actor, "Fairy")) {
       list.forEach(p => {
         if (p.species === "Xerneas" && p.player === actor.player && !p.fainted) {
           gainHappiness(p, 1, list);
         }
       });
+      const hasWhimsicott = list.some(p => p.player === actor.player && p.species === "Whimsicott" && !p.fainted);
+      if (hasWhimsicott) {
+        gainHappiness(actor, 1, list);
+        addLog(`🍃 Fairy Wind! Whimsicott on the field granted +1 Happiness to ${actor.species}!`, "heal");
+      }
     }
 
     let nextHazards = [...(gameState.hazards || [])];
@@ -3928,6 +4092,7 @@ export default function App() {
       actionMode: null,
       highlightedCells: [],
       hazards: nextHazards,
+      players: updatedPlayers,
       energy: {
         ...prev.energy,
         [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
@@ -4455,6 +4620,51 @@ export default function App() {
       }
     });
 
+    // Decrement summon durations for active player's summons at their turn end
+    list.forEach(p => {
+      if (p.isSummon && typeof p.summonDurationLeft === "number" && !p.fainted && p.player === curPlayer) {
+        p.summonDurationLeft -= 1;
+        if (p.summonDurationLeft <= 0) {
+          p.hp = 0;
+          p.fainted = true;
+          addLog(`💨 ${p.species} collapsed/expired!`, "sys");
+        }
+      }
+    });
+
+    // Stone Pillar end-of-opponent-turn trigger
+    const endOpponentPlayer = curPlayer === 1 ? 2 : 1;
+    list.forEach(pillar => {
+      if (pillar.species === "Stone Pillar" && !pillar.fainted && pillar.player === endOpponentPlayer) {
+        const shape = pillar.summonConfig?.shape || "plus";
+        list.forEach(target => {
+          if (!target.fainted && target.id !== pillar.id && !(target.banishedTurns && target.banishedTurns > 0)) {
+            const dc = Math.abs(target.col - pillar.col);
+            const dr = Math.abs(target.row - pillar.row);
+            let inRange = false;
+            if (shape === "plus") {
+              inRange = (dc === 0 && dr === 1) || (dr === 0 && dc === 1);
+            } else if (shape === "aoe1") {
+              inRange = dc <= 1 && dr <= 1;
+            }
+            if (inRange) {
+              const baseDmg = 2;
+              const reducedDmg = applyTidalBellReduction(target, baseDmg, list);
+              target.hp = Math.max(0, target.hp - reducedDmg);
+              addLog(`🪨 Stone Pillar dealt ${reducedDmg} damage to ${target.species}!`, "combat");
+              if (target.customBar && target.customBar.type === "Angry") {
+                target.customBar.value = Math.min(target.customBar.max, target.customBar.value + 1);
+              }
+              if (target.hp <= 0) {
+                target.fainted = true;
+                addLog(`${target.species} fainted!`, "sys");
+              }
+            }
+          }
+        });
+      }
+    });
+
     // B. Swap players
     const nextPlayer = curPlayer === 1 ? 2 : 1;
 
@@ -4706,6 +4916,19 @@ export default function App() {
       }
     });
 
+    // Kyurem's Frozen Core: allied Ice Pokémon gain +1 Frost
+    const hasKyurem = nextPokemonList.some(p => p.player === nextPlayer && !p.fainted && p.species === "Kyurem");
+    if (hasKyurem) {
+      nextPokemonList.forEach(p => {
+        if (p.player === nextPlayer && !p.fainted && hasType(p, "Ice")) {
+          if (p.customBar && p.customBar.type === "Frost") {
+            p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 1);
+            addLog(`❄️ Frozen Core! Kyurem on the field granted +1 Frost to ${p.species}!`, "heal");
+          }
+        }
+      });
+    }
+
     const hasActiveXerneasHappiness20 = nextPokemonList.some(p => p.player === nextPlayer && !p.fainted && p.species === "Xerneas" && p.customBar && p.customBar.type === "Happiness" && p.customBar.value >= 20);
     const finalMaxE = hasActiveXerneasHappiness20 ? maxE + 1 : maxE;
     if (hasActiveXerneasHappiness20) {
@@ -4714,7 +4937,16 @@ export default function App() {
 
     const hasRegigigasAwake = nextPokemonList.some(p => p.player === nextPlayer && !p.fainted && p.species === "Regigigas" && !p.regigigasLocked);
     const maxMP = hasRegigigasAwake ? 5 : 4;
-    const regenMP = hasRegigigasAwake ? 4 : 3;
+    let regenMP = hasRegigigasAwake ? 4 : 3;
+
+    if (updatedPlayers[nextPlayer].frostRotomDebuff) {
+      regenMP = Math.max(0, regenMP - 1);
+      updatedPlayers[nextPlayer] = {
+        ...updatedPlayers[nextPlayer],
+        frostRotomDebuff: false
+      };
+      addLog(`❄️ Frost Rotom's Appliance Pulse! Player ${nextPlayer}'s MP regeneration was reduced by 1!`, "sys");
+    }
 
     setGameState(prev => ({
       ...prev,
@@ -4775,7 +5007,7 @@ export default function App() {
 
         const dbEntry = DB[tempActor.species];
         const skill = getSkillData(dbEntry, activeSkillIdx);
-        const targetType = getSkillTargetType(skill, dbEntry);
+        const targetType = getSkillTargetType(skill, dbEntry, tempActor.rotomForm);
 
         const isWeatherSkill = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(skill.skillName);
         const isInstantSkill = (

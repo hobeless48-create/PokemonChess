@@ -15,6 +15,33 @@ const DDIRS: { [key: number]: { dc: number; dr: number } } = {
   4: { dc: -1, dr: 0 }
 };
 
+export function getPokemonTypes(p: PokemonEntity): string[] {
+  const db = DB[p.species];
+  if (!db) return [];
+  
+  if (p.species === "Rotom") {
+    const form = p.rotomForm || "Normal";
+    if (form === "Heat") return ["Electric", "Fire"];
+    if (form === "Wash") return ["Electric", "Water"];
+    if (form === "Frost") return ["Electric", "Ice"];
+    if (form === "Fan") return ["Electric", "Flying"];
+    if (form === "Mow") return ["Electric", "Grass"];
+    return ["Electric", "Ghost"];
+  }
+
+  const t1 = p.reflectedType || db.t1;
+  const t2 = p.reflectedType ? null : db.t2;
+  const types: string[] = [t1];
+  if (t2 && t2 !== "None") {
+    types.push(t2);
+  }
+  return types;
+}
+
+export function hasType(p: PokemonEntity, type: string): boolean {
+  return getPokemonTypes(p).includes(type);
+}
+
 export function normalizeDir(dir: number, player: number): number {
   if (dir === 1 || dir === 3) {
     return player === 1 ? 3 : 1;
@@ -669,7 +696,11 @@ export function getSkillData(db: PokemonDBEntry, skillIdx?: number, customSkills
   };
 }
 
-export function getSkillTargetType(skill: Skill, dbAll: PokemonDBEntry): string | null {
+export function getSkillTargetType(skill: Skill, dbAll: PokemonDBEntry, rotomForm?: string): string | null {
+  if (skill?.skillName === "Appliance Pulse") {
+    if (rotomForm === "Heat" || rotomForm === "Normal" || rotomForm === "Fan") return "enemy";
+    return "self"; // Wash, Frost, Mow are self/instant
+  }
   if (skill?.skillName === "Baton Pass" || skill?.skillName === "Dimensional Gate") return "ally";
   if (skill?.skillName === "Spatial Collapse") return "enemy";
   if (skill?.statusChance || dbAll?.statusChance) return "enemy";
@@ -704,7 +735,7 @@ export function getModifiedStat(p: PokemonEntity, stat: "atk" | "def", pokemonLi
     const hasActiveYveltal = pokemonList.some(other => {
       return other.species === "Yveltal" && !other.fainted;
     });
-    if (hasActiveYveltal && (db.t1 === "Dark" || db.t2 === "Dark" || db.t1 === "Flying" || db.t2 === "Flying" || p.reflectedType === "Dark" || p.reflectedType === "Flying")) {
+    if (hasActiveYveltal && (hasType(p, "Dark") || hasType(p, "Flying"))) {
       base += 2;
     }
   }
@@ -715,15 +746,18 @@ export function getModifiedStat(p: PokemonEntity, stat: "atk" | "def", pokemonLi
       return other.species === "Keldeo" && !other.fainted;
     });
     if (hasActiveKeldeo) {
-      const t1 = p.reflectedType || db.t1;
-      const t2 = p.reflectedType ? null : db.t2;
-      const isType1 = t1 === "Psychic" || t1 === "Grass" || t1 === "Flying" || t2 === "Psychic" || t2 === "Grass" || t2 === "Flying";
-      const isType2 = t1 === "Ice" || t1 === "Ground" || t1 === "Steel" || t1 === "Rock" || t2 === "Ice" || t2 === "Ground" || t2 === "Steel" || t2 === "Rock";
-      if (isType2) {
-        base = Math.max(0, base - 2);
-      } else if (isType1) {
-        base = Math.max(0, base - 1);
-      }
+      let reduction = 0;
+      const types = getPokemonTypes(p);
+      types.forEach(t => {
+        let r = 0;
+        if (t === "Psychic" || t === "Grass" || t === "Flying") {
+          r = 1;
+        } else if (t === "Ice" || t === "Ground" || t === "Steel" || t === "Rock") {
+          r = 2;
+        }
+        reduction = Math.max(reduction, r);
+      });
+      base = Math.max(0, base - reduction);
     }
   }
 
@@ -795,17 +829,18 @@ export function getModifiedStat(p: PokemonEntity, stat: "atk" | "def", pokemonLi
     if (db.ability === "Sand Veil" && stat === "def") {
       base += 1;
     }
-    if (stat === "def" && (db.t1 === "Rock" || db.t2 === "Rock")) {
+    if (stat === "def" && hasType(p, "Rock")) {
+      base += 1;
+    }
+    if (stat === "def" && p.species === "Arceus" && hasType(p, "Steel")) {
       base += 1;
     }
   }
 
   // Active Weather adjustments
   if (stat === "atk") {
-    const t1 = p.reflectedType || db.t1;
-    const t2 = p.reflectedType ? null : db.t2;
-    const isFire = t1 === "Fire" || t2 === "Fire";
-    const isWater = t1 === "Water" || t2 === "Water";
+    const isFire = hasType(p, "Fire");
+    const isWater = hasType(p, "Water");
 
     if (context.weather === "Sunlight" && isFire) {
       base += 1;
@@ -1143,7 +1178,7 @@ export function typeBonus(attacker: PokemonEntity, target: PokemonEntity, weathe
   }
 
   if (weather === "Strong Winds") {
-    const isFlying = tdb.t1 === "Flying" || tdb.t2 === "Flying";
+    const isFlying = hasType(target, "Flying");
     if (isFlying && b > 0) {
       b = 0;
     }
@@ -1252,6 +1287,11 @@ export function predictDamage(
     };
   }
 
+  let actualCrit = isCrit;
+  if (targetDb && (targetDb.ability === "Shell Armor" || targetDb.ability === "Battle Armor")) {
+    actualCrit = false;
+  }
+
   let isElectricAbsorb = false;
   let isWaterAbsorb = false;
   let isLevitateMiss = false;
@@ -1270,14 +1310,14 @@ export function predictDamage(
     targetDef = getModifiedStat(tg, "def", pokemonList, { weather, terrain });
 
     if (actor.hp <= actor.maxHp * 0.5) {
-      if (actorDb.ability === "Overgrow" && (actorDb.t1 === "Grass" || actorDb.t2 === "Grass")) abilityBonus += 1;
-      if (actorDb.ability === "Blaze" && (actorDb.t1 === "Fire" || actorDb.t2 === "Fire")) abilityBonus += 1;
-      if (actorDb.ability === "Torrent" && (actorDb.t1 === "Water" || actorDb.t2 === "Water")) abilityBonus += 1;
+      if (actorDb.ability === "Overgrow" && hasType(actor, "Grass")) abilityBonus += 1;
+      if (actorDb.ability === "Blaze" && hasType(actor, "Fire")) abilityBonus += 1;
+      if (actorDb.ability === "Torrent" && hasType(actor, "Water")) abilityBonus += 1;
     }
 
-    const effectiveDef = isCrit ? 0 : targetDef;
+    const effectiveDef = actualCrit ? 0 : targetDef;
     damage = Math.floor(baseAtk / 2) + typeMult + abilityBonus - effectiveDef;
-    if (isCrit) {
+    if (actualCrit) {
       const hasSniper = actorDb?.ability === "Sniper";
       damage += hasSniper ? 3 : 2;
     }
@@ -1360,13 +1400,13 @@ export function predictDamage(
     if (actor.status === "burn") rawDmg = Math.max(0, rawDmg - 1);
     
     if (actor.hp <= actor.maxHp * 0.5) {
-      if (actorDb.ability === "Overgrow" && (actorDb.t1 === "Grass" || actorDb.t2 === "Grass")) abilityBonus += 1;
-      if (actorDb.ability === "Blaze" && (actorDb.t1 === "Fire" || actorDb.t2 === "Fire")) abilityBonus += 1;
-      if (actorDb.ability === "Torrent" && (actorDb.t1 === "Water" || actorDb.t2 === "Water")) abilityBonus += 1;
+      if (actorDb.ability === "Overgrow" && hasType(actor, "Grass")) abilityBonus += 1;
+      if (actorDb.ability === "Blaze" && hasType(actor, "Fire")) abilityBonus += 1;
+      if (actorDb.ability === "Torrent" && hasType(actor, "Water")) abilityBonus += 1;
     }
 
-    const isElectricHit = actorDb.t1 === "Electric" || actorDb.t2 === "Electric" || skill.skillName.toLowerCase().includes("thunder") || skill.skillName.toLowerCase().includes("shock") || skill.skillName.toLowerCase().includes("electro") || skill.skillName.toLowerCase().includes("discharge");
-    const isWaterHit = actorDb.t1 === "Water" || actorDb.t2 === "Water" || skill.skillName.toLowerCase().includes("water") || skill.skillName.toLowerCase().includes("hydro") || skill.skillName.toLowerCase().includes("bubble") || skill.skillName.toLowerCase().includes("scald") || skill.skillName.toLowerCase().includes("surf");
+    const isElectricHit = hasType(actor, "Electric") || skill.skillName.toLowerCase().includes("thunder") || skill.skillName.toLowerCase().includes("shock") || skill.skillName.toLowerCase().includes("electro") || skill.skillName.toLowerCase().includes("discharge");
+    const isWaterHit = hasType(actor, "Water") || skill.skillName.toLowerCase().includes("water") || skill.skillName.toLowerCase().includes("hydro") || skill.skillName.toLowerCase().includes("bubble") || skill.skillName.toLowerCase().includes("scald") || skill.skillName.toLowerCase().includes("surf");
 
     if (targetDb.ability === "Volt Absorb" && isElectricHit) isElectricAbsorb = true;
     if (targetDb.ability === "Water Absorb" && isWaterHit) isWaterAbsorb = true;
@@ -1427,9 +1467,9 @@ export function predictDamage(
 
     typeMult = typeBonus(actor, tg, weather);
     targetDef = getModifiedStat(tg, "def", pokemonList, { bySkill: true, weather, terrain });
-    const effectiveDef = isCrit ? 0 : targetDef;
+    const effectiveDef = actualCrit ? 0 : targetDef;
     damage = rawDmg + typeMult + abilityBonus - effectiveDef;
-    if (isCrit) {
+    if (actualCrit) {
       const hasSniper = actorDb?.ability === "Sniper";
       damage += hasSniper ? 3 : 2;
     }

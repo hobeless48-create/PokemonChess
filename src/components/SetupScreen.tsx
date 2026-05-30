@@ -73,6 +73,40 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
   const [p1Slots, setP1Slots] = useState<string[]>(() => Array(maxUnits).fill(""));
   const [p2Slots, setP2Slots] = useState<string[]>(() => Array(maxUnits).fill(""));
 
+  const getP1TypeCounts = () => {
+    const counts: { [t: string]: number } = {};
+    p1Slots.forEach(sp => {
+      if (!sp) return;
+      const db = DB[sp];
+      if (!db) return;
+      const types = [db.t1];
+      if (db.t2 && db.t2 !== "None") {
+        types.push(db.t2);
+      }
+      types.forEach(t => {
+        counts[t] = (counts[t] || 0) + 1;
+      });
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  };
+
+  const getP2TypeCounts = () => {
+    const counts: { [t: string]: number } = {};
+    p2Slots.forEach(sp => {
+      if (!sp) return;
+      const db = DB[sp];
+      if (!db) return;
+      const types = [db.t1];
+      if (db.t2 && db.t2 !== "None") {
+        types.push(db.t2);
+      }
+      types.forEach(t => {
+        counts[t] = (counts[t] || 0) + 1;
+      });
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  };
+
   // Board placements
   const [p1Placements, setP1Placements] = useState<{ col: number; row: number }[]>(() =>
     Array.from({ length: maxUnits }, (_, i) => ({ col: i % boardSize, row: 1 + Math.floor(i / boardSize) }))
@@ -631,6 +665,25 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
             🔵 Player 1 Team Roster (Blue)
           </div>
 
+          {(() => {
+            const p1TypeCounts = getP1TypeCounts();
+            if (p1TypeCounts.length === 0) return null;
+            return (
+              <div className="flex flex-wrap gap-1.5 mb-3 p-2 bg-[#16213e]/20 rounded border border-[#2a3a5a]/50 text-[11px] items-center">
+                <span className="text-gray-400 font-bold">Types:</span>
+                {p1TypeCounts.map(([type, count]) => (
+                  <span 
+                    key={type} 
+                    className="px-1.5 py-0.5 rounded text-white font-extrabold text-[10px] shadow-sm"
+                    style={{ backgroundColor: TCOL[type] || "#7f8c8d" }}
+                  >
+                    {count} {type}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
+
           <div className="flex flex-col gap-2">
             {p1Slots.map((slotSp, sIdx) => {
               const isActive = selectedPlayer === 1 && selectedSlot === sIdx;
@@ -700,6 +753,25 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({
           <div className="team-title text-sm font-bold text-[#ef5350] uppercase tracking-wider mb-3">
             🔴 Player 2 Team Roster (Red)
           </div>
+
+          {(() => {
+            const p2TypeCounts = getP2TypeCounts();
+            if (p2TypeCounts.length === 0) return null;
+            return (
+              <div className="flex flex-wrap gap-1.5 mb-3 p-2 bg-[#16213e]/20 rounded border border-[#2a3a5a]/50 text-[11px] items-center">
+                <span className="text-gray-400 font-bold">Types:</span>
+                {p2TypeCounts.map(([type, count]) => (
+                  <span 
+                    key={type} 
+                    className="px-1.5 py-0.5 rounded text-white font-extrabold text-[10px] shadow-sm"
+                    style={{ backgroundColor: TCOL[type] || "#7f8c8d" }}
+                  >
+                    {count} {type}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
 
           <div className="flex flex-col gap-2">
             {p2Slots.map((slotSp, sIdx) => {

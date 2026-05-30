@@ -3427,8 +3427,8 @@ export const DB_GEN3_6: { [species: string]: PokemonDBEntry } = {
     ], {"base":false,"legendary":true,"evoCost":null,"evoTo":"Zygarde Complete Forme","evoFrom":"Zygarde 10%","color":"#5F8E4F"}
   ),
 
-  "Zygarde Complete Forme": Pkmn(718, ["Dragon", "Ground"], 6, [13, 5, 3], "Def",
-    "Power Construct - Complete Forme has 13 HP, 5 Atk, 3 Def. Immune to status and destroys remaining Cells.",
+  "Zygarde Complete Forme": Pkmn(718, ["Dragon", "Ground"], 6, [30, 5, 3], "Def",
+    "Power Construct - Complete Forme has 30 HP, 5 Atk, 3 Def. Immune to status and destroys remaining Cells.",
     [
       S("Thousand Arrows", "AoE(1)", 5, {"skillRaw":"Thousand Arrows (Target = [3(AoE(1))], Damage: 5, Targets become grounded)"}),
       S("Core Enforcer", "Line(5)(1)", 6, {"skillRaw":"Core Enforcer (Target = [1(Line(5)(1))], Damage: 6, Disable target Ability for 2 turns)"}),

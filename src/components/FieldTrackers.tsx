@@ -6,7 +6,8 @@
 import React from "react";
 import { PokemonEntity } from "../types";
 import { DB } from "../data/pokemon";
-import { SCOL } from "../data/typeCharts";
+import { SCOL, TCOL } from "../data/typeCharts";
+import { getPokemonTypes } from "../utils/gameEngine";
 
 interface FieldTrackersProps {
   pokemon: PokemonEntity[];
@@ -39,11 +40,38 @@ export const FieldTrackers: React.FC<FieldTrackersProps> = ({
     const pColor = playerNum === 1 ? "border-[#4fc3f7]" : "border-[#ef5350]";
     const pHeaderBg = playerNum === 1 ? "bg-[#4fc3f7] text-[#1a1a2e]" : "bg-[#ef5350] text-[#1a1a2e]";
 
+    const getTeamTypeCounts = (tList: PokemonEntity[]) => {
+      const counts: { [t: string]: number } = {};
+      tList.forEach(p => {
+        if (p.fainted) return;
+        const types = getPokemonTypes(p);
+        types.forEach(t => {
+          counts[t] = (counts[t] || 0) + 1;
+        });
+      });
+      return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    };
+
     return (
       <div className={`tracker-card rounded-xl overflow-hidden border border-slate-700 bg-[#16213e] flex-1 min-w-[200px]`}>
         <div className={`tracker-header px-4 py-2 text-sm font-bold uppercase tracking-wider ${pHeaderBg}`}>
           Player {playerNum} Team {playerNum === 1 ? "(Blue)" : "(Red)"}
         </div>
+        
+        {team.some(p => !p.fainted) && (
+          <div className="flex flex-wrap gap-1.5 px-3 py-1.5 bg-[#0f192e] border-b border-slate-700 text-[10px] text-gray-300 items-center">
+            <span className="font-bold">Types:</span>
+            {getTeamTypeCounts(team).map(([type, count]) => (
+              <span 
+                key={type} 
+                className="px-1 py-0.2 rounded text-white font-extrabold text-[9px] shadow-sm"
+                style={{ backgroundColor: TCOL[type] || "#7f8c8d" }}
+              >
+                {count} {type}
+              </span>
+            ))}
+          </div>
+        )}
         
         <div className="tracker-list p-3 max-h-[280px] overflow-y-auto flex flex-col gap-2">
           {team.length === 0 ? (

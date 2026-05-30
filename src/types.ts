@@ -171,6 +171,7 @@ export interface PokemonEntity {
   customSkills?: Skill[];
   isSummon?: boolean;
   summonConfig?: any;
+  summonDurationLeft?: number;
   shield?: number;
   shieldDuration?: number;
   activeAbilityUsed?: boolean;
@@ -196,6 +197,7 @@ export interface PokemonEntity {
   };
   steamStacks?: number;
   giratinaSummoned?: boolean;
+  rotomForm?: "Normal" | "Heat" | "Wash" | "Frost" | "Fan" | "Mow";
 }
 
 export interface Pedestal {
@@ -223,6 +225,7 @@ export interface PlayerState {
   freeExp: number;
   inventory: Inventory;
   hatchPools: { [hatchGroup: string]: number };
+  frostRotomDebuff?: boolean;
 }
 
 export interface Hazard {
