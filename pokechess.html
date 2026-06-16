@@ -1,0 +1,1851 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pokemon Chess</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      padding: 16px;
+    }
+
+    /* Game Layout */
+    .game-wrapper {
+      max-width: 1600px;
+      margin: 0 auto;
+      background: #0f0f1a;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Top Header */
+    .game-header {
+      background: #16213e;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      border-bottom: 2px solid #0f3460;
+    }
+
+    .turn-info h1 {
+      font-size: 22px;
+      margin-bottom: 4px;
+      color: #fff;
+    }
+
+    .turn-info .meta {
+      font-size: 13px;
+      color: #aaa;
+    }
+
+    .meta-click {
+      cursor: pointer;
+      color: #4fc3f7;
+      text-decoration: underline dotted;
+    }
+
+    .weather-badge {
+      background: #0f3460;
+      padding: 8px 18px;
+      border-radius: 30px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .energy-box {
+      background: #0f3460;
+      padding: 8px 16px;
+      border-radius: 12px;
+      text-align: center;
+    }
+
+    .energy-box .label {
+      font-size: 11px;
+      color: #aaa;
+    }
+
+    .stars {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .star {
+      width: 16px;
+      height: 16px;
+      border-radius: 3px;
+      background: #2a3a5a;
+    }
+
+    .star.on {
+      background: #ffd700;
+      box-shadow: 0 0 4px #ffd700;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 12px;
+    }
+
+    .action-btn {
+      background: #0f3460;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 10px;
+      color: #eee;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+      background: #1a4a7a;
+    }
+
+    .action-btn.end {
+      background: #ef5350;
+    }
+
+    .action-btn.end:hover {
+      background: #c62828;
+    }
+
+    /* Main 4-Column Layout */
+    .main-grid {
+      display: flex;
+      padding: 20px;
+      gap: 20px;
+    }
+
+    /* Column 1 - Field Trackers */
+    .col-trackers {
+      width: 240px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .tracker-card {
+      background: #16213e;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 2px solid;
+    }
+
+    .tracker-card.p1 {
+      border-color: #4fc3f7;
+    }
+
+    .tracker-card.p2 {
+      border-color: #ef5350;
+    }
+
+    .tracker-header {
+      padding: 12px 16px;
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    .tracker-card.p1 .tracker-header {
+      background: #4fc3f7;
+      color: #1a1a2e;
+    }
+
+    .tracker-card.p2 .tracker-header {
+      background: #ef5350;
+      color: #1a1a2e;
+    }
+
+    .tracker-list {
+      padding: 12px;
+      max-height: 350px;
+      overflow-y: auto;
+    }
+
+    .tracker-item {
+      background: #0f3460;
+      border-radius: 12px;
+      padding: 10px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .tracker-item:hover {
+      background: #1a4a7a;
+    }
+
+    .tracker-item.selected {
+      background: #2a5a8a;
+      border-left: 4px solid #ffd700;
+    }
+
+    .tracker-name {
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .egg-badge {
+      font-size: 9px;
+      background: #ffd700;
+      color: #1a1a2e;
+      padding: 2px 6px;
+      border-radius: 10px;
+    }
+
+    .legendary-badge {
+      font-size: 9px;
+      background: #ff9800;
+      color: #1a1a2e;
+      padding: 2px 6px;
+      border-radius: 10px;
+    }
+
+    .tracker-hp {
+      font-size: 11px;
+      color: #aaa;
+      margin: 6px 0 4px;
+    }
+
+    .hp-bar-mini {
+      height: 4px;
+      background: #2a3a5a;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .hp-fill-mini {
+      height: 100%;
+      border-radius: 2px;
+    }
+
+    .hp-fill-mini.high {
+      background: #4caf50;
+    }
+
+    .hp-fill-mini.mid {
+      background: #ff9800;
+    }
+
+    .hp-fill-mini.low {
+      background: #ef5350;
+    }
+
+    /* Column 2 - Board */
+    .col-board {
+      flex: 2;
+      min-width: 0;
+      background: #16213e;
+      border-radius: 20px;
+      padding: 20px;
+      overflow-x: auto;
+    }
+
+    .board-container {
+      display: inline-block;
+      min-width: 100%;
+    }
+
+    .col-labels {
+      display: flex;
+      padding-left: 32px;
+      margin-bottom: 6px;
+    }
+
+    .col-labels span {
+      width: 48px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: #aaa;
+    }
+
+    .board-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 2px;
+    }
+
+    .row-label {
+      width: 32px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #aaa;
+      text-align: right;
+      padding-right: 8px;
+      flex-shrink: 0;
+    }
+
+    .cell {
+      width: 48px;
+      height: 48px;
+      border: 1px solid #2a3a5a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      flex-shrink: 0;
+      transition: all 0.1s;
+    }
+
+    .cell.light {
+      background: #2a3a5a;
+    }
+
+    .cell.dark {
+      background: #1a2a4a;
+    }
+
+    .cell:hover {
+      filter: brightness(1.1);
+    }
+
+    .cell.hl-move {
+      background: rgba(239, 159, 39, 0.8) !important;
+      box-shadow: inset 0 0 0 2px #ffd700;
+    }
+
+    .cell.hl-atk {
+      background: rgba(239, 68, 68, 0.8) !important;
+      box-shadow: inset 0 0 0 2px #ef5350;
+    }
+
+    .cell.selected {
+      outline: 3px solid #ffd700;
+      outline-offset: -2px;
+      z-index: 2;
+    }
+
+    .cell.pedestal-p1 {
+      background: #4fc3f7 !important;
+    }
+
+    .cell.pedestal-p2 {
+      background: #ef5350 !important;
+    }
+
+    .token {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      font-size: 8px;
+      font-weight: bold;
+      overflow: hidden;
+    }
+
+    .token.p1 {
+      background: #4fc3f7;
+      color: #1a1a2e;
+      border: 2px solid #1a1a2e;
+    }
+
+    .token.p2 {
+      background: #ef5350;
+      color: #1a1a2e;
+      border: 2px solid #1a1a2e;
+    }
+
+    .token.fainted {
+      opacity: 0.35;
+      filter: grayscale(0.5);
+    }
+
+    .token .hp-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 4px;
+      background: #4caf50;
+    }
+
+    .token .hp-bar.low {
+      background: #ef5350;
+    }
+
+    .token .hp-bar.mid {
+      background: #ff9800;
+    }
+
+    .ped-token {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: bold;
+    }
+
+    .ped-token.p1 {
+      background: #4fc3f7;
+      color: #1a1a2e;
+    }
+
+    .ped-token.p2 {
+      background: #ef5350;
+      color: #1a1a2e;
+    }
+
+    /* Column 3 - Stats */
+    .col-stats {
+      width: 300px;
+      flex-shrink: 0;
+    }
+
+    .stats-card {
+      background: #16213e;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 2px solid #4caf50;
+    }
+
+    .stats-header {
+      background: #4caf50;
+      padding: 12px 16px;
+      color: #1a1a2e;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .stats-content {
+      padding: 16px;
+    }
+
+    .pokemon-name-large {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .pokemon-sub {
+      font-size: 11px;
+      color: #aaa;
+      margin-bottom: 12px;
+    }
+
+    .pokemon-sprite {
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .pokemon-sprite img {
+      width: 80px;
+      height: 80px;
+      object-fit: contain;
+    }
+
+    .stat-row {
+      background: #0f3460;
+      padding: 8px 12px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .hp-bar-big {
+      height: 6px;
+      background: #2a3a5a;
+      border-radius: 3px;
+      margin: 8px 0;
+      overflow: hidden;
+    }
+
+    .hp-fill-big {
+      height: 100%;
+      border-radius: 3px;
+    }
+
+    .hp-fill-big.high {
+      background: #4caf50;
+    }
+
+    .hp-fill-big.mid {
+      background: #ff9800;
+    }
+
+    .hp-fill-big.low {
+      background: #ef5350;
+    }
+
+    .ability-text {
+      background: #0f3460;
+      padding: 10px;
+      border-radius: 8px;
+      margin: 10px 0;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .action-grid {
+      display: flex;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    .action-grid button {
+      flex: 1;
+      background: #0f3460;
+      border: none;
+      padding: 10px 5px;
+      border-radius: 8px;
+      color: #eee;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      transition: all 0.2s;
+      text-align: center;
+    }
+
+    .action-grid button:hover:not(.disabled) {
+      background: #1a4a7a;
+    }
+
+    .action-grid button.disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Column 4 - Skills */
+    .col-skills {
+      width: 300px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .skill-card {
+      background: #16213e;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 2px solid #ff9800;
+    }
+
+    .skill-header {
+      background: #ff9800;
+      padding: 12px 16px;
+      color: #1a1a2e;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .skill-body {
+      padding: 16px;
+    }
+
+    .skill-name {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 8px;
+      color: #ff9800;
+    }
+
+    .skill-desc {
+      font-size: 12px;
+      color: #ccc;
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+
+    .skill-pattern {
+      font-size: 11px;
+      color: #aaa;
+      margin-top: 8px;
+      padding: 8px;
+      background: #0f3460;
+      border-radius: 8px;
+    }
+
+    .chance-badge {
+      display: inline-block;
+      background: #4caf50;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      background: #16213e;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .tab {
+      flex: 1;
+      background: #0f3460;
+      border: none;
+      padding: 10px;
+      color: #aaa;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .tab.active {
+      background: #4caf50;
+      color: #1a1a2e;
+    }
+
+    .log-box {
+      background: #0f3460;
+      border-radius: 12px;
+      padding: 12px;
+      height: 250px;
+      overflow-y: auto;
+      font-size: 11px;
+    }
+
+    .log-entry {
+      padding: 6px 0;
+      border-bottom: 1px solid #2a3a5a;
+    }
+
+    .log-atk {
+      color: #ef5350;
+    }
+
+    .log-heal {
+      color: #4caf50;
+    }
+
+    .log-sys {
+      color: #4fc3f7;
+    }
+
+    /* Setup Screen */
+    .screen {
+      display: none;
+    }
+
+    .screen.active {
+      display: block;
+    }
+
+    .setup-header {
+      text-align: center;
+      padding: 20px;
+    }
+
+    .setup-filters-panel {
+      background: #16213e;
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .filter-group {
+      margin-bottom: 12px;
+    }
+
+    .filter-group-label {
+      font-size: 12px;
+      font-weight: bold;
+      margin-bottom: 8px;
+      color: #aaa;
+    }
+
+    .filter-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .filter-tab {
+      background: #0f3460;
+      padding: 6px 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .filter-tab:hover {
+      background: #1a4a7a;
+    }
+
+    .filter-tab.active {
+      background: #4caf50;
+      color: #1a1a2e;
+    }
+
+    /* Cost filter colors */
+    .filter-tab[data-value="1"].active { background: #2196f3; color: white; }
+    .filter-tab[data-value="2"].active { background: #4caf50; color: white; }
+    .filter-tab[data-value="3"].active { background: #ff9800; color: white; }
+    .filter-tab[data-value="4"].active { background: #9c27b0; color: white; }
+    .filter-tab[data-value="5"].active { background: #f44336; color: white; }
+
+    /* Type filter colors */
+    .filter-tab[data-value="Fire"].active { background: #f44336; color: white; }
+    .filter-tab[data-value="Water"].active { background: #2196f3; color: white; }
+    .filter-tab[data-value="Grass"].active { background: #4caf50; color: white; }
+    .filter-tab[data-value="Electric"].active { background: #ffeb3b; color: #1a1a2e; }
+    .filter-tab[data-value="Ice"].active { background: #00bcd4; color: white; }
+    .filter-tab[data-value="Psychic"].active { background: #e91e63; color: white; }
+    .filter-tab[data-value="Flying"].active { background: #9c27b0; color: white; }
+    .filter-tab[data-value="Normal"].active { background: #9e9e9e; color: white; }
+    .filter-tab[data-value="Poison"].active { background: #8bc34a; color: #1a1a2e; }
+    .filter-tab[data-value="Rock"].active { background: #795548; color: white; }
+    .filter-tab[data-value="Ground"].active { background: #8d6e63; color: white; }
+    .filter-tab[data-value="Ghost"].active { background: #673ab7; color: white; }
+    .filter-tab[data-value="Bug"].active { background: #8bc34a; color: #1a1a2e; }
+    .filter-tab[data-value="Dragon"].active { background: #ff5722; color: white; }
+    .filter-tab[data-value="Fairy"].active { background: #e91e63; color: white; }
+    .filter-tab[data-value="Fighting"].active { background: #ff5722; color: white; }
+    .filter-tab[data-value="Steel"].active { background: #607d8b; color: white; }
+
+    /* Role filter colors - Attack(Red), Defense(Blue), Support(Green) */
+    .filter-tab[data-value="Attack"].active { background: #f44336; color: white; }
+    .filter-tab[data-value="Defense"].active { background: #2196f3; color: white; }
+    .filter-tab[data-value="Support"].active { background: #4caf50; color: white; }
+
+    /* Rarity filter colors */
+    .filter-tab[data-value="legendary"].active { background: #ffd700; color: #1a1a2e; }
+    .filter-tab[data-value="non-legendary"].active { background: #9e9e9e; color: white; }
+
+    .team-section {
+      background: #16213e;
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .team-title {
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 12px;
+    }
+
+    .poke-slot {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    .poke-slot select {
+      flex: 1;
+      background: #0f3460;
+      border: 1px solid #2a3a5a;
+      padding: 8px;
+      border-radius: 8px;
+      color: #eee;
+    }
+
+    .slot-num {
+      width: 24px;
+      color: #aaa;
+    }
+
+    .cost-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      background: #0f3460;
+    }
+
+    .total-cost {
+      text-align: right;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    .cost-ok {
+      color: #4caf50;
+    }
+
+    .cost-bad {
+      color: #ef5350;
+    }
+
+    .primary {
+      background: #4caf50;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 12px;
+      color: #1a1a2e;
+      font-weight: bold;
+      cursor: pointer;
+      width: 100%;
+      font-size: 16px;
+    }
+
+    .setup-placement {
+      background: #16213e;
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .setup-placement-header {
+      font-size: 12px;
+      color: #aaa;
+      margin-bottom: 12px;
+    }
+
+    .setup-board-grid {
+      display: grid;
+      grid-template-columns: repeat(8, 38px);
+      gap: 4px;
+    }
+
+    .setup-board-cell {
+      width: 38px;
+      height: 38px;
+      background: #0f3460;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      cursor: pointer;
+      font-size: 9px;
+    }
+
+    .setup-board-cell.allowed {
+      background: #1a4a7a;
+    }
+
+    .setup-board-cell.occupied {
+      background: #2a5a8a;
+    }
+
+    .setup-board-cell.selected {
+      outline: 2px solid #ffd700;
+    }
+
+    .cell-label {
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      font-size: 8px;
+      color: #888;
+    }
+
+    .setup-pedestal-token {
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    .setup-token {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .setup-token img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .end-screen {
+      text-align: center;
+      padding: 60px;
+    }
+
+    .end-title {
+      font-size: 32px;
+      margin-bottom: 16px;
+    }
+
+    .end-score {
+      margin-bottom: 32px;
+      color: #aaa;
+    }
+
+    .shop-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .shop-panel {
+      background: #16213e;
+      border-radius: 16px;
+      width: 500px;
+      max-width: 90%;
+    }
+
+    .shop-panel-header {
+      display: flex;
+      justify-content: space-between;
+      padding: 16px;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    .shop-list {
+      padding: 16px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+
+<body>
+
+<div id="screen-setup" class="screen active">
+  <div class="setup-header">
+    <h2>Pokemon Chess</h2>
+    <p style="font-size:12px;color:#888;margin-top:4px">Each team: max cost 10 · up to 6 Pokemon</p>
+  </div>
+  <div id="setup-filters" class="setup-filters-panel"></div>
+  <div id="setup-placement" class="setup-placement"></div>
+  <div class="team-section">
+    <div class="team-title"><span style="color:#4fc3f7">Player 1 (Blue)</span></div>
+    <div id="p1-slots"></div>
+    <div class="total-cost" id="p1-cost-display">Total cost: 0 / 10</div>
+  </div>
+  <div class="team-section">
+    <div class="team-title"><span style="color:#ef5350">Player 2 (Red)</span></div>
+    <div id="p2-slots"></div>
+    <div class="total-cost" id="p2-cost-display">Total cost: 0 / 10</div>
+  </div>
+  <button class="primary start-btn" onclick="startGame()">Start Game</button>
+</div>
+
+<div id="screen-game" class="screen">
+  <div class="game-wrapper">
+    <div class="game-header">
+      <div class="turn-info">
+        <h1 id="turn-label">Player 1's turn</h1>
+        <div class="meta">
+          <span id="phase-label" class="meta-click">Turn 1 · Phase 1</span>
+          <span style="margin:0 8px">·</span>
+          <span id="gold-label" class="meta-click">Gold: 5</span>
+        </div>
+      </div>
+      <div class="weather-badge" id="weather-label">Weather: Clear</div>
+      <div class="energy-box">
+        <div class="label">Energy</div>
+        <div class="stars" id="energy-stars"></div>
+      </div>
+      <div class="action-buttons">
+        <button class="action-btn end" onclick="endTurn()">End Turn</button>
+        <button class="action-btn" onclick="toggleInventory()">Inventory</button>
+        <button class="action-btn" onclick="toggleShop()">Shop</button>
+      </div>
+    </div>
+
+    <div class="main-grid">
+      <!-- Column 1: Field Trackers -->
+      <div class="col-trackers">
+        <div class="tracker-card p1">
+          <div class="tracker-header">P1</div>
+          <div class="tracker-list" id="tracker-p1"></div>
+        </div>
+        <div class="tracker-card p2">
+          <div class="tracker-header">P2</div>
+          <div class="tracker-list" id="tracker-p2"></div>
+        </div>
+      </div>
+
+      <!-- Column 2: Board -->
+      <div class="col-board">
+        <div class="board-container">
+          <div class="col-labels" id="col-labels"></div>
+          <div id="board-rows"></div>
+        </div>
+      </div>
+
+      <!-- Column 3: Pokemon Stats -->
+      <div class="col-stats">
+        <div class="stats-card">
+          <div class="stats-header">Selected Pokemon</div>
+          <div class="stats-content" id="pokemon-stats">
+            <p style="color:#aaa;text-align:center;padding:30px">Click a Pokemon to select</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Column 4: Skills & Log -->
+      <div class="col-skills">
+        <div class="skill-card">
+          <div class="skill-header">Current Skill</div>
+          <div class="skill-body" id="skill-info">
+            <p style="color:#aaa;text-align:center">Select a Pokemon first</p>
+          </div>
+        </div>
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab('skill')">Skill Info</button>
+          <button class="tab" onclick="switchTab('log')">Battle Log</button>
+        </div>
+        <div id="log-panel" style="display:block">
+          <div class="log-box" id="log-box"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="shop-overlay" class="shop-overlay" style="display:none">
+  <div class="shop-panel">
+    <div class="shop-panel-header">
+      <h3>Item Shop</h3>
+      <button onclick="toggleShop()" style="background:#0f3460; border:none; padding:6px 12px; border-radius:8px; color:#eee">Close</button>
+    </div>
+    <div class="shop-list" id="shop-grid">
+      <p style="color:#aaa;text-align:center">Shop coming soon</p>
+    </div>
+  </div>
+</div>
+
+<div id="inventory-overlay" class="shop-overlay" style="display:none">
+  <div class="shop-panel">
+    <div class="shop-panel-header">
+      <h3>My Inventory</h3>
+      <button onclick="toggleInventory()" style="background:#0f3460; border:none; padding:6px 12px; border-radius:8px; color:#eee">Close</button>
+    </div>
+    <div class="shop-list" id="inventory-grid">
+      <p style="color:#aaa;text-align:center">No items yet</p>
+    </div>
+  </div>
+</div>
+
+<div id="screen-end" class="screen">
+  <div class="end-screen">
+    <div class="end-title" id="end-title">Game Over</div>
+    <div class="end-score" id="end-score"></div>
+    <button class="primary" onclick="resetGame()">Play again</button>
+  </div>
+</div>
+
+<script>
+  // =========================================================================
+  // COMPLETE POKEMON DATABASE
+  // =========================================================================
+  const DB = {
+    // Grass Starter Line
+    "Bulbasaur": { t1: "Grass", t2: "Poison", cost: 3, hp: 8, atk: 2, def: 0, cls: "Support", ability: "Overgrow", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/001.png", skillName: "Leech Seed", skillDesc: "Line(1)(3)", skillRaw: "Leech Seed: Drain 1 HP per turn", skillCost: 2 },
+    "Ivysaur": { t1: "Grass", t2: "Poison", cost: 3, hp: 10, atk: 3, def: 0, cls: "Support", ability: "Overgrow", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/002.png", skillName: "Razor Leaf", skillDesc: "Line(2)(1)", skillRaw: "Razor Leaf: Deal 3 damage", skillCost: 2 },
+    "Venusaur": { t1: "Grass", t2: "Poison", cost: 3, hp: 14, atk: 4, def: 1, cls: "Defense", ability: "Chlorophyll", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/003.png", skillName: "Solar Beam", skillDesc: "AoE(2)", skillRaw: "Solar Beam: Deal 4 damage", skillCost: 4 },
+    
+    // Fire Starter Line
+    "Charmander": { t1: "Fire", cost: 3, hp: 7, atk: 3, def: 0, cls: "Attack", ability: "Blaze", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/004.png", skillName: "Ember", skillDesc: "Line(2)(3)", skillRaw: "Ember: Deal 2 damage, 30% burn", skillCost: 2, statusChance: "burn", statusChanceValue: 0.3 },
+    "Charmeleon": { t1: "Fire", cost: 3, hp: 9, atk: 4, def: 0, cls: "Attack", ability: "Blaze", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/005.png", skillName: "Flamethrower", skillDesc: "Line(3)(1)", skillRaw: "Flamethrower: Deal 3 damage", skillCost: 2 },
+    "Charizard": { t1: "Fire", t2: "Flying", cost: 3, hp: 12, atk: 5, def: 1, cls: "Attack", ability: "Solar Power", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/006.png", skillName: "Fire Blast", skillDesc: "Line(1)(3)", skillRaw: "Fire Blast: Deal 4 damage", skillCost: 3 },
+    
+    // Water Starter Line
+    "Squirtle": { t1: "Water", cost: 3, hp: 8, atk: 2, def: 1, cls: "Defense", ability: "Torrent", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/007.png", skillName: "Water Gun", skillDesc: "Line(2)(3)", skillRaw: "Water Gun: Deal 2 damage", skillCost: 2 },
+    "Wartortle": { t1: "Water", cost: 3, hp: 10, atk: 3, def: 2, cls: "Defense", ability: "Torrent", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/008.png", skillName: "Water Pulse", skillDesc: "AoE(1)", skillRaw: "Water Pulse: Deal 2 damage", skillCost: 2 },
+    "Blastoise": { t1: "Water", cost: 3, hp: 13, atk: 4, def: 2, cls: "Defense", ability: "Rain Dish", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/009.png", skillName: "Hydro Cannon", skillDesc: "Line(3)(1)", skillRaw: "Hydro Cannon: Deal 6 damage", skillCost: 3 },
+    
+    // Electric
+    "Pikachu": { t1: "Electric", cost: 2, hp: 7, atk: 3, def: 0, cls: "Attack", ability: "Static", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/025.png", skillName: "Thunderbolt", skillDesc: "Line(3)(3)", skillRaw: "Thunderbolt: Deal 2 damage", skillCost: 2 },
+    "Raichu": { t1: "Electric", cost: 2, hp: 11, atk: 5, def: 1, cls: "Attack", ability: "Lightning Rod", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/026.png", skillName: "Thunder", skillDesc: "Line(4)(3)", skillRaw: "Thunder: Deal 4 damage", skillCost: 3 },
+    
+    // Psychic
+    "Abra": { t1: "Psychic", cost: 2, hp: 6, atk: 3, def: 0, cls: "Support", ability: "Synchronize", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/063.png", skillName: "Teleport", skillDesc: "Self", skillRaw: "Teleport: Move anywhere", skillCost: 2 },
+    "Kadabra": { t1: "Psychic", cost: 2, hp: 8, atk: 4, def: 1, cls: "Support", ability: "Magic Guard", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/064.png", skillName: "Confusion", skillDesc: "Line(3)(1)", skillRaw: "Confusion: Deal 3 damage", skillCost: 2 },
+    "Alakazam": { t1: "Psychic", cost: 2, hp: 10, atk: 5, def: 1, cls: "Support", ability: "Inner Focus", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/065.png", skillName: "Psychic", skillDesc: "Line(3)(1)", skillRaw: "Psychic: Deal 5 damage", skillCost: 3 },
+    
+    // Fighting
+    "Machop": { t1: "Fighting", cost: 1, hp: 9, atk: 3, def: 0, cls: "Attack", ability: "Guts", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/066.png", skillName: "Karate Chop", skillDesc: "Line(1)(3)", skillRaw: "Karate Chop: Deal 3 damage", skillCost: 2 },
+    "Machoke": { t1: "Fighting", cost: 1, hp: 12, atk: 4, def: 1, cls: "Attack", ability: "No Guard", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/067.png", skillName: "Vital Throw", skillDesc: "Line(1)(3)", skillRaw: "Vital Throw: Deal 4 damage", skillCost: 2 },
+    "Machamp": { t1: "Fighting", cost: 1, hp: 15, atk: 5, def: 1, cls: "Attack", ability: "Steadfast", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/068.png", skillName: "Close Combat", skillDesc: "Line(1)(3)", skillRaw: "Close Combat: Deal 5 damage", skillCost: 3 },
+    
+    // Ghost
+    "Gastly": { t1: "Ghost", t2: "Poison", cost: 2, hp: 6, atk: 3, def: 1, cls: "Support", ability: "Levitate", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/092.png", skillName: "Lick", skillDesc: "Line(1)(3)", skillRaw: "Lick: Deal 2 damage", skillCost: 2 },
+    "Haunter": { t1: "Ghost", t2: "Poison", cost: 2, hp: 9, atk: 4, def: 1, cls: "Support", ability: "Levitate", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/093.png", skillName: "Shadow Punch", skillDesc: "Line(2)(1)", skillRaw: "Shadow Punch: Deal 3 damage", skillCost: 2 },
+    "Gengar": { t1: "Ghost", t2: "Poison", cost: 2, hp: 11, atk: 5, def: 1, cls: "Support", ability: "Cursed Body", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/094.png", skillName: "Shadow Ball", skillDesc: "Line(3)(1)", skillRaw: "Shadow Ball: Deal 4 damage", skillCost: 3 },
+    
+    // Dragon
+    "Dratini": { t1: "Dragon", cost: 3, hp: 8, atk: 3, def: 0, cls: "Attack", ability: "Shed Skin", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/147.png", skillName: "Twister", skillDesc: "Line(2)(1)", skillRaw: "Twister: Deal 3 damage", skillCost: 2 },
+    "Dragonair": { t1: "Dragon", cost: 3, hp: 11, atk: 4, def: 1, cls: "Attack", ability: "Marvel Scale", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/148.png", skillName: "Dragon Breath", skillDesc: "Line(2)(1)", skillRaw: "Dragon Breath: Deal 3 damage", skillCost: 2 },
+    "Dragonite": { t1: "Dragon", t2: "Flying", cost: 3, hp: 14, atk: 5, def: 1, cls: "Attack", ability: "Multiscale", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/149.png", skillName: "Outrage", skillDesc: "Self", skillRaw: "Outrage: Deal 5 damage for 3 turns", skillCost: 3 },
+    
+    // Legendary Birds
+    "Articuno": { t1: "Ice", t2: "Flying", cost: 5, hp: 14, atk: 4, def: 2, cls: "Support", ability: "Snow Cloak", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/144.png", skillName: "Blizzard", skillDesc: "AoE(2)", skillRaw: "Blizzard: Deal 4 damage, 50% freeze", skillCost: 3, statusChance: "freeze", statusChanceValue: 0.5, legendary: true },
+    "Zapdos": { t1: "Electric", t2: "Flying", cost: 5, hp: 13, atk: 5, def: 1, cls: "Attack", ability: "Static", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/145.png", skillName: "Thunder", skillDesc: "Cone(3)(3)", skillRaw: "Thunder: Deal 5 damage", skillCost: 3, legendary: true },
+    "Moltres": { t1: "Fire", t2: "Flying", cost: 5, hp: 13, atk: 5, def: 1, cls: "Attack", ability: "Flame Body", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/146.png", skillName: "Heat Wave", skillDesc: "Cone(3)(3)", skillRaw: "Heat Wave: Deal 5 damage", skillCost: 3, legendary: true },
+    
+    // Legendary Psychic
+    "Mewtwo": { t1: "Psychic", cost: 5, hp: 16, atk: 6, def: 1, cls: "Attack", ability: "Pressure", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/150.png", skillName: "Psychic", skillDesc: "Cone(3)(1)", skillRaw: "Psychic: Deal 6 damage", skillCost: 3, legendary: true },
+    "Mew": { t1: "Psychic", cost: 5, hp: 14, atk: 4, def: 2, cls: "Support", ability: "Synchronize", img: "https://assets.pokemon.com/assets/cms2/img/pokedex/detail/151.png", skillName: "Transform", skillDesc: "Self", skillRaw: "Transform: Copy target", skillCost: 2, legendary: true }
+  };
+
+  // =========================================================================
+  // GAME STATE
+  // =========================================================================
+  let G = {
+    turn: 1, phase: 1, cur: 1,
+    energy: [0, 3, 3], maxE: [0, 3, 3],
+    gold: [0, 5, 5], freeExp: [0, 0, 0],
+    weather: { type: null, duration: 0 },
+    selectedCell: null, hlCells: [], actionMode: null,
+    pokemon: [], pedestals: [
+      { player: 1, col: 3, row: 0, hp: 30 },
+      { player: 2, col: 4, row: 7, hp: 30 }
+    ],
+    log: [], over: false,
+    inventory: { 1: { held: [], consumable: [] }, 2: { held: [], consumable: [] } },
+    hatchPools: { 1: {}, 2: {} }
+  };
+
+  let SETUP_POSITIONS = { 1: [], 2: [] };
+  let SETUP_SELECTED_SLOT = { player: 1, slot: 0 };
+  let SETUP_FILTER = { cost: 'all', type: 'all', role: 'all', rarity: 'all' };
+  let nextId = 1;
+
+  // =========================================================================
+  // HELPER FUNCTIONS
+  // =========================================================================
+  function log(msg, type) {
+    G.log.unshift({ msg, type });
+    if (G.log.length > 50) G.log.pop();
+    const lb = document.getElementById('log-box');
+    if (lb) lb.innerHTML = G.log.map(l => `<div class="log-entry log-${l.type}">${l.msg}</div>`).join('');
+  }
+
+  function pk(col, row) {
+    return G.pokemon.find(p => p.col === col && p.row === row && !p.fainted);
+  }
+
+  function ped(col, row) {
+    return G.pedestals.find(p => p.col === col && p.row === row);
+  }
+
+  function clearHL() {
+    G.hlCells = [];
+    G.actionMode = null;
+  }
+
+  function renderAll() {
+    renderBoard();
+    renderHeader();
+    renderFieldTrackers();
+    renderPokemonStats();
+  }
+
+  function renderBoard() {
+    const cl = document.getElementById('col-labels');
+    if (cl) cl.innerHTML = 'ABCDEFGH'.split('').map(c => `<span>${c}</span>`).join('');
+    const br = document.getElementById('board-rows');
+    if (!br) return;
+    br.innerHTML = '';
+    
+    const hlMap = {};
+    (G.hlCells || []).forEach(c => { hlMap[c.col + ',' + c.row] = c.type; });
+    
+    for (let row = 0; row < 8; row++) {
+      const rEl = document.createElement('div');
+      rEl.className = 'board-row';
+      const lbl = document.createElement('span');
+      lbl.className = 'row-label';
+      lbl.textContent = row + 1;
+      rEl.appendChild(lbl);
+      
+      for (let col = 0; col < 8; col++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell ' + ((col + row) % 2 === 0 ? 'light' : 'dark');
+        
+        const pd2 = ped(col, row);
+        if (pd2) cell.classList.add('pedestal-p' + pd2.player);
+        
+        const hl = hlMap[col + ',' + row];
+        if (hl === 'move') cell.classList.add('hl-move');
+        if (hl === 'atk') cell.classList.add('hl-atk');
+        if (G.selectedCell && G.selectedCell.col === col && G.selectedCell.row === row) cell.classList.add('selected');
+        
+        cell.onclick = () => cellClick(col, row);
+        
+        if (pd2) {
+          const pt = document.createElement('div');
+          pt.className = 'ped-token p' + pd2.player;
+          pt.innerHTML = `<span style="font-size:7px;font-weight:700">P${pd2.player}<br>${pd2.hp}HP</span>`;
+          cell.appendChild(pt);
+        }
+        
+        const p = pk(col, row);
+        if (p) {
+          const db = DB[p.species];
+          const tok = document.createElement('div');
+          tok.className = 'token p' + p.player + (p.fainted ? ' fainted' : '');
+          const pct = Math.round(p.hp / p.maxHp * 100);
+          const barCls = pct < 25 ? 'low' : pct < 50 ? 'mid' : '';
+          
+          const imgHtml = db && db.img ? `<img src="${db.img}" style="width:85%; height:85%; object-fit:contain;">` : `<span>${p.species.substring(0,2)}</span>`;
+          const hpBadge = `<div style="position:absolute; bottom:-2px; right:-2px; font-size:8px; background:rgba(0,0,0,0.7); padding:1px 3px; border-radius:4px;">${p.hp}</div>`;
+          
+          tok.innerHTML = `${imgHtml}${hpBadge}<div class="hp-bar ${barCls}" style="width:${pct}%"></div>`;
+          cell.appendChild(tok);
+        }
+        rEl.appendChild(cell);
+      }
+      br.appendChild(rEl);
+    }
+  }
+
+  function renderHeader() {
+    const tl = document.getElementById('turn-label');
+    if (tl) {
+      tl.textContent = `Player ${G.cur}'s turn`;
+      tl.style.color = G.cur === 1 ? '#4fc3f7' : '#ef5350';
+    }
+    const pl = document.getElementById('phase-label');
+    if (pl) pl.textContent = `Turn ${G.turn} · Phase ${G.phase}`;
+    const gl = document.getElementById('gold-label');
+    if (gl) gl.textContent = `Gold: ${G.gold[G.cur]}`;
+    const wl = document.getElementById('weather-label');
+    if (wl) wl.textContent = `Weather: ${G.weather.type || 'Clear'}`;
+    
+    const eb = document.getElementById('energy-stars');
+    if (eb) {
+      eb.innerHTML = '';
+      for (let i = 0; i < G.maxE[G.cur]; i++) {
+        const s = document.createElement('div');
+        s.className = 'star' + (i < G.energy[G.cur] ? ' on' : '');
+        eb.appendChild(s);
+      }
+    }
+  }
+
+  function renderFieldTrackers() {
+    const p1Container = document.getElementById('tracker-p1');
+    const p2Container = document.getElementById('tracker-p2');
+    if (!p1Container) return;
+    
+    const renderTeam = (player, container) => {
+      const team = G.pokemon.filter(p => p.player === player);
+      container.innerHTML = '';
+      if (team.length === 0) {
+        container.innerHTML = '<div style="color:#aaa;text-align:center;padding:20px">No Pokemon</div>';
+        return;
+      }
+      team.forEach(p => {
+        const db = DB[p.species];
+        const pct = Math.round(p.hp / p.maxHp * 100);
+        const fillClass = pct < 25 ? 'low' : (pct < 50 ? 'mid' : 'high');
+        const eggTag = (p.isEgg && !p.hasHatched) ? '<span class="egg-badge">Egg</span>' : '';
+        const legendaryTag = (db && db.legendary && !p.isEgg) ? '<span class="legendary-badge">★</span>' : '';
+        const isSelected = G.selectedCell && G.selectedCell.col === p.col && G.selectedCell.row === p.row;
+        
+        const div = document.createElement('div');
+        div.className = `tracker-item ${isSelected ? 'selected' : ''}`;
+        div.onclick = () => { G.selectedCell = { col: p.col, row: p.row }; clearHL(); renderAll(); };
+        div.innerHTML = `
+          <div class="tracker-name">
+            <span>${p.species}</span>
+            ${eggTag}${legendaryTag}
+          </div>
+          <div class="tracker-hp">❤️ ${p.hp}/${p.maxHp} HP</div>
+          <div class="hp-bar-mini"><div class="hp-fill-mini ${fillClass}" style="width: ${pct}%"></div></div>
+        `;
+        container.appendChild(div);
+      });
+    };
+    renderTeam(1, p1Container);
+    renderTeam(2, p2Container);
+  }
+
+  function renderPokemonStats() {
+    const statsContainer = document.getElementById('pokemon-stats');
+    const skillContainer = document.getElementById('skill-info');
+    
+    if (!statsContainer) return;
+    if (!G.selectedCell) {
+      statsContainer.innerHTML = '<p style="color:#aaa;text-align:center;padding:30px">Click a Pokemon to select</p>';
+      if (skillContainer) skillContainer.innerHTML = '<p style="color:#aaa;text-align:center">Select a Pokemon first</p>';
+      return;
+    }
+    
+    const p = pk(G.selectedCell.col, G.selectedCell.row);
+    if (!p) {
+      statsContainer.innerHTML = '<p style="color:#aaa;text-align:center;padding:30px">Empty cell</p>';
+      if (skillContainer) skillContainer.innerHTML = '<p style="color:#aaa;text-align:center">No Pokemon selected</p>';
+      return;
+    }
+    
+    const db = DB[p.species];
+    if (!db) {
+      statsContainer.innerHTML = '<p style="color:#aaa;text-align:center;padding:30px">Data not found</p>';
+      return;
+    }
+    
+    const pct = Math.round(p.hp / p.maxHp * 100);
+    const fillClass = pct < 25 ? 'low' : (pct < 50 ? 'mid' : 'high');
+    const eggTag = (p.isEgg && !p.hasHatched) ? ' (Egg)' : '';
+    const legendaryStar = (db.legendary && !p.isEgg) ? ' ★' : '';
+    const statusText = p.status || 'None';
+    const isActive = p.player === G.cur && !p.fainted;
+    const canMove = isActive && G.energy[G.cur] >= 1;
+    const canAtk = isActive && G.energy[G.cur] >= 1;
+    const canSkill = isActive && G.energy[G.cur] >= (db.skillCost || 2);
+    
+    statsContainer.innerHTML = `
+      <div class="pokemon-name-large">${p.species}${eggTag}${legendaryStar}</div>
+      <div class="pokemon-sub">Player ${p.player} · ${String.fromCharCode(65 + p.col)}${p.row + 1} · ${db.cls || 'Unknown'}</div>
+      <div class="pokemon-sprite">${db.img ? `<img src="${db.img}">` : '<div style="width:80px;height:80px;background:#0f3460;border-radius:50%;display:flex;align-items:center;justify-content:center">🎮</div>'}</div>
+      <div class="stat-row"><span>❤️ HP</span><span>${p.hp}/${p.maxHp}</span></div>
+      <div class="hp-bar-big"><div class="hp-fill-big ${fillClass}" style="width: ${pct}%"></div></div>
+      <div class="stat-row"><span>⭐ EXP</span><span>${p.exp || 0}</span></div>
+      <div class="stat-row"><span>📦 Held Item</span><span>${p.heldItem || 'None'}</span></div>
+      <div class="stat-row"><span>⚠️ Status</span><span>${statusText}</span></div>
+      <div class="stat-row"><span>✨ Mods</span><span>None</span></div>
+      <div class="ability-text">✨ <strong>${db.ability || 'No Ability'}</strong></div>
+      <div class="action-grid">
+        <button class="${canMove ? '' : 'disabled'}" onclick="${canMove ? `selectAction('move',${p.id})` : ''}">🚶 Move<br><span style="font-size:9px">1⚡</span></button>
+        <button class="${canAtk ? '' : 'disabled'}" onclick="${canAtk ? `selectAction('attack',${p.id})` : ''}">⚔️ Attack<br><span style="font-size:9px">1⚡</span></button>
+        <button class="${canSkill ? '' : 'disabled'}" onclick="${canSkill ? `selectAction('skill',${p.id})` : ''}">✨ ${db.skillName || 'Skill'}<br><span style="font-size:9px">${db.skillCost || 2}⚡</span></button>
+      </div>
+    `;
+    
+    skillContainer.innerHTML = `
+      <div class="skill-name">${db.skillName || 'Skill'}</div>
+      <div class="skill-desc">${db.skillRaw || db.skillDesc || 'No description'}</div>
+      <div class="skill-pattern">🎯 Pattern: ${db.skillDesc || 'Target area'}</div>
+      ${db.statusChance ? `<div class="chance-badge">${db.statusChance}: ${Math.round((db.statusChanceValue || 0.3) * 100)}% chance</div>` : ''}
+    `;
+  }
+
+  function cellClick(col, row) {
+    if (G.over) return;
+    const hl = G.hlCells.find(c => c.col === col && c.row === row);
+    if (G.actionMode && hl) {
+      clearHL();
+      renderAll();
+      return;
+    }
+    clearHL();
+    G.selectedCell = { col, row };
+    renderAll();
+  }
+
+  function selectAction(type, id) {
+    const p = G.pokemon.find(x => x.id === id);
+    if (!p) return;
+    log(`Selected ${type} action for ${p.species}`, 'sys');
+    clearHL();
+    
+    if (type === 'move') {
+      // Simple move highlight - can move 1 step in any direction
+      const moves = [];
+      for (let dc = -1; dc <= 1; dc++) {
+        for (let dr = -1; dr <= 1; dr++) {
+          if (dc === 0 && dr === 0) continue;
+          const nc = p.col + dc, nr = p.row + dr;
+          if (nc >= 0 && nc < 8 && nr >= 0 && nr < 8 && !pk(nc, nr) && !ped(nc, nr)) {
+            moves.push({ col: nc, row: nr, type: 'move' });
+          }
+        }
+      }
+      G.hlCells = moves;
+    } else if (type === 'attack') {
+      const fwd = p.player === 1 ? 1 : -1;
+      const atkCell = { col: p.col, row: p.row + fwd, type: 'atk' };
+      if (atkCell.row >= 0 && atkCell.row < 8) {
+        G.hlCells = [atkCell];
+      }
+    } else {
+      // Skill highlight - simple forward cone
+      const fwd = p.player === 1 ? 1 : -1;
+      const skills = [];
+      for (let dr = 1; dr <= 2; dr++) {
+        const nr = p.row + (fwd * dr);
+        if (nr >= 0 && nr < 8) {
+          for (let dc = -1; dc <= 1; dc++) {
+            const nc = p.col + dc;
+            if (nc >= 0 && nc < 8) {
+              skills.push({ col: nc, row: nr, type: 'atk' });
+            }
+          }
+        }
+      }
+      G.hlCells = skills;
+    }
+    G.actionMode = { type, poke: p };
+    renderAll();
+  }
+
+  function endTurn() {
+    G.cur = G.cur === 1 ? 2 : 1;
+    if (G.cur === 1) G.turn++;
+    G.energy[G.cur] = G.maxE[G.cur];
+    clearHL();
+    G.selectedCell = null;
+    G.actionMode = null;
+    log(`--- Player ${G.cur}'s turn (T${G.turn}) ---`, 'sys');
+    renderAll();
+  }
+
+  function toggleInventory() {
+    const overlay = document.getElementById('inventory-overlay');
+    if (overlay) overlay.style.display = overlay.style.display === 'none' ? 'flex' : 'none';
+  }
+
+  function toggleShop() {
+    const overlay = document.getElementById('shop-overlay');
+    if (overlay) overlay.style.display = overlay.style.display === 'none' ? 'flex' : 'none';
+  }
+
+  function resetGame() {
+    location.reload();
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    if (tab === 'skill') {
+      document.querySelector('.tab:first-child').classList.add('active');
+      document.getElementById('log-panel').style.display = 'block';
+    } else {
+      document.querySelector('.tab:last-child').classList.add('active');
+      document.getElementById('log-panel').style.display = 'block';
+    }
+  }
+
+  // =========================================================================
+  // SETUP FUNCTIONS
+  // =========================================================================
+  function buildSetup() {
+    // Build filters
+    const filterContainer = document.getElementById('setup-filters');
+    if (filterContainer) {
+      filterContainer.innerHTML = `
+        <div class="filter-group">
+          <div class="filter-group-label">Cost</div>
+          <div class="filter-tabs" id="cost-filters"></div>
+        </div>
+        <div class="filter-group">
+          <div class="filter-group-label">Type</div>
+          <div class="filter-tabs" id="type-filters"></div>
+        </div>
+        <div class="filter-group">
+          <div class="filter-group-label">Role</div>
+          <div class="filter-tabs" id="role-filters"></div>
+        </div>
+        <div class="filter-group">
+          <div class="filter-group-label">Rarity</div>
+          <div class="filter-tabs" id="rarity-filters"></div>
+        </div>
+      `;
+      
+      // Cost filters
+      const costFilters = ['all', '1', '2', '3', '4', '5'];
+      const costContainer = document.getElementById('cost-filters');
+      costFilters.forEach(c => {
+        const tab = document.createElement('div');
+        tab.className = 'filter-tab' + (c === 'all' ? ' active' : '');
+        tab.textContent = c === 'all' ? 'All' : c;
+        tab.dataset.value = c;
+        tab.onclick = () => setFilter('cost', c, tab);
+        costContainer.appendChild(tab);
+      });
+      
+      // Type filters
+      const types = [...new Set(Object.values(DB).map(db => db.t1))].sort();
+      const typeContainer = document.getElementById('type-filters');
+      const allType = document.createElement('div');
+      allType.className = 'filter-tab active';
+      allType.textContent = 'All';
+      allType.dataset.value = 'all';
+      allType.onclick = () => setFilter('type', 'all', allType);
+      typeContainer.appendChild(allType);
+      types.forEach(t => {
+        const tab = document.createElement('div');
+        tab.className = 'filter-tab';
+        tab.textContent = t;
+        tab.dataset.value = t;
+        tab.onclick = () => setFilter('type', t, tab);
+        typeContainer.appendChild(tab);
+      });
+      
+      // Role filters
+      const roles = ['Attack', 'Defense', 'Support'];
+      const roleContainer = document.getElementById('role-filters');
+      const allRole = document.createElement('div');
+      allRole.className = 'filter-tab active';
+      allRole.textContent = 'All';
+      allRole.dataset.value = 'all';
+      allRole.onclick = () => setFilter('role', 'all', allRole);
+      roleContainer.appendChild(allRole);
+      roles.forEach(r => {
+        const tab = document.createElement('div');
+        tab.className = 'filter-tab';
+        tab.textContent = r;
+        tab.dataset.value = r;
+        tab.onclick = () => setFilter('role', r, tab);
+        roleContainer.appendChild(tab);
+      });
+      
+      // Rarity filters
+      const rarityContainer = document.getElementById('rarity-filters');
+      const allRarity = document.createElement('div');
+      allRarity.className = 'filter-tab active';
+      allRarity.textContent = 'All';
+      allRarity.dataset.value = 'all';
+      allRarity.onclick = () => setFilter('rarity', 'all', allRarity);
+      rarityContainer.appendChild(allRarity);
+      
+      const legendary = document.createElement('div');
+      legendary.className = 'filter-tab';
+      legendary.textContent = 'Legendary';
+      legendary.dataset.value = 'legendary';
+      legendary.onclick = () => setFilter('rarity', 'legendary', legendary);
+      rarityContainer.appendChild(legendary);
+      
+      const nonLegendary = document.createElement('div');
+      nonLegendary.className = 'filter-tab';
+      nonLegendary.textContent = 'Non-legendary';
+      nonLegendary.dataset.value = 'non-legendary';
+      nonLegendary.onclick = () => setFilter('rarity', 'non-legendary', nonLegendary);
+      rarityContainer.appendChild(nonLegendary);
+    }
+    
+    // Initialize positions
+    for (let i = 0; i < 6; i++) {
+      SETUP_POSITIONS[1][i] = { col: i, row: 1 };
+      SETUP_POSITIONS[2][i] = { col: i, row: 6 };
+    }
+    
+    // Build team slots
+    for (let pl = 1; pl <= 2; pl++) {
+      const container = document.getElementById(`p${pl}-slots`);
+      if (!container) continue;
+      container.innerHTML = '';
+      for (let s = 0; s < 6; s++) {
+        const row = document.createElement('div');
+        row.className = 'poke-slot';
+        row.dataset.player = pl;
+        row.dataset.slot = s;
+        row.onclick = (e) => { if (e.target.tagName !== 'SELECT') selectSetupSlot(pl, s); };
+        
+        const label = document.createElement('span');
+        label.className = 'slot-num';
+        label.textContent = (s + 1);
+        
+        const select = document.createElement('select');
+        select.id = `p${pl}s${s}`;
+        select.onchange = () => updateCost(pl);
+        
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '— empty —';
+        select.appendChild(emptyOpt);
+        
+        row.appendChild(label);
+        row.appendChild(select);
+        container.appendChild(row);
+      }
+    }
+    
+    updateSetupSelectOptions();
+    renderSetupBoard();
+    updateCost(1);
+    updateCost(2);
+  }
+  
+  function getFilteredSpecies() {
+    return Object.keys(DB).filter(name => {
+      const db = DB[name];
+      if (!db) return false;
+      if (SETUP_FILTER.cost !== 'all' && db.cost.toString() !== SETUP_FILTER.cost) return false;
+      if (SETUP_FILTER.type !== 'all' && db.t1 !== SETUP_FILTER.type && db.t2 !== SETUP_FILTER.type) return false;
+      if (SETUP_FILTER.role !== 'all' && db.cls !== SETUP_FILTER.role) return false;
+      if (SETUP_FILTER.rarity === 'legendary' && !db.legendary) return false;
+      if (SETUP_FILTER.rarity === 'non-legendary' && db.legendary) return false;
+      return true;
+    }).sort();
+  }
+  
+  function setFilter(field, value, tabElement) {
+    SETUP_FILTER[field] = value;
+    const container = tabElement.parentElement;
+    Array.from(container.children).forEach(child => child.classList.remove('active'));
+    tabElement.classList.add('active');
+    updateSetupSelectOptions();
+  }
+  
+  function updateSetupSelectOptions() {
+    const species = getFilteredSpecies();
+    for (let pl = 1; pl <= 2; pl++) {
+      for (let s = 0; s < 6; s++) {
+        const select = document.getElementById(`p${pl}s${s}`);
+        if (!select) continue;
+        const current = select.value;
+        select.innerHTML = '';
+        
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '— empty —';
+        select.appendChild(emptyOpt);
+        
+        species.forEach(name => {
+          const db = DB[name];
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = `${name} (${db.cost})${db.legendary ? ' ★' : ''}`;
+          select.appendChild(opt);
+        });
+        
+        if (current && [...select.options].some(o => o.value === current)) {
+          select.value = current;
+        } else {
+          select.value = '';
+        }
+      }
+    }
+  }
+  
+  function updateCost(player) {
+    let total = 0;
+    for (let s = 0; s < 6; s++) {
+      const select = document.getElementById(`p${player}s${s}`);
+      if (select && select.value && DB[select.value]) {
+        total += DB[select.value].cost;
+      }
+    }
+    const display = document.getElementById(`p${player}-cost-display`);
+    if (display) {
+      display.textContent = `Total cost: ${total} / 10`;
+      display.className = 'total-cost ' + (total > 10 ? 'cost-bad' : 'cost-ok');
+    }
+  }
+  
+  function selectSetupSlot(player, slot) {
+    SETUP_SELECTED_SLOT = { player, slot };
+    document.querySelectorAll('.poke-slot').forEach(el => {
+      if (+el.dataset.player === player && +el.dataset.slot === slot) {
+        el.style.background = '#2a5a8a';
+      } else {
+        el.style.background = '';
+      }
+    });
+    renderSetupBoard();
+  }
+  
+  function renderSetupBoard() {
+    const board = document.getElementById('placement-board');
+    if (!board) return;
+    
+    const occupancy = {};
+    for (let pl = 1; pl <= 2; pl++) {
+      SETUP_POSITIONS[pl].forEach((pos, slot) => {
+        const select = document.getElementById(`p${pl}s${slot}`);
+        if (select && select.value) {
+          occupancy[`${pos.col},${pos.row}`] = { player: pl, slot, species: select.value };
+        }
+      });
+    }
+    
+    const pedestals = [
+      { player: 1, col: 3, row: 0 },
+      { player: 2, col: 4, row: 7 }
+    ];
+    
+    const getCellHtml = (boardOwner, col, row) => {
+      const cellKey = `${col},${row}`;
+      const occupied = occupancy[cellKey];
+      const selectedPos = SETUP_POSITIONS[SETUP_SELECTED_SLOT.player]?.[SETUP_SELECTED_SLOT.slot];
+      const isSelectedCell = selectedPos && selectedPos.col === col && selectedPos.row === row;
+      const isAllowed = (SETUP_SELECTED_SLOT.player === boardOwner);
+      const isPedestal = pedestals.some(p => p.col === col && p.row === row);
+      const pedestalInfo = pedestals.find(p => p.col === col && p.row === row);
+      
+      let cellClass = 'setup-board-cell';
+      if (isAllowed && !isPedestal) cellClass += ' allowed';
+      if (occupied) cellClass += ' occupied';
+      if (isSelectedCell) cellClass += ' selected';
+      
+      const clickAttr = (isAllowed && !isPedestal) ? `onclick="setupPlacementClick(${col},${row})"` : '';
+      const label = String.fromCharCode(65 + col) + (row + 1);
+      
+      let cellHtml = `<div class="${cellClass}" ${clickAttr}><div class="cell-label">${label}</div>`;
+      
+      if (isPedestal && pedestalInfo) {
+        const bgColor = pedestalInfo.player === 1 ? '#4fc3f7' : '#ef5350';
+        cellHtml += `<div class="setup-pedestal-token" style="background:${bgColor}">🏛️</div>`;
+      }
+      
+      if (occupied) {
+        const db = DB[occupied.species];
+        const imgHtml = db && db.img ? `<img src="${db.img}">` : occupied.species.substring(0, 2);
+        cellHtml += `<div class="setup-token">${imgHtml}</div>`;
+      }
+      
+      cellHtml += '</div>';
+      return cellHtml;
+    };
+    
+    let html = '<div style="display:flex; gap:20px; flex-wrap:wrap">';
+    
+    // Player 1 board
+    html += '<div><div style="margin-bottom:8px; color:#4fc3f7">Player 1 (Rows 1-2)</div><div class="setup-board-grid">';
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 8; col++) {
+        html += getCellHtml(1, col, row);
+      }
+    }
+    html += '</div></div>';
+    
+    // Player 2 board
+    html += '<div><div style="margin-bottom:8px; color:#ef5350">Player 2 (Rows 7-8)</div><div class="setup-board-grid">';
+    for (let row = 6; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        html += getCellHtml(2, col, row);
+      }
+    }
+    html += '</div></div>';
+    
+    html += '</div>';
+    board.innerHTML = html;
+  }
+  
+  function setupPlacementClick(col, row) {
+    const player = SETUP_SELECTED_SLOT.player;
+    const slot = SETUP_SELECTED_SLOT.slot;
+    const allowed = player === 1 ? row <= 1 : row >= 6;
+    if (!allowed) return;
+    
+    // Check if pedestal
+    const isPedestal = (player === 1 && col === 3 && row === 0) || (player === 2 && col === 4 && row === 7);
+    if (isPedestal) return;
+    
+    SETUP_POSITIONS[player][slot] = { col, row };
+    renderSetupBoard();
+  }
+  
+  function startGame() {
+    // Validate teams
+    let valid = true;
+    for (let pl = 1; pl <= 2; pl++) {
+      let totalCost = 0;
+      let hasPokemon = false;
+      for (let s = 0; s < 6; s++) {
+        const select = document.getElementById(`p${pl}s${s}`);
+        if (select && select.value) {
+          hasPokemon = true;
+          totalCost += DB[select.value].cost;
+        }
+      }
+      if (totalCost > 10) {
+        alert(`Player ${pl} team cost exceeds 10! (${totalCost}/10)`);
+        return;
+      }
+      if (!hasPokemon) {
+        alert(`Player ${pl} needs at least 1 Pokemon!`);
+        return;
+      }
+    }
+    
+    // Build teams
+    G.pokemon = [];
+    nextId = 1;
+    
+    for (let pl = 1; pl <= 2; pl++) {
+      for (let s = 0; s < 6; s++) {
+        const select = document.getElementById(`p${pl}s${s}`);
+        if (select && select.value) {
+          const species = select.value;
+          const db = DB[species];
+          const pos = SETUP_POSITIONS[pl][s];
+          
+          G.pokemon.push({
+            id: nextId++, species: species, player: pl,
+            col: pos.col, row: pos.row,
+            hp: db.hp, maxHp: db.hp,
+            atk: db.atk, def: db.def,
+            fainted: false, exp: 0, status: null,
+            modifiers: [], heldItem: null,
+            isEgg: db.legendary || false, hasHatched: false
+          });
+        }
+      }
+    }
+    
+    // Reset game state
+    G.turn = 1;
+    G.phase = 1;
+    G.cur = 1;
+    G.energy = [0, 3, 3];
+    G.maxE = [0, 3, 3];
+    G.gold = [0, 5, 5];
+    G.freeExp = [0, 0, 0];
+    G.selectedCell = null;
+    G.actionMode = null;
+    G.hlCells = [];
+    G.log = [];
+    G.over = false;
+    G.pedestals = [
+      { player: 1, col: 3, row: 0, hp: 30 },
+      { player: 2, col: 4, row: 7, hp: 30 }
+    ];
+    
+    log("Game started! Player 1 goes first.", "sys");
+    
+    document.getElementById('screen-setup').classList.remove('active');
+    document.getElementById('screen-game').classList.add('active');
+    renderAll();
+  }
+  
+  // Expose globals
+  window.selectAction = selectAction;
+  window.endTurn = endTurn;
+  window.toggleInventory = toggleInventory;
+  window.toggleShop = toggleShop;
+  window.resetGame = resetGame;
+  window.switchTab = switchTab;
+  window.startGame = startGame;
+  window.setupPlacementClick = setupPlacementClick;
+  
+  // Initialize
+  buildSetup();
+</script>
+
+</body>
+
+</html>
