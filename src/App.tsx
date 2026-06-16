@@ -1,0 +1,6029 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState } from "react";
+import { GameState, PokemonEntity, Pedestal, BattleLogEntry, PlayerState, Skill, StatModifier } from "./types";
+import { DB } from "./data/pokemon";
+import { ITEMS } from "./data/items";
+import { Peer, DataConnection } from "peerjs";
+import {
+  getRoleBasedMoves,
+  getAtkCells,
+  getSkillCells,
+  getSkillShapeCells,
+  parseSkillShape,
+  getModifiedStat,
+  typeBonus,
+  getStatusChanceValue,
+  pkAt,
+  pedAt,
+  getSkillData,
+  getSkillTargetType,
+  adjCells,
+  hasType,
+  getPokemonTypes
+} from "./utils/gameEngine";
+
+import { SetupScreen } from "./components/SetupScreen";
+import { Board } from "./components/Board";
+import { FieldTrackers } from "./components/FieldTrackers";
+import { StatsCard } from "./components/StatsCard";
+import { SkillsAndLog } from "./components/SkillsAndLog";
+import { Modals } from "./components/Modals";
+import { Pokedex } from "./components/Pokedex";
+
+function canInflictStatusBase(p: PokemonEntity, status: string, terrainType: string | null = null): boolean {
+  if (p.species === "Zygarde Complete Forme") return false;
+  if (terrainType === "Misty") return false;
+  if (status === "sleep" && terrainType === "Electric") return false;
+  const db = DB[p.species];
+  if (!db) return true;
+  if (status === "freeze" && hasType(p, "Ice")) return false;
+  if (status === "burn" && (hasType(p, "Fire") || db.ability === "Water Veil")) return false;
+  if ((status === "poison" || status === "toxic") && (hasType(p, "Poison") || hasType(p, "Steel") || db.ability === "Immunity")) return false;
+  if (status === "paralysis" && (hasType(p, "Electric") || db.ability === "Limber")) return false;
+  if (db.ability === "Leaf Guard") return false;
+  if (status === "sleep" && (db.ability === "Insomnia" || db.ability === "Vital Spirit" || db.ability === "Sweet Veil")) return false;
+  if (status === "confuse" && (db.ability === "Inner Focus" || db.ability === "Own Tempo")) return false;
+  if ((status === "burn" || status === "freeze") && db.ability === "Thick Fat") return false;
+  return true;
+}
+
+function canOverrideWeather(current: string | null, next: string): boolean {
+  if (!current) return true;
+
+  const isNewWeather = (w: string) => ["Harsh Sunlight", "Heavy Rain", "Strong Winds"].includes(w);
+  const isStandardWeather = (w: string) => ["Sunlight", "Rain", "Hail Storm", "Sandstorm"].includes(w);
+
+  if (isNewWeather(current) && isStandardWeather(next)) {
+    return false;
+  }
+
+  if (isNewWeather(current) && isNewWeather(next)) {
+    if (current === "Harsh Sunlight") {
+      return next === "Heavy Rain" || next === "Strong Winds" || next === "Harsh Sunlight";
+    }
+    if (current === "Heavy Rain") {
+      return next === "Harsh Sunlight" || next === "Strong Winds" || next === "Heavy Rain";
+    }
+    if (current === "Strong Winds") {
+      return next === "Strong Winds";
+    }
+  }
+
+  return true;
+}
+
+export default function App() {
+  const [screen, setScreen] = useState<"landing" | "preparation" | "pokedex" | "setup" | "game" | "end">("landing");
+  const [winner, setWinner] = useState<{ player: number; reason: string } | null>(null);
+
+  const [gameConfig, setGameConfig] = useState({
+    boardSize: 11,
+    maxUnits: 6,
+    maxCost: 15,
+    maxLegendary: 1
+  });
+
+  // Core game states
+  const [gameState, setGameStateInternal] = useState<GameState>({
+    turn: 1,
+    phase: 1,
+    currentPlayer: 1,
+    energy: { 1: 3, 2: 3 },
+    maxEnergy: { 1: 3, 2: 3 },
+    movePoints: { 1: 3, 2: 3 },
+    consumablesUsedThisTurn: { total: 0, powerHerb: 0 },
+    weather: { type: null, duration: 0 },
+    terrain: { type: null, duration: 0 },
+    pokemon: [],
+    pedestals: [],
+    logs: [],
+    players: {
+      1: { gold: 5, freeExp: 0, inventory: { held: [], consumable: [] }, hatchPools: {} },
+      2: { gold: 5, freeExp: 0, inventory: { held: [], consumable: [] }, hatchPools: {} }
+    },
+    selectedCell: null,
+    highlightedCells: [],
+    actionMode: null,
+    skillMenuFor: null
+  });
+
+  const updateTypeChangingAbilities = (list: PokemonEntity[]) => {
+    list.forEach(p => {
+      if (p.species === "Arceus" && !p.fainted) {
+        const teammates = list.filter(other => other.player === p.player && other.id !== p.id && !other.fainted);
+        const counts: { [t: string]: number } = {};
+        teammates.forEach(tm => {
+          const types = getPokemonTypes(tm);
+          types.forEach(t => {
+            counts[t] = (counts[t] || 0) + 1;
+          });
+        });
+        
+        let maxType = "Normal";
+        let maxCount = 0;
+        const sortedTypes = Object.keys(counts).sort((a, b) => {
+          if (counts[a] !== counts[b]) {
+            return counts[b] - counts[a];
+          }
+          return a.localeCompare(b);
+        });
+        if (sortedTypes.length > 0) {
+          maxType = sortedTypes[0];
+          maxCount = counts[maxType];
+        }
+        p.reflectedType = maxType;
+      }
+      
+      if (p.species === "Rotom" && !p.fainted) {
+        const teammates = list.filter(other => other.player === p.player && other.id !== p.id && !other.fainted);
+        const counts: { [t: string]: number } = { Fire: 0, Water: 0, Ice: 0, Flying: 0, Grass: 0 };
+        teammates.forEach(tm => {
+          const types = getPokemonTypes(tm);
+          types.forEach(t => {
+            if (t in counts) {
+              counts[t]++;
+            }
+          });
+        });
+        
+        let maxType: string | null = null;
+        let maxCount = 0;
+        let isTie = false;
+        for (const [t, c] of Object.entries(counts)) {
+          if (c > maxCount) {
+            maxCount = c;
+            maxType = t;
+            isTie = false;
+          } else if (c === maxCount && c > 0) {
+            isTie = true;
+          }
+        }
+        
+        if (maxCount > 0 && !isTie && maxType) {
+          if (maxType === "Fire") p.rotomForm = "Heat";
+          else if (maxType === "Water") p.rotomForm = "Wash";
+          else if (maxType === "Ice") p.rotomForm = "Frost";
+          else if (maxType === "Flying") p.rotomForm = "Fan";
+          else if (maxType === "Grass") p.rotomForm = "Mow";
+        } else {
+          p.rotomForm = "Normal";
+        }
+      }
+    });
+  };
+
+  const setGameState = (val: GameState | ((prev: GameState) => GameState)) => {
+    setGameStateInternal(prev => {
+      const nextState = typeof val === "function" ? val(prev) : val;
+      if (nextState.pokemon) {
+        updateTypeChangingAbilities(nextState.pokemon);
+      }
+      return nextState;
+    });
+  };
+
+  const [shopOpen, setShopOpen] = useState(false);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [weatherInfoOpen, setWeatherInfoOpen] = useState(false);
+  const [terrainInfoOpen, setTerrainInfoOpen] = useState(false);
+
+  const canInflictStatus = (p: PokemonEntity, status: string) => {
+    return canInflictStatusBase(p, status, gameState.terrain?.type);
+  };
+  const [turnNotice, setTurnNotice] = useState<number | null>(null);
+  const [hoveredCell, setHoveredCell] = useState<{ col: number; row: number } | null>(null);
+  const [typeChartOpen, setTypeChartOpen] = useState<boolean>(false);
+
+  // Chance popup visual state
+  const [chancePopup, setChancePopup] = useState<{
+    statusType: string;
+    chance: number;
+    roll: number;
+    success: boolean;
+  } | null>(null);
+
+  // P2P Multiplayer States
+  const [p2pStatus, setP2pStatus] = useState<"disconnected" | "connecting" | "connected">("disconnected");
+  const [peerId, setPeerId] = useState<string | null>(null);
+  const [myPlayerNumber, setMyPlayerNumber] = useState<number>(0); // 0 = local hotseat, 1 = Host (P1), 2 = Guest (P2)
+  const [p1Ready, setP1Ready] = useState<boolean>(false);
+  const [p2Ready, setP2Ready] = useState<boolean>(false);
+
+  // Local setup roster selections (saved from SetupScreen to trigger start playing)
+  const [localP1Slots, setLocalP1Slots] = useState<string[]>(Array(6).fill(""));
+  const [localP1Placements, setLocalP1Placements] = useState<{ col: number; row: number }[]>(
+    Array.from({ length: 6 }, (_, i) => ({ col: i, row: 1 }))
+  );
+  const [localP2Slots, setLocalP2Slots] = useState<string[]>(Array(6).fill(""));
+  const [localP2Placements, setLocalP2Placements] = useState<{ col: number; row: number }[]>(
+    Array.from({ length: 6 }, (_, i) => ({ col: i + 1, row: 9 }))
+  );
+
+  // React useEffect to keep local setup placements and slot states updated when gameConfig changes
+  React.useEffect(() => {
+    setLocalP1Slots(Array(gameConfig.maxUnits).fill(""));
+    setLocalP2Slots(Array(gameConfig.maxUnits).fill(""));
+    setLocalP1Placements(Array.from({ length: gameConfig.maxUnits }, (_, i) => ({ col: i % gameConfig.boardSize, row: 1 + Math.floor(i / gameConfig.boardSize) })));
+    setLocalP2Placements(Array.from({ length: gameConfig.maxUnits }, (_, i) => ({ col: (i + 1) % gameConfig.boardSize, row: gameConfig.boardSize - 2 - Math.floor(i / gameConfig.boardSize) })));
+  }, [gameConfig]);
+
+  // Incoming peer roster sync data (passed down to SetupScreen)
+  const [peerP1Slots, setPeerP1Slots] = useState<string[] | undefined>(undefined);
+  const [peerP1Placements, setPeerP1Placements] = useState<{ col: number; row: number }[] | undefined>(undefined);
+  const [peerP2Slots, setPeerP2Slots] = useState<string[] | undefined>(undefined);
+  const [peerP2Placements, setPeerP2Placements] = useState<{ col: number; row: number }[] | undefined>(undefined);
+
+  // Connection refs
+  const peerRef = React.useRef<Peer | null>(null);
+  const connRef = React.useRef<DataConnection | null>(null);
+  const isSyncingRef = React.useRef<boolean>(false);
+
+  // Cleanup effect
+  React.useEffect(() => {
+    return () => {
+      if (connRef.current) connRef.current.close();
+      if (peerRef.current) peerRef.current.destroy();
+    };
+  }, []);
+
+  const sendP2PMessage = (data: any) => {
+    if (connRef.current && connRef.current.open) {
+      connRef.current.send(data);
+    }
+  };
+
+  const handlePeerDisconnect = () => {
+    addLog("Opponent disconnected. Reverted to local pass-and-play.", "sys");
+    setP2pStatus("disconnected");
+    setPeerId(null);
+    setMyPlayerNumber(0);
+    setP1Ready(false);
+    setP2Ready(false);
+    setPeerP1Slots(undefined);
+    setPeerP1Placements(undefined);
+    setPeerP2Slots(undefined);
+    setPeerP2Placements(undefined);
+  };
+
+  const onHostGame = () => {
+    setP2pStatus("connecting");
+    setMyPlayerNumber(1);
+
+    const shortCode = Math.floor(1000 + Math.random() * 9000);
+    const pid = `pchess-${shortCode}`;
+
+    const peer = new Peer(pid, {
+      host: "0.peerjs.com",
+      secure: true,
+      port: 443
+    });
+
+    peerRef.current = peer;
+
+    peer.on("open", (id) => {
+      setPeerId(id);
+    });
+
+    peer.on("connection", (conn) => {
+      connRef.current = conn;
+      setP2pStatus("connected");
+
+      conn.on("open", () => {
+        conn.send({ type: "init_p2p", myPlayerNumber: 2 });
+      });
+
+      conn.on("data", (data) => {
+        handleData(data);
+      });
+
+      conn.on("close", () => {
+        handlePeerDisconnect();
+      });
+
+      conn.on("error", () => {
+        handlePeerDisconnect();
+      });
+    });
+
+    peer.on("error", (err) => {
+      console.error(err);
+      setP2pStatus("disconnected");
+      setMyPlayerNumber(0);
+      setPeerId(null);
+    });
+  };
+
+  const onJoinGame = (hostId: string) => {
+    setP2pStatus("connecting");
+    setMyPlayerNumber(2);
+
+    const peer = new Peer({
+      host: "0.peerjs.com",
+      secure: true,
+      port: 443
+    });
+
+    peerRef.current = peer;
+
+    peer.on("open", () => {
+      const conn = peer.connect(hostId);
+      connRef.current = conn;
+
+      conn.on("open", () => {
+        setP2pStatus("connected");
+      });
+
+      conn.on("data", (data) => {
+        handleData(data);
+      });
+
+      conn.on("close", () => {
+        handlePeerDisconnect();
+      });
+
+      conn.on("error", () => {
+        handlePeerDisconnect();
+      });
+    });
+
+    peer.on("error", (err) => {
+      console.error(err);
+      setP2pStatus("disconnected");
+      setMyPlayerNumber(0);
+    });
+  };
+
+  const onDisconnectP2P = () => {
+    if (connRef.current) connRef.current.close();
+    if (peerRef.current) peerRef.current.destroy();
+    setP2pStatus("disconnected");
+    setPeerId(null);
+    setMyPlayerNumber(0);
+    setP1Ready(false);
+    setP2Ready(false);
+    setPeerP1Slots(undefined);
+    setPeerP1Placements(undefined);
+    setPeerP2Slots(undefined);
+    setPeerP2Placements(undefined);
+  };
+
+  const handleSyncSetupData = (slots: string[], placements: { col: number; row: number }[]) => {
+    if (myPlayerNumber === 1) {
+      setLocalP1Slots(slots);
+      setLocalP1Placements(placements);
+      sendP2PMessage({ type: "setup_sync", player: 1, slots, placements });
+    } else if (myPlayerNumber === 2) {
+      setLocalP2Slots(slots);
+      setLocalP2Placements(placements);
+      sendP2PMessage({ type: "setup_sync", player: 2, slots, placements });
+    }
+  };
+
+  const onToggleReady = () => {
+    if (myPlayerNumber === 1) {
+      const next = !p1Ready;
+      setP1Ready(next);
+      sendP2PMessage({ type: "ready", player: 1, ready: next });
+    } else if (myPlayerNumber === 2) {
+      const next = !p2Ready;
+      setP2Ready(next);
+      sendP2PMessage({ type: "ready", player: 2, ready: next });
+    }
+  };
+
+  const handleData = (data: any) => {
+    if (!data || typeof data !== "object") return;
+
+    switch (data.type) {
+      case "init_p2p":
+        setMyPlayerNumber(data.myPlayerNumber);
+        setP2pStatus("connected");
+        break;
+
+      case "setup_sync":
+        if (data.player === 1) {
+          setPeerP1Slots(data.slots);
+          setPeerP1Placements(data.placements);
+        } else if (data.player === 2) {
+          setPeerP2Slots(data.slots);
+          setPeerP2Placements(data.placements);
+        }
+        break;
+
+      case "ready":
+        if (data.player === 1) {
+          setP1Ready(data.ready);
+        } else if (data.player === 2) {
+          setP2Ready(data.ready);
+        }
+        break;
+
+      case "start_game":
+        isSyncingRef.current = true;
+        setGameState(data.gameState);
+        setScreen("game");
+        setTurnNotice(1);
+        break;
+
+      case "game_state_sync":
+        isSyncingRef.current = true;
+        const prevPlayer = gameState.currentPlayer;
+        const nextPlayer = data.gameState.currentPlayer;
+        setGameState(data.gameState);
+        if (prevPlayer !== nextPlayer) {
+          setTurnNotice(nextPlayer);
+        }
+        break;
+
+      case "chance_popup":
+        setChancePopup(data.chancePopup);
+        break;
+
+      case "restart_game":
+        setP1Ready(false);
+        setP2Ready(false);
+        setPeerP1Slots(undefined);
+        setPeerP1Placements(undefined);
+        setPeerP2Slots(undefined);
+        setPeerP2Placements(undefined);
+        setScreen("setup");
+        break;
+
+      default:
+        break;
+    }
+  };
+
+  // Broadcast gameState changes
+  React.useEffect(() => {
+    if (p2pStatus === "connected" && myPlayerNumber !== 0) {
+      if (isSyncingRef.current) {
+        isSyncingRef.current = false;
+        return;
+      }
+      sendP2PMessage({ type: "game_state_sync", gameState });
+    }
+  }, [gameState, p2pStatus, myPlayerNumber]);
+
+  // Broadcast chancePopup rolls
+  React.useEffect(() => {
+    if (p2pStatus === "connected" && myPlayerNumber !== 0) {
+      if (gameState.currentPlayer === myPlayerNumber) {
+        sendP2PMessage({ type: "chance_popup", chancePopup });
+      }
+    }
+  }, [chancePopup, p2pStatus, myPlayerNumber, gameState.currentPlayer]);
+
+  // Reactive faint checkers
+  const prevPokemonRef = React.useRef<PokemonEntity[]>([]);
+  React.useEffect(() => {
+    const prev = prevPokemonRef.current;
+    const curr = gameState.pokemon;
+    prevPokemonRef.current = curr;
+
+    if (prev.length === 0) return;
+
+    const newlyFainted: PokemonEntity[] = [];
+    curr.forEach(p => {
+      if (p.fainted) {
+        const wasActive = prev.some(old => old.id === p.id && !old.fainted);
+        if (wasActive) {
+          newlyFainted.push(p);
+        }
+      }
+    });
+
+    if (newlyFainted.length > 0) {
+      setGameState(prev => {
+        const nextPokemon = prev.pokemon.map(p => ({ ...p }));
+        const nextEnergy = { ...prev.energy };
+        let stateChanged = false;
+
+        newlyFainted.forEach(fP => {
+          // 1. Dialga active: grant +1 Energy to Dialga's player (max 5)
+          const dialga = nextPokemon.find(d => d.species === "Dialga" && !d.fainted);
+          if (dialga) {
+            nextEnergy[dialga.player] = Math.min(5, (nextEnergy[dialga.player] || 0) + 1);
+            addLog(`⌛ Dialga's Time Distortion! Defeat of ${fP.species} granted Player ${dialga.player} +1 Energy Point!`, "heal");
+            stateChanged = true;
+          }
+
+          // 2. Soul Prison HP growth
+          nextPokemon.forEach(other => {
+            if (other.species === "Soul Prison" && !other.fainted) {
+              other.maxHp += 2;
+              other.hp += 2;
+              addLog(`👻 Soul Prison grows! Max HP increased to ${other.maxHp} (+2 HP).`, "heal");
+              stateChanged = true;
+            }
+          });
+
+          // 3. Giratina stat growth
+          const giratina = nextPokemon.find(g => g.species === "Giratina" && !g.fainted);
+          if (giratina) {
+            giratina.hp = Math.min(giratina.maxHp, giratina.hp + 2);
+            if (!giratina.modifiers) giratina.modifiers = [];
+            const currentSkillDmgMod = giratina.modifiers
+              .filter(m => m.stat === "skill_dmg" && m.source === "Soul Prison Harvest")
+              .reduce((sum, m) => sum + m.amount, 0);
+            if (currentSkillDmgMod < 8) {
+              addModifier(giratina, {
+                stat: "skill_dmg",
+                amount: 1,
+                duration: 9999, // Permanent
+                source: "Soul Prison Harvest"
+              });
+              addLog(`👻 Soul Prison Harvest! Giratina heals +2 HP and gains +1 permanent Skill Damage (Total Buff: +${currentSkillDmgMod + 1}).`, "heal");
+            } else {
+              addLog(`👻 Soul Prison Harvest! Giratina heals +2 HP (Skill Damage buff is already maxed at +8).`, "heal");
+            }
+            stateChanged = true;
+          }
+        });
+
+        if (stateChanged) {
+          return {
+            ...prev,
+            pokemon: nextPokemon,
+            energy: nextEnergy
+          };
+        }
+        return prev;
+      });
+    }
+  }, [gameState.pokemon]);
+
+  // Host setup ready checker to launch game
+  React.useEffect(() => {
+    if (p2pStatus === "connected" && myPlayerNumber === 1 && p1Ready && p2Ready) {
+      const p1Active = localP1Slots.map((sp, idx) => ({ sp, idx })).filter(item => item.sp !== "");
+      const p2Active = peerP2Slots ? peerP2Slots.map((sp, idx) => ({ sp, idx })).filter(item => item.sp !== "") : [];
+
+      const p1Team = p1Active.map(item => ({
+        species: item.sp,
+        col: localP1Placements[item.idx].col,
+        row: localP1Placements[item.idx].row
+      }));
+      const p2Team = p2Active.map(item => ({
+        species: item.sp,
+        col: peerP2Placements ? peerP2Placements[item.idx].col : 0,
+        row: peerP2Placements ? peerP2Placements[item.idx].row : 0
+      }));
+
+      let nextId = 1;
+      const initialPokemon: PokemonEntity[] = [];
+
+      const buildEntity = (species: string, player: number, col: number, row: number): PokemonEntity => {
+        const db = DB[species];
+        const isEgg = (!!db.legendary && !species.startsWith("Zygarde") && species !== "Regigigas") || species === "Aerodactyl";
+        const startHp = species === "Aerodactyl" ? 5 : (isEgg ? 10 : db.hp);
+        return {
+          id: nextId++,
+          species,
+          player,
+          col,
+          row,
+          hp: startHp,
+          maxHp: startHp,
+          atk: db.atk,
+          def: db.def || 0,
+          fainted: false,
+          exp: 0,
+          status: null,
+          modifiers: [],
+          heldItem: null,
+          isEgg,
+          hasHatched: !isEgg,
+          rotation: 0,
+          hatchProgress: 0,
+          skillUses: {},
+          skillCooldowns: {},
+          customBar: getCustomBarForSpecies(species),
+          regigigasLocked: species === "Regigigas" ? true : undefined
+        };
+      };
+
+      p1Team.forEach(item => initialPokemon.push(buildEntity(item.species, 1, item.col, item.row)));
+      p2Team.forEach(item => initialPokemon.push(buildEntity(item.species, 2, item.col, item.row)));
+
+      const startingPedestals: Pedestal[] = [
+        { player: 1, col: 5, row: 0, hp: 10, maxHp: 10 },
+        { player: 2, col: 5, row: 10, hp: 10, maxHp: 10 }
+      ];
+
+      const initialGameState: GameState = {
+        turn: 1,
+        phase: 1,
+        currentPlayer: 1,
+        energy: { 1: 3, 2: 3 },
+        maxEnergy: { 1: 3, 2: 3 },
+        movePoints: { 1: 3, 2: 3 },
+        consumablesUsedThisTurn: { total: 0, powerHerb: 0 },
+        weather: { type: null, duration: 0 },
+        terrain: { type: null, duration: 0 },
+        pokemon: initialPokemon,
+        pedestals: startingPedestals,
+        logs: [
+          {
+            id: "init",
+            msg: "Game started! Player 1 goes first. Command your Pokémon to attack the enemy Pedestal!",
+            type: "sys",
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          }
+        ],
+        players: {
+          1: { gold: 5, freeExp: 0, inventory: { held: [], consumable: [] }, hatchPools: {} },
+          2: { gold: 5, freeExp: 0, inventory: { held: [], consumable: [] }, hatchPools: {} }
+        },
+        selectedCell: null,
+        highlightedCells: [],
+        actionMode: null,
+        skillMenuFor: null
+      };
+
+      setWinner(null);
+      setGameState(initialGameState);
+      setScreen("game");
+      setTurnNotice(1);
+
+      sendP2PMessage({ type: "start_game", gameState: initialGameState });
+    }
+  }, [p1Ready, p2Ready, p2pStatus, myPlayerNumber]);
+
+  React.useEffect(() => {
+    if (turnNotice !== null) {
+      const timer = setTimeout(() => {
+        setTurnNotice(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [turnNotice]);
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+
+      if (screen !== "game") return;
+
+      const key = e.key.toLowerCase();
+
+      // CLOSE TURN NOTICE (Q)
+      if (key === "q" && turnNotice !== null) {
+        e.preventDefault();
+        setTurnNotice(null);
+        return;
+      }
+
+      // Block keyboard hotkeys when it is the opponent's turn in P2P mode
+      if (p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber) {
+        return;
+      }
+
+      // END TURN (E)
+      if (key === "e") {
+        e.preventDefault();
+        handleEndTurn();
+        return;
+      }
+
+      // ROTATE SKILL (R)
+      if (key === "r") {
+        e.preventDefault();
+        if (gameState.selectedCell) {
+          const selectedPk = pkAt(gameState.selectedCell.col, gameState.selectedCell.row, gameState.pokemon);
+          if (selectedPk && selectedPk.player === gameState.currentPlayer) {
+            handleRotateSkill(selectedPk.id);
+          }
+        }
+        return;
+      }
+
+      // BACKPACK (B)
+      if (key === "b") {
+        e.preventDefault();
+        if (inventoryOpen) {
+          setInventoryOpen(false);
+        } else if (!shopOpen) {
+          setInventoryOpen(true);
+        }
+        return;
+      }
+
+      // SHOP (F)
+      if (key === "f") {
+        e.preventDefault();
+        if (shopOpen) {
+          setShopOpen(false);
+        } else if (!inventoryOpen) {
+          setShopOpen(true);
+        }
+        return;
+      }
+
+      // TYPE CHART (C)
+      if (key === "c") {
+        e.preventDefault();
+        setTypeChartOpen(prev => !prev);
+        return;
+      }
+
+      // Hotkeys 1-6 fast selection
+      if (key >= "1" && key <= "6") {
+        const idx = parseInt(key, 10) - 1;
+        const myTeam = gameState.pokemon.filter(
+          p => p.player === gameState.currentPlayer &&
+            p.species !== "Clear Bell" &&
+            p.species !== "Tidal Bell" &&
+            p.species !== "Tidal bell"
+        );
+        const targetPk = myTeam[idx];
+        if (targetPk) {
+          e.preventDefault();
+          setGameState(prev => ({
+            ...prev,
+            selectedCell: { col: targetPk.col, row: targetPk.row },
+            actionMode: null,
+            highlightedCells: []
+          }));
+        }
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [screen, gameState, inventoryOpen, shopOpen, turnNotice, p2pStatus, myPlayerNumber]);
+
+  // Log logger Helper
+  const addLog = (msg: string, type: "sys" | "atk" | "heal" | "combat" | "" = "") => {
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const logId = Math.random().toString(36).substring(2, 9);
+    const newEntry: BattleLogEntry = { id: logId, msg, type, timestamp: timeStr };
+    setGameState(prev => ({
+      ...prev,
+      logs: [newEntry, ...prev.logs].slice(0, 50)
+    }));
+  };
+
+  const applyTidalBellReduction = (target: PokemonEntity, initialDmg: number, list: PokemonEntity[]): number => {
+    if (initialDmg <= 0) return 0;
+    if (target.species === "Lugia" || target.species === "Clear Bell" || target.species === "Tidal Bell" || target.species === "Tidal bell") {
+      return initialDmg;
+    }
+
+    // Find a friendly active Tidal Bell within 3x3 range
+    const friendlyBell = list.find(bell => {
+      if ((bell.species !== "Tidal Bell" && bell.species !== "Tidal bell") || bell.fainted || bell.player !== target.player) {
+        return false;
+      }
+      const dc = Math.abs(bell.col - target.col);
+      const dr = Math.abs(bell.row - target.row);
+      return dc <= 1 && dr <= 1;
+    });
+
+    if (!friendlyBell) return initialDmg;
+
+    // Reduce damage by 2
+    const reducedDmg = Math.max(0, initialDmg - 2);
+    const diff = initialDmg - reducedDmg;
+
+    if (diff > 0) {
+      friendlyBell.hp = Math.max(0, friendlyBell.hp - 1);
+      addLog(`🔔 Tidal Bell protects ${target.species}! Damage reduced by ${diff}! (Tidal Bell has ${friendlyBell.hp} charges remaining)`, "heal");
+      if (friendlyBell.hp <= 0) {
+        friendlyBell.fainted = true;
+        addLog(`🔔 The Tidal Bell has shattered!`, "sys");
+      }
+    }
+
+    return reducedDmg;
+  };
+
+  // Turn initialization rosters
+  const handleStartGame = (
+    p1Team: { species: string; col: number; row: number }[],
+    p2Team: { species: string; col: number; row: number }[]
+  ) => {
+    let nextId = 1;
+    const initialPokemon: PokemonEntity[] = [];
+
+    const buildEntity = (species: string, player: number, col: number, row: number): PokemonEntity => {
+      const db = DB[species];
+      const isEgg = (!!db.legendary && !species.startsWith("Zygarde") && species !== "Regigigas") || species === "Aerodactyl";
+      const startHp = species === "Aerodactyl" ? 5 : (isEgg ? 10 : db.hp);
+      return {
+        id: nextId++,
+        species,
+        player,
+        col,
+        row,
+        hp: startHp,
+        maxHp: startHp,
+        atk: db.atk,
+        def: db.def || 0,
+        fainted: false,
+        exp: 0,
+        status: null,
+        modifiers: [],
+        heldItem: null,
+        isEgg,
+        hasHatched: !isEgg,
+        rotation: 0,
+        hatchProgress: 0,
+        skillUses: {},
+        skillCooldowns: {},
+        customBar: getCustomBarForSpecies(species),
+        regigigasLocked: species === "Regigigas" ? true : undefined
+      };
+    };
+
+    p1Team.forEach(item => initialPokemon.push(buildEntity(item.species, 1, item.col, item.row)));
+    p2Team.forEach(item => initialPokemon.push(buildEntity(item.species, 2, item.col, item.row)));
+
+    const startingPedestals: Pedestal[] = [
+      { player: 1, col: Math.floor(gameConfig.boardSize / 2), row: 0, hp: 10, maxHp: 10 },
+      { player: 2, col: Math.floor(gameConfig.boardSize / 2), row: gameConfig.boardSize - 1, hp: 10, maxHp: 10 }
+    ];
+
+    setWinner(null);
+    setGameState({
+      turn: 1,
+      phase: 1,
+      currentPlayer: 1,
+      energy: { 1: 3, 2: 3 },
+      maxEnergy: { 1: 3, 2: 3 },
+      movePoints: { 1: 3, 2: 3 },
+      consumablesUsedThisTurn: { total: 0, powerHerb: 0 },
+      weather: { type: null, duration: 0 },
+      terrain: { type: null, duration: 0 },
+      pokemon: initialPokemon,
+      pedestals: startingPedestals,
+      logs: [
+        {
+          id: "init",
+          msg: "Game started! Player 1 goes first. Command your Pokémon to attack the enemy Pedestal!",
+          type: "sys",
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        }
+      ],
+      players: {
+        1: { gold: 5, freeExp: 0, inventory: { held: [], consumable: [] }, hatchPools: {} },
+        2: { gold: 5, freeExp: 0, inventory: { held: [], consumable: [] }, hatchPools: {} }
+      },
+      selectedCell: null,
+      highlightedCells: [],
+      actionMode: null,
+      skillMenuFor: null
+    });
+
+    setScreen("game");
+    setTurnNotice(1);
+  };
+
+  const getAliveCount = (player: number, list: PokemonEntity[]) => {
+    return list.filter(p => p.player === player && !p.fainted).length;
+  };
+
+  const checkWinner = (pedestals: Pedestal[], list: PokemonEntity[]) => {
+    const p1Ped = pedestals.find(pd => pd.player === 1);
+    const p2Ped = pedestals.find(pd => pd.player === 2);
+
+    const p1NoMon = getAliveCount(1, list) === 0;
+    const p1PedDestroyed = p1Ped ? p1Ped.hp <= 0 : true;
+
+    const p2NoMon = getAliveCount(2, list) === 0;
+    const p2PedDestroyed = p2Ped ? p2Ped.hp <= 0 : true;
+
+    if (p1PedDestroyed || p1NoMon) {
+      const reason = p1PedDestroyed
+        ? "Player 1's Pedestal was destroyed!"
+        : "Player 1 has no surviving Pokémon left!";
+      setWinner({ player: 2, reason });
+      setScreen("end");
+    } else if (p2PedDestroyed || p2NoMon) {
+      const reason = p2PedDestroyed
+        ? "Player 2's Pedestal was destroyed!"
+        : "Player 2 has no surviving Pokémon left!";
+      setWinner({ player: 1, reason });
+      setScreen("end");
+    }
+  };
+
+  const [radiusPreviewCenter, setRadiusPreviewCenter] = useState<{ col: number; row: number; radius: number } | null>(null);
+
+  const handleCellRightClick = (col: number, row: number) => {
+    if (radiusPreviewCenter && radiusPreviewCenter.col === col && radiusPreviewCenter.row === row) {
+      const nextRadius = radiusPreviewCenter.radius + 1;
+      if (nextRadius > 3) {
+        setRadiusPreviewCenter(null);
+      } else {
+        setRadiusPreviewCenter({ col, row, radius: nextRadius });
+      }
+    } else {
+      setRadiusPreviewCenter({ col, row, radius: 1 });
+    }
+  };
+
+  const getRadiusPreviewCells = () => {
+    if (!radiusPreviewCenter) return [];
+    const cells = adjCells(radiusPreviewCenter.col, radiusPreviewCenter.row, radiusPreviewCenter.radius, true, gameConfig.boardSize);
+    cells.push({ col: radiusPreviewCenter.col, row: radiusPreviewCenter.row });
+    return cells;
+  };
+
+  const getCustomBarForSpecies = (species: string): PokemonEntity["customBar"] => {
+    const db = DB[species];
+    if (!db) return null;
+    const isFairy = db.t1 === "Fairy" || db.t2 === "Fairy";
+    const isIce = db.t1 === "Ice" || db.t2 === "Ice";
+    const isFighting = db.t1 === "Fighting" || db.t2 === "Fighting";
+    if (isFairy) return { type: "Happiness", value: 0, max: 20 };
+    if (isIce) return { type: "Frost", value: 0, max: 20 };
+    if (isFighting) return { type: "Angry", value: 0, max: 20 };
+    return null;
+  };
+
+  const getEffectiveAccuracy = (actor: PokemonEntity, baseAccuracy: number): number => {
+    let accMod = 0;
+    if (actor.modifiers) {
+      actor.modifiers.forEach(m => {
+        if (m.stat === "accuracy") accMod += m.amount;
+      });
+    }
+    if (accMod >= 0) return baseAccuracy;
+    const stage = Math.max(-4, accMod);
+    let cap = 100;
+    if (stage === -1) cap = 80;
+    else if (stage === -2) cap = 65;
+    else if (stage === -3) cap = 55;
+    else if (stage === -4) cap = 50;
+    return Math.min(baseAccuracy, cap);
+  };
+
+  const checkAccuracy = (actor: PokemonEntity, skill: Skill | undefined): { isHit: boolean; roll: number; threshold: number; chance: number } => {
+    let baseAccuracy = 100;
+    if (skill) {
+      if (typeof skill.accuracy === "number") baseAccuracy = skill.accuracy;
+      else if (skill.skillName === "Guillotine") baseAccuracy = 50;
+      else if (skill.skillName === "High Jump Kick") baseAccuracy = 85;
+    }
+    const effectiveAccuracy = getEffectiveAccuracy(actor, baseAccuracy);
+    const roll = Math.floor(Math.random() * 20) + 1;
+    const threshold = 20 - Math.round(effectiveAccuracy / 5);
+    const isHit = roll > threshold;
+    return { isHit, roll, threshold, chance: effectiveAccuracy / 100 };
+  };
+
+  const checkCriticalHit = (actor: PokemonEntity, target: PokemonEntity, skill: Skill | undefined, pokemonList: PokemonEntity[]): { isCrit: boolean; roll?: number; threshold?: number } => {
+    const targetDb = DB[target.species];
+    if (targetDb && (targetDb.ability === "Shell Armor" || targetDb.ability === "Battle Armor")) {
+      return { isCrit: false };
+    }
+    let threshold: number | null = null;
+    let hasCritMention = false;
+    if (skill) {
+      const desc = (skill.skillRaw || skill.skillDesc || "").toLowerCase();
+      if (desc.includes("crit on 14+")) {
+        threshold = 13;
+        hasCritMention = true;
+      } else if (desc.includes("crit on 15+")) {
+        threshold = 14;
+        hasCritMention = true;
+      } else if (desc.includes("crit on 16+")) {
+        threshold = 15;
+        hasCritMention = true;
+      } else if (desc.includes("high crit chance") || desc.includes("high critical rate") || desc.includes("critical")) {
+        threshold = 8;
+        hasCritMention = true;
+      }
+    }
+    const actorDb = DB[actor.species];
+    const hasScopeLens = actor.heldItem === "Scope Lens";
+    const hasSuperLuck = actorDb?.ability === "Super Luck";
+    const hasSniper = actorDb?.ability === "Sniper";
+    if (hasScopeLens || hasSuperLuck || hasSniper) {
+      if (threshold === null || threshold > 8) threshold = 8;
+      hasCritMention = true;
+    }
+    if (hasCritMention && threshold !== null) {
+      const roll = Math.floor(Math.random() * 20) + 1;
+      return { isCrit: roll > threshold, roll, threshold };
+    }
+    return { isCrit: false };
+  };
+
+  const processIceFrostRolls = (skill: Skill, affectedCells: { col: number; row: number }[], list: PokemonEntity[]) => {
+    if (skill.statusChance !== "freeze" && skill.skillName !== "Powder Snow") return;
+    
+    const chance = skill.skillName === "Powder Snow" ? 0.10 : getStatusChanceValue("freeze", skill);
+    if (chance <= 0) return;
+
+    list.forEach(p => {
+      if (p.fainted) return;
+      const pDb = DB[p.species];
+      if (!pDb) return;
+      
+      const isIce = pDb.t1 === "Ice" || pDb.t2 === "Ice";
+      if (!isIce || !p.customBar || p.customBar.type !== "Frost") return;
+
+      const isInArea = affectedCells.some(c => c.col === p.col && c.row === p.row);
+      if (isInArea) {
+        const threshold = Math.floor(chance * 20);
+        const roll = Math.floor(Math.random() * 20) + 1;
+        const succ = roll <= threshold;
+        if (succ) {
+          p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 1);
+          addLog(`❄️ Frost Absorption! Ice-type ${p.species} absorbed the freezing energy from ${skill.skillName} and gained +1 Frost (rolled ${roll}/20).`, "heal");
+        }
+      }
+    });
+  };
+
+  const applyHeal = (p: PokemonEntity, amount: number) => {
+    if (p.fainted || amount <= 0) return;
+    p.hp = Math.min(p.maxHp, p.hp + amount);
+    if (p.customBar && p.customBar.type === "Angry") {
+      p.customBar.value = Math.max(0, p.customBar.value - 1);
+    }
+  };
+
+  const addModifier = (p: PokemonEntity, mod: StatModifier) => {
+    if (!p.modifiers) p.modifiers = [];
+    const db = DB[p.species];
+    const isContrary = db && db.ability === "Contrary";
+    const finalAmount = isContrary ? -mod.amount : mod.amount;
+    const finalMod = { ...mod, amount: finalAmount };
+
+    // Prevent stacking from the same source and stat
+    const existing = p.modifiers.find(m => m.source === finalMod.source && m.stat === finalMod.stat && ((finalMod.amount < 0 && m.amount < 0) || (finalMod.amount > 0 && m.amount > 0)));
+    if (existing) {
+      existing.duration = Math.max(existing.duration, finalMod.duration);
+      return;
+    }
+    p.modifiers.push(finalMod);
+  };
+
+  const resolvePushPull = (actor: PokemonEntity, target: PokemonEntity, pushAmount: number, pullAmount: number, list: PokemonEntity[], peds: Pedestal[], boardSize: number = 11): { col: number; row: number; moved: boolean } => {
+    if (pushAmount <= 0 && pullAmount <= 0) return { col: target.col, row: target.row, moved: false };
+    const colDist = target.col - actor.col;
+    const rowDist = target.row - actor.row;
+    if (colDist === 0 && rowDist === 0) return { col: target.col, row: target.row, moved: false };
+    let axis: "vertical" | "horizontal" = "vertical";
+    if (Math.abs(colDist) === 0) axis = "vertical";
+    else if (Math.abs(rowDist) === 0) axis = "horizontal";
+    else axis = Math.abs(rowDist) <= Math.abs(colDist) ? "vertical" : "horizontal";
+    let stepCol = 0, stepRow = 0;
+    if (pushAmount > 0) {
+      if (axis === "vertical") stepRow = rowDist > 0 ? 1 : -1;
+      else stepCol = colDist > 0 ? 1 : -1;
+    } else {
+      if (axis === "vertical") stepRow = rowDist > 0 ? -1 : 1;
+      else stepCol = colDist > 0 ? -1 : 1;
+    }
+    let currentCol = target.col, currentRow = target.row;
+    const steps = pushAmount > 0 ? pushAmount : pullAmount;
+    let moved = false;
+    for (let s = 0; s < steps; s++) {
+      const nextCol = currentCol + stepCol;
+      const nextRow = currentRow + stepRow;
+      if (nextCol < 0 || nextCol >= boardSize || nextRow < 0 || nextRow >= boardSize) break;
+      const obsUnit = list.find(p => p.col === nextCol && p.row === nextRow && !p.fainted && p.id !== target.id);
+      const obsPed = peds.find(p => p.col === nextCol && p.row === nextRow);
+      if (obsUnit || obsPed) break;
+      if (pullAmount > 0) {
+        const dist = Math.abs(nextCol - actor.col) + Math.abs(nextRow - actor.row);
+        if (dist === 0) break;
+        const currDist = Math.abs(currentCol - actor.col) + Math.abs(currentRow - actor.row);
+        if (currDist === 1) break;
+      }
+      currentCol = nextCol;
+      currentRow = nextRow;
+      moved = true;
+    }
+    return { col: currentCol, row: currentRow, moved };
+  };
+
+  const applyStatusEffect = (p: PokemonEntity, status: string, turns: number = 0, sourceActor?: PokemonEntity): boolean => {
+      let finalStatus = status;
+      if (finalStatus === "paralyze") finalStatus = "paralysis";
+      if (!canInflictStatus(p, finalStatus)) return false;
+
+    if (p.heldItem) {
+      let cured = false;
+      if (p.heldItem === "Lum Berry") cured = true;
+      else if (p.heldItem === "Cheri Berry" && finalStatus === "paralysis") cured = true;
+      else if (p.heldItem === "Chesto Berry" && finalStatus === "sleep") cured = true;
+      else if (p.heldItem === "Pecha Berry" && (finalStatus === "poison" || finalStatus === "toxic")) cured = true;
+      else if (p.heldItem === "Rawst Berry" && finalStatus === "burn") cured = true;
+      else if (p.heldItem === "Aspear Berry" && finalStatus === "freeze") cured = true;
+      else if (p.heldItem === "Persim Berry" && finalStatus === "confuse") cured = true;
+      else if (p.heldItem === "Mental Herb" && (finalStatus === "confuse" || finalStatus === "paralysis" || finalStatus === "sleep" || finalStatus === "freeze")) cured = true;
+      if (cured) {
+        addLog(`🍃 ${p.species}'s held ${p.heldItem} was automatically consumed to cure ${finalStatus.toUpperCase()}!`, "heal");
+        p.heldItem = null;
+        p.status = null;
+        if (p.customBar && p.customBar.type === "Angry") {
+          p.customBar.value = Math.max(0, p.customBar.value - 1);
+        }
+        return false;
+      }
+    }
+    p.status = finalStatus;
+    p.statusTurns = turns;
+    if (finalStatus === "freeze" && sourceActor && (sourceActor.species === "Aurorus" || sourceActor.species === "Amaura")) {
+      if (!p.modifiers) p.modifiers = [];
+      addModifier(p, { stat: "def", amount: -1, duration: 1, source: "Refrigerate" });
+      addLog(`❄️ Refrigerate! ${p.species} got Def -1 for 1 turn!`, "combat");
+    }
+    return true;
+  };
+
+  const gainHappiness = (p: PokemonEntity, amount: number, list: PokemonEntity[]) => {
+    if (!p.customBar || p.customBar.type !== "Happiness") return;
+    const oldVal = p.customBar.value;
+    p.customBar.value = Math.min(p.customBar.max, p.customBar.value + amount);
+    const actualGain = p.customBar.value - oldVal;
+    if (actualGain > 0 && p.species !== "Diancie") {
+      list.forEach(other => {
+        if (other.species === "Diancie" && !other.fainted && other.player === p.player) {
+          gainHappiness(other, 1, list);
+        }
+      });
+    }
+    if (p.species === "Diancie" && p.customBar.value >= 20) {
+      p.customBar.value = 0;
+      list.forEach(ally => {
+        if (ally.player === p.player && !ally.fainted) {
+          applyHeal(ally, 1);
+          ally.status = null;
+        }
+      });
+      addLog(`💎 Crystal Happiness! Diancie healed all allies for 1 HP and cleansed status conditions!`, "heal");
+    }
+  };
+
+  const checkPowerConstruct = (zygarde: PokemonEntity, list: PokemonEntity[]) => {
+    if (zygarde.fainted) return;
+    const cells = zygarde.zygCellsCollected || 0;
+    const isZyg50 = zygarde.species === "Zygarde 50%";
+    const isZyg10 = zygarde.species === "Zygarde 10%";
+    if ((isZyg50 || isZyg10) && cells >= 100 && zygarde.hp <= zygarde.maxHp * 0.5) {
+      const oldName = zygarde.species;
+      const damageTaken = zygarde.maxHp - zygarde.hp;
+      zygarde.species = "Zygarde Complete Forme";
+      zygarde.maxHp = 30;
+      zygarde.hp = Math.max(1, 30 - damageTaken);
+      zygarde.atk = 5;
+      zygarde.def = 3;
+      zygarde.status = null;
+      zygarde.statusTurns = 0;
+      addLog(`🟢 Power Construct! ${oldName} assembled into Zygarde Complete Forme!`, "heal");
+      list.forEach(p => {
+        if (p.species === "Zygarde Cell") p.fainted = true;
+      });
+      addLog(`🟢 Complete Forme Transition: All remaining Zygarde Cells destroyed!`, "sys");
+    }
+  };
+
+  const incrementZygardeCells = (player: number, list: PokemonEntity[]) => {
+    const zygUnits = list.filter(z => z.player === player && z.species.startsWith("Zygarde"));
+    if (zygUnits.length === 0) return 1;
+
+    let currentCells = 0;
+    zygUnits.forEach(z => {
+      if ((z.zygCellsCollected || 0) > currentCells) {
+        currentCells = z.zygCellsCollected || 0;
+      }
+    });
+    const newCells = currentCells + 1;
+
+    zygUnits.forEach(z => {
+      z.zygCellsCollected = newCells;
+    });
+
+    if (newCells >= 100) {
+      const reassembly = zygUnits.find(z => z.species === "Zygarde Reassembly Unit" && !z.fainted);
+      if (reassembly) {
+        reassembly.fainted = true;
+        addLog(`🟢 Zygarde cells reached 100! Zygarde Reassembly Unit has disappeared from the battlefield.`, "sys");
+      }
+    }
+
+    const zyg50 = zygUnits.find(z => z.species === "Zygarde 50%" && !z.fainted);
+    if (zyg50) {
+      checkPowerConstruct(zyg50, list);
+    }
+    const zyg10 = zygUnits.find(z => z.species === "Zygarde 10%" && !z.fainted);
+    if (zyg10) {
+      checkPowerConstruct(zyg10, list);
+    }
+
+    return newCells;
+  };
+
+  const spawnShedinja = (ninjask: PokemonEntity, list: PokemonEntity[], peds: Pedestal[]) => {
+    const adj = adjCells(ninjask.col, ninjask.row, 1, true);
+    const emptyCell = adj.find(c => pkAt(c.col, c.row, list) === undefined && pedAt(c.col, c.row, peds) === undefined);
+    if (!emptyCell) {
+      addLog(`⚠️ No empty adjacent tile to summon Shedinja next to Ninjask!`, "sys");
+      return;
+    }
+    const nextId = Math.max(...list.map(p => p.id), 0) + 1;
+    const shedinjaEntity: PokemonEntity = {
+      id: nextId,
+      species: "Shedinja",
+      player: ninjask.player,
+      col: emptyCell.col,
+      row: emptyCell.row,
+      maxHp: 1,
+      hp: 1,
+      atk: 4,
+      def: 0,
+      exp: 0,
+      status: null,
+      heldItem: null,
+      fainted: false,
+      modifiers: [],
+      isEgg: false,
+      hasHatched: false,
+      isSummon: true,
+      customBar: null
+    };
+    list.push(shedinjaEntity);
+    addLog(`🟢 Ghost Shell summoned Shedinja next to evolved Ninjask at ${String.fromCharCode(65 + emptyCell.col)}${emptyCell.row + 1}!`, "heal");
+  };
+
+  // Status effects checker
+  const verifyActionStatus = (p: PokemonEntity): boolean => {
+    if (!p.status || p.fainted) return true;
+
+    if (p.status === "freeze") {
+      addLog(`${p.species} is frozen solid and cannot act!`, "combat");
+      return false;
+    }
+    if (p.status === "sleep") {
+      const wake = Math.random() < 0.5;
+      if (wake) {
+        p.status = null;
+        addLog(`${p.species} woke up from sleep!`, "heal");
+        return true;
+      } else {
+        addLog(`${p.species} is fast asleep...`, "combat");
+        return false;
+      }
+    }
+    if (p.status === "paralysis") {
+      if (Math.random() < 0.3) {
+        addLog(`${p.species} is fully paralyzed and cannot move!`, "combat");
+        return false;
+      }
+    }
+    if (p.status === "confuse") {
+      if (Math.random() < 0.25) {
+        p.hp = Math.max(0, p.hp - 1);
+        addLog(`${p.species} got confused and hurt itself! (-1 HP)`, "atk");
+        if (p.hp <= 0) {
+          p.fainted = true;
+          addLog(`${p.species} fainted in confusion!`, "combat");
+        }
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const showChanceRoll = (statusType: string, chance: number) => {
+    const roll = Math.floor(Math.random() * 20) + 1;
+    const threshold = Math.floor(chance * 20);
+    const success = roll <= threshold;
+    setChancePopup({ statusType, chance, roll, success });
+    setTimeout(() => setChancePopup(null), 3500);
+    return success;
+  };
+
+  // Executing Action Commands
+  const handleCellClick = (col: number, row: number) => {
+    if (p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber) {
+      return;
+    }
+    const list = [...gameState.pokemon];
+    const peds = [...gameState.pedestals];
+    const mode = gameState.actionMode;
+
+    // A. EQUIP ITEM MODE
+    if (mode && mode.type === "equip" && mode.item) {
+      const p = list.find(x => x.col === col && x.row === row && !x.fainted);
+      if (p && p.player === gameState.currentPlayer) {
+        const itemObj = ITEMS[mode.item];
+        const stateCopy = { ...gameState.players[gameState.currentPlayer] };
+
+        let nextUsed = gameState.consumablesUsedThisTurn || { total: 0, powerHerb: 0 };
+        const CURE_BERRY_STATUS_MAP: { [berry: string]: string } = {
+          "Cheri Berry": "paralysis",
+          "Chesto Berry": "sleep",
+          "Pecha Berry": "poison",
+          "Rawst Berry": "burn",
+          "Aspear Berry": "freeze",
+          "Persim Berry": "confuse"
+        };
+
+        const isCureBerry = CURE_BERRY_STATUS_MAP[mode.item] !== undefined;
+        let isConsuming = mode.itemType !== "held" && mode.item !== "Oval Stone" && mode.item !== "Mental Herb";
+
+        if (isCureBerry) {
+          const targetStatus = CURE_BERRY_STATUS_MAP[mode.item];
+          const isAfflicted = p.status === targetStatus || (targetStatus === "poison" && p.status === "toxic");
+          if (isAfflicted) {
+            isConsuming = true;
+          } else {
+            isConsuming = false;
+          }
+        }
+
+        if (isConsuming) {
+          const used = gameState.consumablesUsedThisTurn || { total: 0, powerHerb: 0 };
+          if (used.total >= 2) {
+            addLog("❌ Item usage failed! Limit of 2 consumables per turn reached.", "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          if (mode.item === "Power Herb" && used.powerHerb >= 1) {
+            addLog("❌ Item usage failed! Power Herb is limited to 1 use per turn.", "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          // Consume immediately
+          if (mode.item === "Sitrus Berry") {
+            applyHeal(p, 2);
+          } else if (mode.item === "Berry Juice") {
+            applyHeal(p, 1);
+          } else if (mode.item === "Lum Berry") {
+            p.status = null;
+            if (p.customBar && p.customBar.type === "Angry") {
+              p.customBar.value = Math.max(0, p.customBar.value - 1);
+            }
+          } else if (mode.item === "White Herb") {
+            p.modifiers = [];
+            if (p.customBar && p.customBar.type === "Angry") {
+              p.customBar.value = Math.max(0, p.customBar.value - 1);
+            }
+          } else if (mode.item === "Power Herb") {
+            addModifier(p, { stat: "atk", amount: 1, duration: 2, source: "Power Herb" });
+            if (p.customBar && p.customBar.type === "Angry") {
+              p.customBar.value = Math.max(0, p.customBar.value - 1);
+            }
+          } else if (isCureBerry) {
+            p.status = null;
+            p.statusTurns = 0;
+            if (p.customBar && p.customBar.type === "Angry") {
+              p.customBar.value = Math.max(0, p.customBar.value - 1);
+            }
+          } else if (mode.item.startsWith("Curry")) {
+            let hpBoost = 0;
+            let turnsLeft = 0;
+            if (mode.item === "Curry (Small)") {
+              hpBoost = 1;
+              turnsLeft = 2;
+            } else if (mode.item === "Curry (Medium)") {
+              hpBoost = 2;
+              turnsLeft = 3;
+            } else if (mode.item === "Curry (Big)") {
+              hpBoost = 3;
+              turnsLeft = 3;
+            }
+
+            if (p.curryEffect) {
+              p.maxHp = Math.max(1, p.maxHp - p.curryEffect.hpBoost);
+              p.hp = Math.min(p.hp, p.maxHp);
+              p.curryEffect = null;
+            }
+
+            p.maxHp += hpBoost;
+            applyHeal(p, hpBoost);
+            p.curryEffect = { hpBoost, turnsLeft };
+          }
+
+          // Happiness updates on consumption
+          if (p.customBar && p.customBar.type === "Happiness") {
+            let happinessGain = 0;
+            if (mode.item === "Berry Juice" || mode.item === "Sitrus Berry" || mode.item === "Lum Berry") {
+              happinessGain = 1;
+            } else if (mode.item === "Curry (Small)") {
+              happinessGain = 1;
+            } else if (mode.item === "Curry (Medium)") {
+              happinessGain = 2;
+            } else if (mode.item === "Curry (Big)") {
+              happinessGain = 3;
+            } else if (["Cheri Berry", "Chesto Berry", "Pecha Berry", "Rawst Berry", "Aspear Berry", "Persim Berry"].includes(mode.item)) {
+              happinessGain = 1;
+            }
+            if (happinessGain > 0) {
+              gainHappiness(p, happinessGain, list);
+            }
+          }
+
+          const idx = stateCopy.inventory.consumable.indexOf(mode.item);
+          if (idx > -1) stateCopy.inventory.consumable.splice(idx, 1);
+          addLog(`${p.species} consumed ${mode.item}!`, "heal");
+
+          nextUsed = {
+            total: used.total + 1,
+            powerHerb: used.powerHerb + (mode.item === "Power Herb" ? 1 : 0)
+          };
+        } else {
+          // Equipping item
+          if (p.heldItem) {
+            stateCopy.inventory.held.push(p.heldItem);
+          }
+          p.heldItem = mode.item;
+          if (isCureBerry || mode.item === "Mental Herb") {
+            const idx = stateCopy.inventory.consumable.indexOf(mode.item);
+            if (idx > -1) stateCopy.inventory.consumable.splice(idx, 1);
+          } else {
+            const idx = stateCopy.inventory.held.indexOf(mode.item);
+            if (idx > -1) stateCopy.inventory.held.splice(idx, 1);
+          }
+          addLog(`${p.species} equipped ${mode.item}!`, "heal");
+        }
+
+        setGameState(prev => ({
+          ...prev,
+          pokemon: list,
+          actionMode: null,
+          highlightedCells: [],
+          consumablesUsedThisTurn: nextUsed,
+          players: {
+            ...prev.players,
+            [gameState.currentPlayer]: stateCopy
+          }
+        }));
+      } else {
+        addLog("Target aborted. Please click your own active Pokemon to apply item.", "sys");
+        setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+      }
+      return;
+    }
+
+    // B. SELECTION & NAVIGATION MOVES/ATTACKS
+    const isLit = gameState.highlightedCells.some(h => h.col === col && h.row === row);
+
+    if (mode && isLit) {
+      const activeId = mode.pokeId!;
+      const actor = list.find(pk => pk.id === activeId);
+      if (!actor) return;
+      const dbEntry = DB[actor.species];
+
+      if (actor.isEgg && !actor.hasHatched) {
+        addLog("Dormant eggs cannot perform actions!", "sys");
+        setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+        return;
+      }
+
+      if (!verifyActionStatus(actor)) {
+        setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+        return;
+      }
+
+      // 3. Active Ability Execution
+      if (mode.type === "active_ability") {
+        if (actor.species === "Zygarde Reassembly Unit") {
+          const isValidCell = gameState.highlightedCells.some(c => c.col === col && c.row === row);
+          if (!isValidCell) {
+            addLog("❌ Reassemble failed: Invalid spawn tile.", "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const nextId = Math.max(0, ...list.map(x => x.id)) + 1;
+          const cells = actor.zygCellsCollected || 0;
+          const zyg10: PokemonEntity = {
+            id: nextId,
+            species: "Zygarde 10%",
+            player: actor.player,
+            col,
+            row,
+            maxHp: 8,
+            hp: 8,
+            atk: 2,
+            def: 2,
+            exp: 0,
+            status: null,
+            heldItem: null,
+            fainted: false,
+            modifiers: [],
+            isEgg: false,
+            hasHatched: true,
+            zygCellsCollected: cells,
+            zyg10Spawned: true,
+            customBar: getCustomBarForSpecies("Zygarde 10%")
+          };
+
+          list.push(zyg10);
+          actor.zyg10Spawned = true;
+          list.forEach(other => {
+            if (other.player === actor.player && other.species === "Zygarde Reassembly Unit") {
+              other.zyg10Spawned = true;
+            }
+          });
+          actor.activeAbilityUsed = true;
+          addLog(`🟢 Zygarde 10% spawned next to Reassembly Unit at ${String.fromCharCode(65 + col)}${row + 1}!`, "heal");
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: list,
+            actionMode: null,
+            highlightedCells: []
+          }));
+          return;
+        }
+
+        if (actor.species === "Giratina") {
+          const isValidCell = gameState.highlightedCells.some(c => c.col === col && c.row === row);
+          if (!isValidCell) {
+            addLog("❌ Summon Soul Prison failed: Invalid tile.", "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const nextId = Math.max(0, ...list.map(x => x.id)) + 1;
+          const soulPrison: PokemonEntity = {
+            id: nextId,
+            species: "Soul Prison",
+            player: actor.player,
+            col,
+            row,
+            maxHp: 5,
+            hp: 5,
+            atk: 0,
+            def: 0,
+            exp: 0,
+            status: null,
+            heldItem: null,
+            fainted: false,
+            modifiers: [],
+            isEgg: false,
+            hasHatched: true,
+            isSummon: true
+          };
+
+          list.push(soulPrison);
+          actor.giratinaSummoned = true;
+          actor.activeAbilityUsed = true;
+          addLog(`⭐ Summon Soul Prison! Giratina summoned a Soul Prison at ${String.fromCharCode(65 + col)}${row + 1}!`, "heal");
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: list,
+            actionMode: null,
+            highlightedCells: []
+          }));
+          return;
+        }
+
+        if (actor.species === "Talonflame") {
+          const teamMP = gameState.movePoints?.[gameState.currentPlayer] ?? 0;
+          if (teamMP < 1) {
+            addLog("❌ Gale Wings failed: Not enough MP (needs 1🚶).", "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          const isValidCell = gameState.highlightedCells.some(c => c.col === col && c.row === row);
+          if (!isValidCell) {
+            addLog("❌ Gale Wings failed: Invalid destination.", "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          actor.col = col;
+          actor.row = row;
+          actor.activeAbilityUsed = true;
+          addLog(`⭐ Gale Wings! Talonflame flew to ${String.fromCharCode(65 + col)}${row + 1}!`, "sys");
+
+          setGameState(prev => {
+            const nextMP = { ...(prev.movePoints || { 1: 3, 2: 3 }) };
+            nextMP[gameState.currentPlayer] = Math.max(0, nextMP[gameState.currentPlayer] - 1);
+            return {
+              ...prev,
+              pokemon: list,
+              selectedCell: { col, row },
+              actionMode: null,
+              highlightedCells: [],
+              movePoints: nextMP
+            };
+          });
+          return;
+        }
+
+        const target = list.find(pk => pk.col === col && pk.row === row && !pk.fainted);
+        if (!target) {
+          addLog("❌ Active ability failed: No target found.", "sys");
+          setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+          return;
+        }
+
+        if (actor.species === "Mesprit") {
+          if (gameState.energy[gameState.currentPlayer] < 1) {
+            addLog("❌ Active ability failed: Not enough Energy (needs 1⚡).", "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          if (!target.modifiers) target.modifiers = [];
+          addModifier(target, { stat: "atk", amount: 1, duration: 2, source: "Spiritual Buff" });
+          addModifier(target, { stat: "def", amount: 1, duration: 2, source: "Spiritual Buff" });
+          actor.activeAbilityUsed = true;
+          addLog(`⭐ Spiritual Buff! Mesprit buffed ${target.species} (+1 Atk, +1 Def for 2 turns)!`, "heal");
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: list,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - 1)
+            }
+          }));
+          return;
+        } else if (actor.species === "Cryogonal") {
+          const cryoDef = getModifiedStat(actor, "def", list, { weather: gameState.weather.type });
+          let duration = 2;
+          if (actor.heldItem === "Light Clay") duration += 1;
+          target.shield = cryoDef;
+          target.shieldDuration = duration;
+          actor.activeAbilityUsed = true;
+          addLog(`⭐ Shield Barrier! Cryogonal granted ${target.species} a shield of ${cryoDef} HP for ${duration} turns!`, "heal");
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: list,
+            actionMode: null,
+            highlightedCells: []
+          }));
+          return;
+        } else if (actor.species === "Palkia") {
+          const emptyCells = adjCells(actor.col, actor.row, 2, true, gameConfig.boardSize)
+            .filter(c => !pkAt(c.col, c.row, list) && !pedAt(c.col, c.row, peds));
+          setGameState(prev => ({
+            ...prev,
+            actionMode: { type: "active_ability_palkia_teleport", pokeId: actor.id, targetId: target.id },
+            highlightedCells: emptyCells.map(c => ({ col: c.col, row: c.row, type: "move" as const }))
+          }));
+          addLog(`⭐ Spatial Control: Choose an empty cell in Palkia's AoE(2) range to teleport ${target.species}.`, "sys");
+          return;
+        } else if (actor.species === "Hoopa") {
+          const emptyCells = [];
+          for (let c = 0; c < gameConfig.boardSize; c++) {
+            for (let r = 0; r < gameConfig.boardSize; r++) {
+              if (!pkAt(c, r, list) && !pedAt(c, r, peds)) {
+                emptyCells.push({ col: c, row: r });
+              }
+            }
+          }
+          setGameState(prev => ({
+            ...prev,
+            actionMode: { type: "active_ability_hoopa_teleport", pokeId: actor.id, targetId: target.id },
+            highlightedCells: emptyCells.map(c => ({ col: c.col, row: c.row, type: "move" as const }))
+          }));
+          addLog(`⭐ Ring of Distortion: Choose any empty cell on the board to teleport ${target.species}.`, "sys");
+          return;
+        }
+      }
+
+      if (mode.type === "active_ability_palkia_teleport") {
+        const targetAlly = list.find(pk => pk.id === mode.targetId);
+        if (!targetAlly || targetAlly.fainted) {
+          addLog("❌ Teleport failed: Target ally fainted or missing.", "sys");
+          setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+          return;
+        }
+        const oldCol = targetAlly.col;
+        const oldRow = targetAlly.row;
+        targetAlly.col = col;
+        targetAlly.row = row;
+        actor.activeAbilityUsed = true;
+        addLog(`⭐ Spatial Control: Palkia teleported ally ${targetAlly.species} from ${String.fromCharCode(65 + oldCol)}${oldRow + 1} to ${String.fromCharCode(65 + col)}${row + 1}!`, "heal");
+
+        setGameState(prev => ({
+          ...prev,
+          pokemon: list,
+          actionMode: null,
+          highlightedCells: []
+        }));
+        return;
+      }
+
+      if (mode.type === ("active_ability_hoopa_teleport" as any)) {
+        const targetAlly = list.find(pk => pk.id === mode.targetId);
+        if (!targetAlly || targetAlly.fainted) {
+          addLog("❌ Teleport failed: Target ally fainted or missing.", "sys");
+          setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+          return;
+        }
+        const oldCol = targetAlly.col;
+        const oldRow = targetAlly.row;
+        targetAlly.col = col;
+        targetAlly.row = row;
+        
+        if (!targetAlly.modifiers) targetAlly.modifiers = [];
+        addModifier(targetAlly, { stat: "def", amount: 1, duration: 1, source: "Ring of Distortion" });
+        targetAlly.hasAttacked = true;
+        targetAlly.hasUsedSkill = true;
+        
+        actor.atk += 2;
+        actor.activeAbilityUsed = true;
+        
+        addLog(`⭐ Ring of Distortion: Hoopa teleported ally ${targetAlly.species} to ${String.fromCharCode(65 + col)}${row + 1}! It gains +1 Def for 1 turn but cannot act this turn. Hoopa gains permanent +2 Atk!`, "heal");
+
+        setGameState(prev => ({
+          ...prev,
+          pokemon: list,
+          actionMode: null,
+          highlightedCells: []
+        }));
+        return;
+      }
+
+      // 1. Move Execution
+      if (mode.type === "move") {
+        const teamMP = gameState.movePoints?.[gameState.currentPlayer] ?? 0;
+        const unitUsedMP = actor.hasUsedMP ?? false;
+
+        let usesMP = false;
+        if (teamMP > 0 && !unitUsedMP) {
+          usesMP = true;
+        }
+
+        let cost = 1;
+        let consumesMP = usesMP;
+        if (gameState.terrain?.type === "Psychic") {
+          if (usesMP) {
+            cost = 0;
+          }
+          addLog(`🔮 Psychic Terrain active! Move cost-reducing items/abilities are disabled. Cost is fixed to 1.`, "sys");
+        } else if (dbEntry && dbEntry.ability === "Swift Swim" && (gameState.weather.type === "Rain" || gameState.weather.type === "Heavy Rain")) {
+          cost = 0;
+          consumesMP = false;
+          addLog(`🌊 Swift Swim! ${actor.species} moved for 0 energy/MP cost in the rain.`, "heal");
+        } else if (dbEntry && dbEntry.ability === "Chlorophyll" && (gameState.weather.type === "Sunlight" || gameState.weather.type === "Harsh Sunlight")) {
+          cost = 0;
+          consumesMP = false;
+          addLog(`☀️ Chlorophyll! ${actor.species} moved for 0 energy/MP cost in the sun.`, "heal");
+        } else if (actor.heldItem === "Smoke Ball" && actor.hasAttacked) {
+          cost = 0;
+          consumesMP = false;
+          addLog(`💨 Smoke Ball triggered! ${actor.species} retreated for 0 energy/MP cost.`, "heal");
+        } else if (usesMP) {
+          cost = 0;
+        } else if (actor.heldItem === "Quick Claw" && !actor.hasMovedEver) {
+          cost = 0;
+          actor.hasMovedEver = true;
+          addLog(`⚡ Quick Claw triggered! ${actor.species} moved for 0 energy cost.`, "heal");
+        }
+
+        actor.col = col;
+        actor.row = row;
+        actor.hasMoved = true;
+        if (consumesMP) {
+          actor.hasUsedMP = true;
+        }
+
+        if (dbEntry && dbEntry.ability === "Speed Boost") {
+          if (!actor.modifiers) actor.modifiers = [];
+          addModifier(actor, { stat: "atk", amount: 1, duration: 1, source: "Speed Boost" });
+          addLog(`⚡ Speed Boost! ${actor.species} gained +1 Atk for 1 turn after moving!`, "heal");
+        }
+
+        const hasWhimsicott = list.some(p => p.player === actor.player && p.species === "Whimsicott" && !p.fainted);
+        if (hasWhimsicott && hasType(actor, "Fairy")) {
+          gainHappiness(actor, 1, list);
+          addLog(`🍃 Fairy Wind! Whimsicott on the field granted +1 Happiness to ${actor.species}!`, "heal");
+        }
+
+        // Stepped on hazards check
+        if (gameState.hazards && gameState.hazards.length > 0) {
+          const activeHazards = gameState.hazards.filter(h => h.col === col && h.row === row && h.player !== actor.player && h.duration > 0 && h.type !== "honey");
+          if (activeHazards.length > 0 && dbEntry && dbEntry.ability !== "Levitate") {
+            let hazardDmg = 0;
+            activeHazards.forEach(h => {
+              hazardDmg += 2;
+              addLog(`💥 Hazard! ${actor.species} stepped on enemy ${h.type === "spikes" ? "Spikes" : "Stealth Rock"} and took 2 damage!`, "combat");
+            });
+            actor.hp = Math.max(0, actor.hp - hazardDmg);
+            actor.damageReceivedThisTurn = (actor.damageReceivedThisTurn || 0) + hazardDmg;
+            if (actor.hp <= 0) {
+              actor.fainted = true;
+              addLog(`💀 ${actor.species} fainted to battlefield hazards!`, "sys");
+            }
+          }
+        }
+
+        const startsOnHoney = gameState.hazards && gameState.hazards.some(h => h.col === actor.col && h.row === actor.row && h.type === "honey" && h.duration > 0);
+        const extraCost = startsOnHoney ? 1 : 0;
+        let mpDeducted = 0;
+        let energyDeducted = cost;
+
+        if (consumesMP) {
+          if (extraCost > 0) {
+            if (teamMP >= 2) {
+              mpDeducted = 2;
+            } else {
+              mpDeducted = 1;
+              energyDeducted = 1;
+            }
+          } else {
+            mpDeducted = 1;
+          }
+        } else {
+          energyDeducted = cost + extraCost;
+        }
+
+        if (startsOnHoney) {
+          addLog(`🍯 Honey Tile! ${actor.species} paid +1 extra MP/Energy to exit the sticky honey.`, "sys");
+        }
+
+        addLog(`${actor.species} moved to ${String.fromCharCode(65 + col)}${row + 1} (${mpDeducted > 0 ? `used ${mpDeducted} MP` : ""}${mpDeducted > 0 && energyDeducted > 0 ? " and " : ""}${energyDeducted > 0 ? `cost ${energyDeducted} Energy` : ""})`, "sys");
+
+        setGameState(prev => {
+          const nextMP = { ...(prev.movePoints || { 1: 3, 2: 3 }) };
+          nextMP[gameState.currentPlayer] = Math.max(0, nextMP[gameState.currentPlayer] - mpDeducted);
+          return {
+            ...prev,
+            pokemon: list,
+            selectedCell: { col, row },
+            actionMode: null,
+            highlightedCells: [],
+            movePoints: nextMP,
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - energyDeducted)
+            }
+          };
+        });
+        return;
+      }
+
+      // 2. Attack Melee Execution
+      if (mode.type === "attack") {
+        const target = pkAt(col, row, list);
+        const targetPed = pedAt(col, row, peds);
+
+        if (target) {
+          // Zygarde Cell allied collection or enemy destruction
+          if (target.species === "Zygarde Cell") {
+            const hasZyg = list.some(z => z.player === actor.player && z.species.startsWith("Zygarde"));
+            if (hasZyg) {
+              const newCells = incrementZygardeCells(actor.player, list);
+              addLog(`🟢 Cell collected! Zygarde has now collected ${newCells} cells.`, "heal");
+              target.fainted = true;
+            } else {
+              target.fainted = true;
+              addLog(`💥 Zygarde Cell destroyed by enemy ${actor.species}!`, "atk");
+            }
+
+            if (actor.heldItem !== "Oval Stone") {
+              actor.exp += 1;
+            }
+            actor.hasAttacked = true;
+
+            const nextPokemon = [...list];
+            const nextPedestals = [...peds];
+            checkWinner(nextPedestals, nextPokemon);
+
+            setGameState(prev => ({
+              ...prev,
+              pokemon: nextPokemon,
+              pedestals: nextPedestals,
+              actionMode: null,
+              highlightedCells: []
+            }));
+            return;
+          }
+
+          const bonus = typeBonus(actor, target);
+          const rawAtk = getModifiedStat(actor, "atk", list, { action: "melee", isSkill: false, target, weather: gameState.weather.type });
+          const opponentDef = getModifiedStat(target, "def", list, { weather: gameState.weather.type });
+
+          let abilityAtkBonus = 0;
+          const actorDb = DB[actor.species];
+          if (actorDb && actor.hp <= actor.maxHp * 0.5) {
+            if (actorDb.ability === "Overgrow" && (actorDb.t1 === "Grass" || actorDb.t2 === "Grass")) {
+              abilityAtkBonus += 1;
+              addLog(`✨ Overgrow: ${actor.species}'s Grass melee damage increased!`, "heal");
+            }
+            if (actorDb.ability === "Blaze" && (actorDb.t1 === "Fire" || actorDb.t2 === "Fire")) {
+              abilityAtkBonus += 1;
+              addLog(`🔥 Blaze: ${actor.species}'s Fire melee damage increased!`, "heal");
+            }
+            if (actorDb.ability === "Torrent" && (actorDb.t1 === "Water" || actorDb.t2 === "Water")) {
+              abilityAtkBonus += 1;
+              addLog(`🌊 Torrent: ${actor.species}'s Water melee damage increased!`, "heal");
+            }
+          }
+
+          const critResult = checkCriticalHit(actor, target, undefined, list);
+          const isCrit = critResult.isCrit;
+          if (critResult.roll !== undefined) {
+            setChancePopup({
+              statusType: "Critical Hit Check",
+              chance: (20 - critResult.threshold!) / 20,
+              roll: critResult.roll,
+              success: isCrit
+            });
+            setTimeout(() => setChancePopup(null), 3500);
+          }
+
+          let netDmg = Math.max(0, Math.floor(rawAtk / 2) + bonus + abilityAtkBonus - (isCrit ? 0 : opponentDef));
+          if (actor.modifiers) {
+            actor.modifiers.forEach(m => {
+              if (m.stat === "normal_dmg") {
+                netDmg += m.amount;
+              }
+            });
+          }
+          if (isCrit) {
+            const hasSniper = actorDb?.ability === "Sniper";
+            netDmg += hasSniper ? 3 : 2;
+          }
+
+          if (actor.status === "burn") {
+            netDmg = Math.max(0, netDmg - 1);
+          }
+
+          if (actorDb && actorDb.ability === "Huge Power") {
+            netDmg = netDmg * 2;
+          }
+
+          if (actorDb && actorDb.ability === "Tough Claws" && Math.max(Math.abs(actor.col - target.col), Math.abs(actor.row - target.row)) <= 1) {
+            netDmg += 1;
+          }
+
+          const targetDb = DB[target.species];
+          if (targetDb) {
+            if (targetDb.ability === "Wonder Guard" && bonus <= 0) {
+              netDmg = 0;
+              addLog(`🛡️ Wonder Guard! ${target.species} is immune to non-super-effective attacks.`, "combat");
+            }
+            if (targetDb.ability === "Multiscale" && target.hp === target.maxHp) {
+              netDmg = Math.max(0, netDmg - 3);
+              addLog(`🛡️ Multiscale! ${target.species} reduced the damage by 3.`, "combat");
+            }
+            if (targetDb.ability === "Sheer Force" && actor.hp < target.hp) {
+              netDmg = Math.max(0, netDmg - 1);
+              addLog(`🛡️ Sheer Force! ${target.species} took 1 less damage from enemy with lower HP.`, "combat");
+            }
+            if (targetDb.ability === "Rock Head" && netDmg === 1) {
+              netDmg = 0;
+              addLog(`🛡️ Rock Head! Negated basic contact damage of 1!`, "combat");
+            }
+          }
+
+          netDmg = applyTidalBellReduction(target, netDmg, list);
+
+          // Apply shield reduction
+          if (target.shield && target.shield > 0 && netDmg > 0) {
+            if (netDmg <= target.shield) {
+              target.shield -= netDmg;
+              addLog(`🛡️ Shield absorbed ${netDmg} damage! (Remaining Shield: ${target.shield} HP)`, "combat");
+              netDmg = 0;
+            } else {
+              netDmg -= target.shield;
+              target.shield = 0;
+              addLog(`🛡️ Shield broke! ${netDmg} damage carried through.`, "combat");
+            }
+          }
+
+          if (target.customBar && target.customBar.type === "Angry" && netDmg > 0) {
+            target.customBar.value = Math.min(target.customBar.max, target.customBar.value + 1);
+          }
+          if (target.customBar && target.customBar.type === "Happiness") {
+            target.customBar.value = Math.max(0, target.customBar.value - 1);
+          }
+          if (actorDb && (actorDb.t1 === "Fire" || actorDb.t2 === "Fire")) {
+            if (target.customBar && target.customBar.type === "Frost") {
+              target.customBar.value = Math.max(0, target.customBar.value - 1);
+            }
+          }
+
+          const startingHp = target.hp;
+          target.hp = Math.max(0, target.hp - netDmg);
+          target.damageReceivedThisTurn = (target.damageReceivedThisTurn || 0) + netDmg;
+          addLog(`⚔️ ${actor.species} attacked ${target.species} for ${netDmg} damage!${isCrit ? " (CRITICAL HIT!)" : ""}`, "combat");
+
+          if (target.hp <= 0 && targetDb && targetDb.ability === "Sturdy" && startingHp === target.maxHp) {
+            target.hp = 1;
+            addLog(`🛡️ Sturdy! ${target.species} survived the lethal blow with 1 HP!`, "combat");
+          }
+
+          checkPowerConstruct(target, list);
+
+          if (targetDb && targetDb.ability === "Color Change" && netDmg > 0) {
+            const atkType = actor.reflectedType || (actorDb ? actorDb.t1 : "Normal");
+            target.reflectedType = atkType;
+            addLog(`🌈 Color Change! ${target.species} changed its type to ${atkType}!`, "sys");
+          }
+
+          if (targetDb) {
+            // Gengar Cursed Body контакт
+            if (targetDb.ability === "Cursed Body" && !actor.fainted) {
+              if (Math.random() < 0.3) {
+                const actorDb = DB[actor.species];
+                const skillToDisable = actorDb?.skills?.[0]?.skillName;
+                if (skillToDisable) {
+                  if (!actor.skillCooldowns) actor.skillCooldowns = {};
+                  actor.skillCooldowns[skillToDisable] = 2;
+                  addLog(`👻 Cursed Body! ${target.species} disabled ${actor.species}'s ${skillToDisable} for 2 turns!`, "combat");
+                }
+              }
+            }
+
+            // Static contact paralyze
+            if (targetDb.ability === "Static" && !actor.fainted) {
+              if (Math.random() < 0.3 && actor.status !== "paralysis") {
+                if (applyStatusEffect(actor, "paralysis")) {
+                  addLog(`⚡ Static! ${actor.species} got Paralyzed by contacting ${target.species}!`, "combat");
+                }
+                if (actorDb && actorDb.ability === "Synchronize") {
+                  if (applyStatusEffect(target, "paralysis", 1)) {
+                    addLog(`💫 Synchronize! Reflected PARALYSIS back onto ${target.species}!`, "combat");
+                  }
+                }
+              }
+            }
+            // Effect Spore
+            if (targetDb.ability === "Effect Spore" && !actor.fainted) {
+              if (Math.random() < 0.3 && !actor.status) {
+                const effect = Math.random() < 0.5 ? "poison" : "sleep";
+                if (applyStatusEffect(actor, effect)) {
+                  addLog(`🍄 Effect Spore! ${actor.species} got ${effect.toUpperCase()} by touching ${target.species}!`, "combat");
+                }
+                if (actorDb && actorDb.ability === "Synchronize") {
+                  if (applyStatusEffect(target, effect, 1)) {
+                    addLog(`💫 Synchronize! Reflected ${effect.toUpperCase()} back onto ${target.species}!`, "combat");
+                  }
+                }
+              }
+            }
+            // Cute Charm
+            if (targetDb.ability === "Cute Charm" && !actor.fainted) {
+              if (Math.random() < 0.3 && actor.status !== "confuse") {
+                if (applyStatusEffect(actor, "confuse")) {
+                  addLog(`💖 Cute Charm! ${actor.species} fell in love (CONFUSED) with ${target.species}!`, "combat");
+                }
+                if (actorDb && actorDb.ability === "Synchronize") {
+                  if (applyStatusEffect(target, "confuse", 1)) {
+                    addLog(`💫 Synchronize! Reflected CONFUSE back onto ${target.species}!`, "combat");
+                  }
+                }
+              }
+            }
+            // Flame Body
+            if (targetDb.ability === "Flame Body" && !actor.fainted) {
+              if (Math.random() < 0.3 && actor.status !== "burn") {
+                if (applyStatusEffect(actor, "burn")) {
+                  addLog(`🔥 Flame Body! ${actor.species} got Burned by touching ${target.species}!`, "combat");
+                }
+                if (actorDb && actorDb.ability === "Synchronize") {
+                  if (applyStatusEffect(target, "burn", 1)) {
+                    addLog(`💫 Synchronize! Reflected BURN back onto ${target.species}!`, "combat");
+                  }
+                }
+              }
+            }
+            // Poison Point
+            if (targetDb.ability === "Poison Point" && !actor.fainted) {
+              if (Math.random() < 0.3 && actor.status !== "poison") {
+                if (applyStatusEffect(actor, "poison")) {
+                  addLog(`☠️ Poison Point! ${actor.species} got Poisoned by touching ${target.species}!`, "combat");
+                }
+                if (actorDb && actorDb.ability === "Synchronize") {
+                  if (applyStatusEffect(target, "poison", 1)) {
+                    addLog(`💫 Synchronize! Reflected POISON back onto ${target.species}!`, "combat");
+                  }
+                }
+              }
+            }
+            // Rough Skin
+            if (targetDb.ability === "Rough Skin" && !actor.fainted) {
+              actor.hp = Math.max(0, actor.hp - 1);
+              addLog(`💥 Rough Skin! ${actor.species} takes -1 HP from contact with ${target.species}.`, "combat");
+              if (actor.hp <= 0) {
+                actor.fainted = true;
+                addLog(`💀 ${actor.species} fainted!`, "sys");
+              }
+            }
+          }
+
+          // Rocky Helmet feedback
+          if (target.heldItem === "Rocky Helmet" && !actor.fainted) {
+            actor.hp = Math.max(0, actor.hp - 1);
+            addLog(`💥 Helmet recoil! ${actor.species} takes -1 HP from Rocky Helmet.`, "combat");
+            if (actor.hp <= 0) {
+              actor.fainted = true;
+              addLog(`💀 ${actor.species} fainted from recoil combat damage!`, "sys");
+            }
+          }
+
+          // Focus Band checks
+          if (target.hp <= 0 && target.heldItem === "Focus Band" && !target.focusBandUsed) {
+            target.hp = 1;
+            target.focusBandUsed = true;
+            addLog(`❤️ Focus Band triggered! ${target.species} survived on 1 HP!`, "heal");
+          }
+
+          // Leftovers/Shell Bell
+          if (actor.heldItem === "Shell Bell") {
+            setGameState(prev => ({
+              ...prev,
+              energy: {
+                ...prev.energy,
+                [gameState.currentPlayer]: Math.min(prev.maxEnergy[gameState.currentPlayer], prev.energy[gameState.currentPlayer] + 1)
+              }
+            }));
+            addLog(`🍏 Shell Bell restored +1 Energy.`, "heal");
+          }
+
+          if (target.hp <= 0) {
+            target.fainted = true;
+            addLog(`💀 ${target.species} has fainted!`, "sys");
+            if (targetDb && targetDb.ability === "Aftermath" && !actor.fainted) {
+              const aftermathDmg = (target.species === "Drifblim" || target.species === "Garbodor") ? 4 : 2;
+              actor.hp = Math.max(0, actor.hp - aftermathDmg);
+              addLog(`💥 Aftermath! ${target.species} dealt ${aftermathDmg} retribution damage to ${actor.species}!`, "combat");
+              if (actor.hp <= 0) {
+                actor.fainted = true;
+                addLog(`💀 ${actor.species} fainted to Aftermath!`, "sys");
+              }
+            }
+            if (actor.heldItem === "Lucky Egg") {
+              actor.exp += 1;
+              addLog(`🎓 Lucky Egg bonus! ${actor.species} got +1 EXP.`, "heal");
+            }
+          }
+        } else if (targetPed) {
+          // Hit Pedestal
+          let rawAtk = getModifiedStat(actor, "atk", list, { action: "melee", isSkill: false });
+          if (actor.status === "burn") rawAtk = Math.max(0, rawAtk - 1);
+
+          // Apply pedestal defense of 1 and cap maximum damage at 1 per hit
+          const pedDmg = Math.min(1, Math.max(0, Math.floor(rawAtk / 2) - 1));
+          targetPed.hp = Math.max(0, targetPed.hp - pedDmg);
+          addLog(`⚔️ ${actor.species} struck enemy Pedestal for ${pedDmg} damage! (Pedestal has 1 Def and takes max 1 damage)`, "combat");
+        }
+
+        // Life Orb recoil
+        if (actor.heldItem === "Life Orb") {
+          actor.hp = Math.max(0, actor.hp - 1);
+          addLog(`Life Orb drains 1 HP from ${actor.species}.`, "atk");
+          if (actor.hp <= 0) {
+            actor.fainted = true;
+            addLog(`${actor.species} fainted from Life Orb decay.`, "sys");
+          }
+        }
+
+        // Add 1 EXP
+        if (actor.heldItem !== "Oval Stone") {
+          actor.exp += 1;
+        }
+        actor.hasAttacked = true;
+
+        // Honey Nest: Spawn Honey Tile under target if Vespiquen is on our team
+        const hasHoneyNest = list.some(p => p.player === actor.player && !p.fainted && DB[p.species]?.ability === "Honey Nest");
+        let nextHazards = [...(gameState.hazards || [])];
+        if (hasHoneyNest && target) {
+          const existingHoneyIdx = nextHazards.findIndex(h => h.col === target.col && h.row === target.row && h.type === "honey" && h.player === actor.player);
+          if (existingHoneyIdx >= 0) {
+            nextHazards[existingHoneyIdx].duration = 3;
+          } else {
+            nextHazards.push({
+              col: target.col,
+              row: target.row,
+              type: "honey",
+              duration: 3,
+              player: actor.player
+            });
+          }
+          addLog(`🍯 Honey Nest: Vespiquen team aura spawned a Honey Tile (3 turns) under ${target.species}!`, "heal");
+        }
+
+        const nextPokemon = [...list];
+        const nextPedestals = [...peds];
+        checkWinner(nextPedestals, nextPokemon);
+
+        setGameState(prev => ({
+          ...prev,
+          pokemon: nextPokemon,
+          pedestals: nextPedestals,
+          hazards: nextHazards,
+          actionMode: null,
+          highlightedCells: [],
+          energy: {
+            ...prev.energy,
+            [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - 1)
+          }
+        }));
+        return;
+      }
+
+      // 3. Skill Casting Execution
+      if (mode.type === "skill" && typeof mode.skillIdx !== "undefined") {
+        const dbEntry = DB[actor.species];
+        let skill = getSkillData(dbEntry, mode.skillIdx);
+
+        if (actor.species === "Celebi") {
+          if (!actor.modifiers) actor.modifiers = [];
+          addModifier(actor, { stat: "atk", amount: -2, duration: 1, source: "Celebi backlash" });
+          addLog(`🍃 Celebi suffered a -2 ATK debuff for this turn!`, "sys");
+        }
+
+        if (!actor.skillUses) actor.skillUses = {};
+        if ((actor.skillUses[skill.skillName] || 0) > 0) {
+          addLog(`❌ ${actor.species} has already used ${skill.skillName} this turn!`, "sys");
+          setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+          return;
+        }
+
+        let targetType = getSkillTargetType(skill, dbEntry, actor.rotomForm);
+        const isWeatherSkill = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(skill.skillName);
+        const isTerrainSkill = ["Electric Terrain", "Grassy Terrain", "Misty Terrain", "Psychic Terrain"].includes(skill.skillName);
+        const isInstantSkill = (
+          skill.skillDesc === "All" ||
+          targetType === "self" ||
+          targetType === "all_allies" ||
+          targetType === "all_ice" ||
+          skill.skillDesc?.toLowerCase() === "self" ||
+          isWeatherSkill ||
+          isTerrainSkill
+        ) && skill.skillName !== "Transform";
+
+        if (isInstantSkill) {
+          executeInstantSkill(actor, skill, mode.skillIdx);
+          return;
+        }
+
+        if (skill.skillName === "Metronome") {
+          const pool: any[] = [];
+          Object.values(DB).forEach(entry => {
+            if (entry.skills && Array.isArray(entry.skills)) {
+              entry.skills.forEach(sk => {
+                if (sk.skillName && sk.skillName !== "Metronome" && !pool.some(k => k.skillName === sk.skillName)) {
+                  pool.push(sk);
+                }
+              });
+            } else if (entry.skillName && entry.skillName !== "Metronome") {
+              pool.push({
+                skillName: entry.skillName,
+                skillDesc: entry.skillDesc || "",
+                skillDmg: entry.skillDmg,
+                skillRaw: entry.skillRaw,
+                skillCost: entry.skillCost || 2
+              });
+            }
+          });
+          const randomSkill = pool[Math.floor(Math.random() * pool.length)];
+          if (randomSkill) {
+            addLog(`🎲 Metronome! ${actor.species} randomly chose to call: ${randomSkill.skillName}!`, "sys");
+            skill = randomSkill;
+          }
+        }
+
+        let scCost = skill.skillCost || dbEntry.skillCost || 2;
+
+        if (actor.heldItem === "Miracle Seed" && !actor.hasUsedSkill) {
+          scCost = Math.max(0, scCost - 1);
+        }
+
+        targetType = getSkillTargetType(skill, dbEntry, actor.rotomForm);
+        const shape = parseSkillShape(dbEntry, actor, mode.skillIdx);
+        const isAoE = shape.type === "aoe" || shape.type === "cone" || (shape.type === "line" && shape.range && shape.range > 1);
+
+        let affectedCells: { col: number; row: number }[] = [];
+        if (isAoE) {
+          if (shape.type === "aoe" && shape.range) {
+            affectedCells = adjCells(col, row, shape.radius || 1, true, gameConfig.boardSize);
+            affectedCells.push({ col, row });
+          } else {
+            affectedCells = getSkillShapeCells(actor, list, peds, mode.skillIdx, gameConfig.boardSize);
+          }
+        } else {
+          affectedCells = [{ col, row }];
+        }
+
+        const pressureUnit = list.find(p => {
+          if (p.player === actor.player || p.fainted) return false;
+          const pDb = DB[p.species];
+          if (!pDb || pDb.ability !== "Pressure" || p.pressureTriggered) return false;
+          return affectedCells.some(c => c.col === p.col && c.row === p.row);
+        });
+
+        if (pressureUnit) {
+          scCost += 1;
+        }
+
+        if (gameState.energy[gameState.currentPlayer] < scCost) {
+          addLog("❌ Not enough energy to cast this skill!", "sys");
+          setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+          return;
+        }
+
+        if (pressureUnit) {
+          const match = list.find(p => p.id === pressureUnit.id);
+          if (match) {
+            match.pressureTriggered = true;
+          }
+          addLog(`💥 Pressure! ${pressureUnit.species}'s presence increases skill cost by +1!`, "sys");
+        }
+
+        // Summoning Skill Intercept (Clear Bell / Tidal Bell / Stealth Rock / Custom Summon)
+        const isBell = skill.skillName === "Clear Bell" || skill.skillName === "Tidal bell" || skill.skillName === "Tidal Bell";
+        const isStealthRock = skill.skillName === "Stealth Rock";
+        const hasSummonConfig = !!skill.summonConfig || isBell || isStealthRock;
+
+        if (hasSummonConfig) {
+          const targetPk = pkAt(col, row, list);
+          const targetPed = pedAt(col, row, peds);
+          if (targetPk || targetPed) {
+            addLog(`❌ Summon failed! Cannot summon onto an occupied cell.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          let sc = skill.summonConfig;
+          if (!sc) {
+            if (skill.skillName === "Clear Bell") {
+              sc = { species: "Clear Bell", isMini: false, isStatic: true, hp: 3, atk: 0, def: 0 };
+            } else if (isStealthRock) {
+              const shape = actor.species === "Steelix" ? "plus" : "aoe1";
+              sc = { species: "Stone Pillar", isMini: false, isStatic: true, hp: 3, atk: 0, def: 0, duration: 3, shape };
+            } else {
+              sc = { species: "Tidal Bell", isMini: false, isStatic: true, hp: 3, atk: 0, def: 0 };
+            }
+          }
+
+          // Prevent duplicate active summon if configured (like bells limit)
+          const existingSameSummon = list.find(p => p.player === actor.player && !p.fainted && p.species === sc.species);
+          if (existingSameSummon) {
+            addLog(`❌ Summon failed! You already have an active ${sc.species} on the board.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const nextId = Math.max(...list.map(p => p.id), 0) + 1;
+
+          const summonEntity: PokemonEntity = {
+            id: nextId,
+            species: sc.species,
+            player: actor.player,
+            col,
+            row,
+            maxHp: sc.hp || DB[sc.species]?.hp || 3,
+            hp: sc.hp || DB[sc.species]?.hp || 3,
+            atk: sc.atk || DB[sc.species]?.atk || 0,
+            def: sc.def || DB[sc.species]?.def || 0,
+            exp: 0,
+            status: null,
+            heldItem: null,
+            fainted: false,
+            modifiers: [],
+            isEgg: false,
+            hasHatched: false,
+            isSummon: true,
+            summonConfig: sc,
+            customSkills: sc.customSkill ? [sc.customSkill] : undefined,
+            summonDurationLeft: sc.duration || undefined
+          };
+
+          list.push(summonEntity);
+          addLog(`🟢 Summoned ${summonEntity.species} at ${String.fromCharCode(65 + col)}${row + 1}!`, "heal");
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Special Skill Intercept: Teleport
+        if (skill.skillName === "Teleport") {
+          const targetPk = pkAt(col, row, list);
+          const targetPed = pedAt(col, row, peds);
+          if (targetPk || targetPed) {
+            addLog(`❌ Teleport failed! Cannot teleport onto an occupied cell.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          actor.col = col;
+          actor.row = row;
+          addLog(`🌀 ${actor.species} teleported to ${String.fromCharCode(65 + col)}${row + 1}!`, "heal");
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Special Skill Intercept: Future Sight
+        if (skill.skillName === "Future Sight") {
+          let targetsCount = 0;
+          affectedCells.forEach(cell => {
+            if (targetsCount >= 2) return;
+            const target = pkAt(cell.col, cell.row, list);
+            if (target && target.player !== actor.player && !target.fainted) {
+              target.futureSightCountdown = 2;
+              target.futureSightCasterPlayer = actor.player;
+              targetsCount++;
+              addLog(`⏳ ${actor.species} targeted ${target.species} with Future Sight! Banishment will occur in 2 turns.`, "sys");
+            }
+          });
+
+          if (targetsCount === 0) {
+            addLog(`💨 Miss! Future Sight targeted no enemies in the selected line!`, "combat");
+          }
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Special Skill Intercept: Extreme Speed
+        if (skill.skillName === "Extreme Speed") {
+          const dcol = Math.sign(col - actor.col);
+          const drow = Math.sign(row - actor.row);
+
+          if ((dcol !== 0 && drow !== 0) || (dcol === 0 && drow === 0)) {
+            addLog(`❌ Extreme Speed failed! Target is not in a straight line.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const maxSteps = Math.max(Math.abs(col - actor.col), Math.abs(row - actor.row));
+          
+          if (pkAt(col, row, list)) {
+            addLog(`❌ Extreme Speed failed! Destination is occupied.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          for (let step = 1; step <= maxSteps; step++) {
+            const c = actor.col + dcol * step;
+            const r = actor.row + drow * step;
+            if (pedAt(c, r, peds)) {
+              addLog(`❌ Extreme Speed blocked by Pedestal!`, "sys");
+              setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+              return;
+            }
+          }
+
+          for (let step = 1; step < maxSteps; step++) {
+            const c = actor.col + dcol * step;
+            const r = actor.row + drow * step;
+            const targetPk = pkAt(c, r, list);
+            if (targetPk && !targetPk.fainted) {
+              if (targetPk.player !== actor.player) {
+                let dmg = typeof skill.skillDmg === "number" ? skill.skillDmg : 4;
+                
+                const targetDb = DB[targetPk.species];
+                if (targetDb && targetDb.ability === "Wonder Guard") {
+                  const tMult = typeBonus(actor, targetPk);
+                  if (tMult <= 0) dmg = 0;
+                }
+
+                dmg = applyTidalBellReduction(targetPk, dmg, list);
+
+                if (targetPk.shield && targetPk.shield > 0 && dmg > 0) {
+                  if (dmg <= targetPk.shield) {
+                    targetPk.shield -= dmg;
+                    dmg = 0;
+                  } else {
+                    dmg -= targetPk.shield;
+                    targetPk.shield = 0;
+                  }
+                }
+
+                if (dmg > 0) {
+                  targetPk.hp = Math.max(0, targetPk.hp - dmg);
+                  addLog(`⚡ Extreme Speed! ${actor.species} passed through enemy ${targetPk.species} for ${dmg} damage!`, "combat");
+                  if (targetPk.hp <= 0) {
+                    targetPk.fainted = true;
+                  }
+                  checkPowerConstruct(targetPk, list);
+                } else {
+                  addLog(`⚡ Extreme Speed! ${actor.species} passed through enemy ${targetPk.species} (0 damage).`, "combat");
+                }
+              } else {
+                addLog(`⚡ Extreme Speed! ${actor.species} passed through ally ${targetPk.species} (no damage).`, "combat");
+              }
+            }
+          }
+
+          actor.col = col;
+          actor.row = row;
+          addLog(`⚡ ${actor.species} used Extreme Speed to dash to ${String.fromCharCode(65 + col)}${row + 1}!`, "combat");
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Special Skill Intercept: Transform
+        if (skill.skillName === "Transform") {
+          const targetPk = pkAt(col, row, list);
+          if (!targetPk) {
+            addLog(`❌ Transform failed! Choose a pokemon to copy.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          if (targetPk.id === actor.id) {
+            addLog(`❌ Transform failed! Cannot copy yourself.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          const tDb = DB[targetPk.species];
+          if (tDb && tDb.legendary) {
+            addLog(`❌ Transform failed! Mew cannot transform into other Legendaries.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const isDitto = actor.species === "Ditto";
+          const transformHp = isDitto ? 8 : 14;
+
+          actor.transformState = {
+            originalSpecies: actor.species,
+            originalAtk: actor.atk,
+            originalDef: actor.def,
+            originalMaxHp: actor.maxHp,
+            turnsLeft: 3
+          };
+
+          actor.species = targetPk.species;
+          actor.atk = targetPk.atk;
+          actor.def = targetPk.def;
+          actor.maxHp = transformHp;
+          actor.hp = transformHp;
+
+          addLog(`🧬 ${isDitto ? "Ditto" : "Mew"} used Transform! Copied ${targetPk.species}'s form and parameters for 3 turns.`, "heal");
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Special Skill Intercept: Reflect Type
+        if (skill.skillName === "Reflect Type") {
+          const targetPk = pkAt(col, row, list);
+          if (!targetPk) {
+            addLog(`❌ Reflect Type failed! Target a pokemon field square.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          const tDb = DB[targetPk.species];
+          if (tDb) {
+            actor.reflectedType = tDb.t1;
+            addLog(`🛡️ Mew used Reflect Type! changed typing to matched ${targetPk.species} (${tDb.t1})!`, "heal");
+          }
+        }
+
+        // Special Skill Intercept: Baton Pass
+        if (skill.skillName === "Baton Pass") {
+          const targetPk = pkAt(col, row, list);
+          if (!targetPk) {
+            addLog(`❌ Baton Pass failed! Choose an ally to swap position with.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          if (targetPk.player !== actor.player) {
+            addLog(`❌ Baton Pass failed! Cannot swap with an opponent's Pokémon.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          if (targetPk.id === actor.id) {
+            addLog(`❌ Baton Pass failed! Cannot swap with yourself.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const oldCol = actor.col;
+          const oldRow = actor.row;
+          actor.col = targetPk.col;
+          actor.row = targetPk.row;
+          targetPk.col = oldCol;
+          targetPk.row = oldRow;
+
+          addLog(`🔄 Baton Pass! ${actor.species} swapped positions with ally ${targetPk.species}!`, "heal");
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Special Skill Intercept: Sketch
+        if (skill.skillName === "Sketch") {
+          const targetPk = pkAt(col, row, list);
+          if (!targetPk) {
+            addLog(`❌ Sketch failed! You must target a pokemon.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          if (targetPk.player === actor.player) {
+            addLog(`❌ Sketch failed! Cannot sketch an ally's skill.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const targetDb = DB[targetPk.species];
+          const targetSkills = targetPk.customSkills || (targetDb ? targetDb.skills : []);
+          if (!targetSkills || targetSkills.length === 0) {
+            addLog(`❌ Sketch failed! Target has no sketchable skills.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+
+          const randomSkill = targetSkills[Math.floor(Math.random() * targetSkills.length)];
+          actor.customSkills = [randomSkill];
+          addLog(`🎨 Sketch! ${actor.species} permanently copied ${targetPk.species}'s skill: ${randomSkill.skillName}!`, "heal");
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Special Skill Intercept: Spikes
+        if (skill.skillName === "Spikes") {
+          if (!gameState.hazards) gameState.hazards = [];
+          const nextHazards = [...(gameState.hazards || [])];
+
+          affectedCells.forEach(cell => {
+            const type = "spikes";
+            const existingIdx = nextHazards.findIndex(h => h.col === cell.col && h.row === cell.row && h.type === type && h.player === actor.player);
+            if (existingIdx !== -1) {
+              nextHazards[existingIdx].duration = 3;
+            } else {
+              nextHazards.push({
+                col: cell.col,
+                row: cell.row,
+                type,
+                duration: 3,
+                player: actor.player
+              });
+            }
+          });
+
+          addLog(`🕸️ ${actor.species} set Spikes hazards in the targeted area for 3 turns!`, "heal");
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            hazards: nextHazards,
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Special Skill Intercept: Heart Sacrifice
+        if (skill.skillName === "Heart Sacrifice") {
+          const targetPk = pkAt(col, row, list);
+          if (!targetPk) {
+            addLog(`❌ Heart Sacrifice failed! Select an ally to heal.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          if (targetPk.player !== actor.player) {
+            addLog(`❌ Heart Sacrifice failed! Target must be an ally.`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          const happinessVal = targetPk.customBar && targetPk.customBar.type === "Happiness" ? targetPk.customBar.value : 0;
+          if (happinessVal < 10) {
+            addLog(`❌ Heart Sacrifice failed! Target ${targetPk.species} does not have at least 10 Happiness (Current: ${happinessVal}).`, "sys");
+            setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+            return;
+          }
+          
+          // Deduct 10 Happiness
+          targetPk.customBar!.value -= 10;
+          
+          // Heal 6 HP
+          applyHeal(targetPk, 6);
+          addLog(`💖 Heart Sacrifice! Deducted 10 Happiness from ${targetPk.species} and healed them for 6 HP!`, "heal");
+
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Check Xerneas Geomancy charging
+        if (skill.skillName === "Geomancy") {
+          actor.geomancyCharge = 2;
+          addLog(`🌟 Xerneas starts charging Geomancy!`, "sys");
+          
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        // Skill Accuracy Roll checking (d20)
+        const targetPkOnHoney = list.some(p => {
+          const isAffected = affectedCells.some(c => c.col === p.col && c.row === p.row);
+          if (!isAffected || p.fainted || p.player === actor.player) return false;
+          return gameState.hazards && gameState.hazards.some(h => h.col === p.col && h.row === p.row && h.type === "honey" && h.duration > 0);
+        });
+
+        let accResult = checkAccuracy(actor, skill);
+        if (targetPkOnHoney) {
+          accResult = { isHit: true, roll: 20, threshold: 0, chance: 1.0 };
+          addLog(`🍯 Honey Tile! Bypassed accuracy checks on sticky target for a guaranteed hit!`, "sys");
+        }
+
+        setChancePopup({
+          statusType: `${skill.skillName} Accuracy`,
+          chance: accResult.chance,
+          roll: accResult.roll,
+          success: accResult.isHit
+        });
+        setTimeout(() => setChancePopup(null), 3500);
+
+        if (!accResult.isHit) {
+          addLog(`💨 Miss! ${actor.species}'s ${skill.skillName} missed the target! (Rolled ${accResult.roll}/20, needed > ${accResult.threshold})`, "combat");
+          if (skill.skillName === "High Jump Kick") {
+            const crashDmg = skill.selfDamage || 2;
+            actor.hp = Math.max(0, actor.hp - crashDmg);
+            addLog(`⚠️ recoil! ${actor.species} crashed and took ${crashDmg} recoil damage from the miss!`, "atk");
+            if (actor.hp <= 0) {
+              actor.fainted = true;
+              addLog(`💀 ${actor.species} fainted.`, "sys");
+            }
+          }
+          // Complete turn deduction even for miss
+          actor.exp += 2;
+          actor.hasUsedSkill = true;
+          if (!actor.skillUses) actor.skillUses = {};
+          actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+          const nextPokemon = [...list];
+          const nextPedestals = [...peds];
+          checkWinner(nextPedestals, nextPokemon);
+
+          setGameState(prev => ({
+            ...prev,
+            pokemon: nextPokemon,
+            pedestals: nextPedestals,
+            actionMode: null,
+            highlightedCells: [],
+            energy: {
+              ...prev.energy,
+              [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+            }
+          }));
+          return;
+        }
+
+        const accumulatedRolls: {
+          statusType: string;
+          targetName: string;
+          chance: number;
+          roll: number;
+          success: boolean;
+        }[] = [];
+
+        // Compute raw damage:
+        let rawDmg = 0;
+        const isAtkBase = typeof skill.skillDmg === 'string' && skill.skillDmg.toLowerCase() === 'atk';
+
+        if (isAtkBase) {
+          const baseAtk = getModifiedStat(actor, "atk", list, { isSkill: true, weather: gameState.weather.type });
+          if (skill.statusChance && dbEntry && !dbEntry.legendary) {
+            rawDmg = Math.max(0, baseAtk - 1);
+          } else {
+            rawDmg = baseAtk;
+          }
+        } else {
+          if (mode.skillIdx === 0) {
+            if (skill.skillDmg && skill.skillDmg !== 0 && skill.skillDmg !== "0" && skill.skillDmg !== "") {
+              const baseAtk = getModifiedStat(actor, "atk", list, { isSkill: true, weather: gameState.weather.type });
+              if (skill.statusChance && dbEntry && !dbEntry.legendary) {
+                rawDmg = Math.max(0, baseAtk - 1);
+              } else {
+                rawDmg = baseAtk;
+              }
+            } else {
+              rawDmg = 0;
+            }
+          } else {
+            rawDmg = typeof skill.skillDmg === 'number' ? skill.skillDmg : (parseInt(skill.skillDmg || '0', 10) || 0);
+          }
+        }
+
+        if (skill.skillName === "Sucker Punch") {
+          if (actor.damageReceivedLastTurn && actor.damageReceivedLastTurn > 0) {
+            rawDmg += 2;
+          }
+        }
+
+        if (actor.status === "burn") {
+          rawDmg = Math.max(0, rawDmg - 1);
+        }
+
+        if (skill.skillName === "Eternal Radiance") {
+          const happinessVal = actor.customBar && actor.customBar.type === "Happiness" ? actor.customBar.value : 0;
+          const bonus = Math.floor(happinessVal / 5);
+          rawDmg = 5 + bonus;
+          
+          if (actor.customBar && actor.customBar.type === "Happiness") {
+            actor.customBar.value = 0;
+          }
+          
+          if (bonus > 0) {
+            list.forEach(p => {
+              if (p.player === actor.player && !p.fainted && !(p.banishedTurns && p.banishedTurns > 0)) {
+                applyHeal(p, bonus);
+                addLog(`💖 Eternal Radiance healed ally ${p.species} for +${bonus} HP!`, "heal");
+              }
+            });
+          }
+        }
+
+        // Apply low-health skill element boosts
+        let skillAbilityBonus = 0;
+        if (actor.hp <= actor.maxHp * 0.5) {
+          if (dbEntry.ability === "Overgrow" && (dbEntry.t1 === "Grass" || dbEntry.t2 === "Grass")) {
+            skillAbilityBonus += 1;
+            addLog(`✨ Overgrow: ${actor.species}'s Grass elemental skill damage increased!`, "heal");
+          }
+          if (dbEntry.ability === "Blaze" && (dbEntry.t1 === "Fire" || dbEntry.t2 === "Fire")) {
+            skillAbilityBonus += 1;
+            addLog(`🔥 Blaze: ${actor.species}'s Fire elemental skill damage increased!`, "heal");
+          }
+          if (dbEntry.ability === "Torrent" && (dbEntry.t1 === "Water" || dbEntry.t2 === "Water")) {
+            skillAbilityBonus += 1;
+            addLog(`🌊 Torrent: ${actor.species}'s Water elemental skill damage increased!`, "heal");
+          }
+        }
+
+        const triggerSkillsEffect = (tg: PokemonEntity) => {
+          const eff = skill.skillEffect;
+          if (eff) {
+            const isTargetAlly = eff.target === "ally" || eff.target === "self" || eff.target === "all_allies";
+            const isTargetMatch = (isTargetAlly && tg.player === actor.player) || (!isTargetAlly && tg.player !== actor.player);
+            if (isTargetMatch) {
+              addModifier(tg, {
+                stat: eff.stat,
+                amount: eff.amount,
+                duration: eff.duration,
+                source: skill.skillName
+              });
+              addLog(`${tg.species} received ${eff.amount >= 0 ? "buff" : "debuff"} ${eff.stat.toUpperCase()}: ${eff.amount} for ${eff.duration} turns`, eff.amount >= 0 ? "heal" : "atk");
+            }
+          }
+          // status inflict chance
+          if (skill.statusChance) {
+            let chance = getStatusChanceValue(skill.statusChance, skill);
+            if (skill.skillName === "Glaciate" && actor.customBar && actor.customBar.type === "Frost" && actor.customBar.value >= 16) {
+              chance = 0.40;
+            }
+            const threshold = Math.floor(chance * 20);
+            const roll = Math.floor(Math.random() * 20) + 1;
+            const succ = roll <= threshold;
+
+            accumulatedRolls.push({
+              statusType: skill.statusChance,
+              targetName: tg.species,
+              chance,
+              roll,
+              success: succ
+            });
+
+            if (succ) {
+              if (applyStatusEffect(tg, skill.statusChance, 0, actor)) {
+                let inflictedStatus = skill.statusChance;
+                if (inflictedStatus === "paralyze") inflictedStatus = "paralysis";
+                addLog(`💥 status triggered! ${tg.species} got inflicted with status ${inflictedStatus.toUpperCase()} (rolled ${roll}/20)`, "combat");
+
+                const tgDb = DB[tg.species];
+                const actDb = DB[actor.species];
+                if (tgDb && tgDb.ability === "Synchronize") {
+                  if (applyStatusEffect(actor, skill.statusChance, 1)) {
+                    let actStatus = skill.statusChance;
+                    if (actStatus === "paralyze") actStatus = "paralysis";
+                    addLog(`💫 Synchronize! Reflected ${actStatus.toUpperCase()} back onto ${actor.species}!`, "combat");
+                  }
+                }
+              }
+            }
+          }
+          if (skill.special === "leechSeed" && tg.player !== actor.player) {
+            tg.leechSeed = { sourceId: actor.id, duration: skill.specialDuration || 2 };
+            addLog(`${tg.species} was planted with Leech Seed!`, "atk");
+          }
+        };
+
+        // Count the number of targets successfully hit
+        let targetsHit = 0;
+
+        // Go through all affected cells and apply damage/effects
+        affectedCells.forEach(cell => {
+          if (shape.targetCount && targetsHit >= shape.targetCount) {
+            return;
+          }
+
+          const target = pkAt(cell.col, cell.row, list);
+          const targetPed = pedAt(cell.col, cell.row, peds);
+
+          // Check if valid target depending on targetType
+          const isAlly = target ? target.player === actor.player : (targetPed ? targetPed.player === actor.player : false);
+          const isEnemy = target ? target.player !== actor.player : (targetPed ? targetPed.player !== actor.player : false);
+
+          let isValid = false;
+          if (skill.skillName === "Roar") {
+            isValid = target ? target.id !== actor.id : false;
+          } else if (targetType === "ally") {
+            isValid = isAlly;
+          } else if (targetType === "all_allies") {
+            isValid = isAlly;
+          } else if (targetType === "enemy") {
+            isValid = isEnemy;
+          } else {
+            isValid = rawDmg > 0 ? isEnemy : isAlly;
+          }
+
+          if (isValid) {
+            if (target) {
+              const targetDb = DB[target.species];
+              if (target.species === "Zygarde Cell") {
+                const hasZyg = list.some(z => z.player === actor.player && z.species.startsWith("Zygarde"));
+                if (hasZyg) {
+                  const newCells = incrementZygardeCells(actor.player, list);
+                  addLog(`🟢 Cell collected! Zygarde has now collected ${newCells} cells.`, "heal");
+                  target.fainted = true;
+                } else {
+                  target.fainted = true;
+                  addLog(`💥 Zygarde Cell destroyed by enemy ${actor.species}'s skill!`, "atk");
+                }
+                if (actor.heldItem !== "Oval Stone") {
+                  actor.exp += 1;
+                }
+              } else if (skill.skillHeal && (skill.skillHealTarget === "ally" || skill.skillHealTarget === "all_allies")) {
+                const healing = skill.skillHeal;
+                target.hp = Math.min(target.maxHp, target.hp + healing);
+                addLog(`💚 ${actor.species} healed ${target.species} for +${healing} HP!`, "heal");
+
+                if (skill.skillName === "Aromatherapy") {
+                  target.status = null;
+                  target.statusTurns = 0;
+                  addLog(`🌸 Aromatherapy cleansed all status conditions from ${target.species}!`, "heal");
+                }
+              } else {
+                targetsHit++;
+                const typeMult = typeBonus(actor, target);
+                const adb = DB[actor.species];
+                
+                const isDamaging = skill.skillDmg !== undefined && skill.skillDmg !== 0 && skill.skillDmg !== "0" && skill.skillDmg !== "";
+                let netDmg = 0;
+                
+                if (isDamaging) {
+                  let targetRawDmg = rawDmg;
+                  if (skill.skillName === "Foul Play") {
+                    const targetAtkVal = getModifiedStat(target, "atk", list, { weather: gameState.weather.type });
+                    targetRawDmg = targetAtkVal;
+                    if (actor.status === "burn") targetRawDmg = Math.max(0, targetRawDmg - 1);
+                  }
+                  
+                  // Check Critical Hits
+                  const critResult = checkCriticalHit(actor, target, skill, list);
+                  const isCrit = critResult.isCrit;
+                  if (critResult.roll !== undefined) {
+                    accumulatedRolls.push({
+                      statusType: "Critical Hit Check",
+                      targetName: target.species,
+                      chance: (20 - critResult.threshold!) / 20,
+                      roll: critResult.roll,
+                      success: isCrit
+                    });
+                  }
+
+                  let defenderDef = getModifiedStat(target, "def", list, { bySkill: true, weather: gameState.weather.type });
+                  if (isCrit) {
+                    defenderDef = 0;
+                  }
+
+                  netDmg = Math.max(0, targetRawDmg + typeMult + skillAbilityBonus - defenderDef);
+                  if (actor.modifiers) {
+                    actor.modifiers.forEach(m => {
+                      if (m.stat === "skill_dmg") {
+                        netDmg += m.amount;
+                      }
+                    });
+                  }
+                  if (isCrit) {
+                    const hasSniper = adb?.ability === "Sniper";
+                    netDmg += hasSniper ? 3 : 2;
+                  }
+
+                  if (adb && adb.ability === "Tough Claws" && Math.max(Math.abs(actor.col - target.col), Math.abs(actor.row - target.row)) <= 1) {
+                    netDmg += 1;
+                  }
+
+                  if (adb && adb.ability === "Skill Link" && netDmg > 0) {
+                    const roll = Math.floor(Math.random() * 20) + 1;
+                    if (roll > 10) {
+                      netDmg = Math.floor(netDmg * 1.5);
+                      addLog(`🎯 Skill Link! Rolled a ${roll} (needed > 10) - deals +50% extra damage! (New Damage: ${netDmg})`, "combat");
+                    } else {
+                      addLog(`🎯 Skill Link! Rolled a ${roll} (needed > 10) - failed.`, "combat");
+                    }
+                  }
+
+                  // Volt Absorb / Water Absorb checks
+                  if (adb) {
+                    const isElectricHit = adb.t1 === "Electric" || adb.t2 === "Electric" || skill.skillName.toLowerCase().includes("thunder") || skill.skillName.toLowerCase().includes("shock") || skill.skillName.toLowerCase().includes("electro") || skill.skillName.toLowerCase().includes("discharge");
+                    const isWaterHit = adb.t1 === "Water" || adb.t2 === "Water" || skill.skillName.toLowerCase().includes("water") || skill.skillName.toLowerCase().includes("hydro") || skill.skillName.toLowerCase().includes("bubble") || skill.skillName.toLowerCase().includes("scald") || skill.skillName.toLowerCase().includes("surf");
+
+                    if (targetDb && targetDb.ability === "Volt Absorb" && isElectricHit) {
+                      target.hp = Math.min(target.maxHp, target.hp + 3);
+                      addLog(`⚡ Volt Absorb! ${target.species} absorbed the electric attack and restored +3 HP!`, "heal");
+                      netDmg = 0;
+                    } else if (targetDb && targetDb.ability === "Water Absorb" && isWaterHit) {
+                      target.hp = Math.min(target.maxHp, target.hp + 3);
+                      addLog(`🌊 Water Absorb! ${target.species} absorbed the water attack and restored +3 HP!`, "heal");
+                      netDmg = 0;
+                    }
+                  }
+
+                  // Custom Unique Skill Behavior: Dream Eater
+                  if (skill.skillName === "Dream Eater") {
+                    if (target.status !== "sleep") {
+                      netDmg = 0;
+                      addLog(`❌ Dream Eater failed! ${target.species} is not asleep.`, "sys");
+                    } else {
+                      const healAmt = 3;
+                      applyHeal(actor, healAmt);
+                      addLog(`💤 Dream Eater drained the nightmare! ${actor.species} healed +${healAmt} HP.`, "heal");
+                    }
+                  }
+
+                  // Custom Unique Skill Behavior: Sonic Boom
+                  if (skill.skillName === "Sonic Boom") {
+                    netDmg = 2; // Fixed 2 damage, ignores defense and type bonuses
+                  }
+
+                  // Custom Unique Skill Behavior: Psycutter
+                  if (skill.skillName === "Psycutter") {
+                    const targetDefVal = getModifiedStat(target, "def", list, { bySkill: true, weather: gameState.weather.type });
+                    netDmg = Math.max(0, netDmg + targetDefVal);
+                  }
+
+                  // Custom Unique Skill Behavior: Counter
+                  if (skill.skillName === "Counter") {
+                    const dmgReceived = actor.damageReceivedLastTurn || 0;
+                    netDmg = dmgReceived > 0 ? (dmgReceived + 1) : 0;
+                  }
+
+                  // Custom Unique Skill Behavior: Dimensional Gate
+                  if (skill.skillName === "Dimensional Gate") {
+                    if (target.player === actor.player && target.id !== actor.id) {
+                      const emptyCells = adjCells(actor.col, actor.row, 2, true, gameConfig.boardSize)
+                        .filter(c => !pkAt(c.col, c.row, list) && !pedAt(c.col, c.row, peds));
+                      if (emptyCells.length > 0) {
+                        const randCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+                        const oldCol = target.col;
+                        const oldRow = target.row;
+                        target.col = randCell.col;
+                        target.row = randCell.row;
+                        addLog(`🌀 Dimensional Gate: Teleported ally ${target.species} from ${String.fromCharCode(65 + oldCol)}${oldRow + 1} to a random cell ${String.fromCharCode(65 + randCell.col)}${randCell.row + 1} around Hoopa!`, "heal");
+                      } else {
+                        addLog(`🌀 Dimensional Gate: No empty cells around Hoopa to teleport ${target.species}!`, "sys");
+                      }
+                    }
+                  }
+
+                  // Custom Unique Skill Behavior: Spatial Collapse
+                  if (skill.skillName === "Spatial Collapse") {
+                    if (target.player !== actor.player) {
+                      const emptyCells = adjCells(actor.col, actor.row, 2, true, gameConfig.boardSize)
+                        .filter(c => !pkAt(c.col, c.row, list) && !pedAt(c.col, c.row, peds));
+                      if (emptyCells.length > 0) {
+                        const randCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+                        const oldCol = target.col;
+                        const oldRow = target.row;
+                        target.col = randCell.col;
+                        target.row = randCell.row;
+                        addLog(`🌀 Spatial Collapse: Teleported enemy ${target.species} from ${String.fromCharCode(65 + oldCol)}${oldRow + 1} to a random cell ${String.fromCharCode(65 + randCell.col)}${randCell.row + 1} around Hoopa!`, "atk");
+                      } else {
+                        addLog(`🌀 Spatial Collapse: No empty cells around Hoopa to teleport ${target.species}!`, "sys");
+                      }
+                      netDmg = 3; // Deals 3 true damage
+                    }
+                  }
+
+                  // Multiscale / Sheer Force / Shield / Levitate checks
+                  if (targetDb) {
+                    if (targetDb.ability === "Wonder Guard" && typeMult <= 0) {
+                      netDmg = 0;
+                      addLog(`🛡️ Wonder Guard! ${target.species} is immune to non-super-effective skill.`, "combat");
+                    }
+                    if (targetDb.ability === "Fur Coat") {
+                      const shape = parseSkillShape(adb, actor, mode.skillIdx);
+                      const isAoE = shape.type === "aoe" || shape.type === "cone" || (shape.type === "line" && (shape.range ?? 0) > 1);
+                      if (isAoE) {
+                        netDmg = Math.max(0, netDmg - 1);
+                        addLog(`🛡️ Fur Coat! ${target.species} reduced the AoE/Cone/Line skill damage by 1.`, "combat");
+                      }
+                    }
+                    if (targetDb.ability === "Multiscale" && target.hp === target.maxHp) {
+                      netDmg = Math.max(0, netDmg - 3);
+                      addLog(`🛡️ Multiscale! ${target.species} reduced the skill damage by 3.`, "combat");
+                    }
+                    if (targetDb.ability === "Sheer Force" && actor.hp < target.hp) {
+                      netDmg = Math.max(0, netDmg - 1);
+                      addLog(`🛡️ Sheer Force! ${target.species} took 1 less skill damage from enemy with lower HP.`, "combat");
+                    }
+                  }
+
+                  // Levitate Ground immunity
+                  const isGroundSkill =
+                    skill.skillName === "Earthquake" ||
+                    skill.skillName === "Mud Shot" ||
+                    skill.skillName === "Bone Rush" ||
+                    (skill.skillRaw || skill.skillDesc || "").toLowerCase().includes("ground");
+
+                  if (targetDb && targetDb.ability === "Levitate" && isGroundSkill) {
+                    netDmg = 0;
+                    addLog(`☁️ Levitate! ${target.species} completely ignored the Ground-type skill ${skill.skillName}!`, "combat");
+                  }
+
+                  netDmg = applyTidalBellReduction(target, netDmg, list);
+
+                  // Volcanion Steam Pressure: If taking damage from a Fire or Water skill, heal 1 HP instead
+                  const isVolcanion = target.species === "Volcanion" || (targetDb && targetDb.ability === "Steam Pressure");
+                  if (isVolcanion && netDmg > 0) {
+                    const isFireOrWaterSkill = 
+                      (adb && (adb.t1 === "Fire" || adb.t2 === "Fire" || adb.t1 === "Water" || adb.t2 === "Water")) ||
+                      skill.skillName.toLowerCase().includes("fire") || skill.skillName.toLowerCase().includes("flame") || skill.skillName.toLowerCase().includes("burn") ||
+                      skill.skillName.toLowerCase().includes("water") || skill.skillName.toLowerCase().includes("hydro") || skill.skillName.toLowerCase().includes("bubble") || skill.skillName.toLowerCase().includes("scald") || skill.skillName.toLowerCase().includes("surf");
+                    
+                    if (isFireOrWaterSkill) {
+                      netDmg = 0; // Negate the damage
+                      applyHeal(target, 1);
+                      addLog(`💨 Steam Pressure! Volcanion absorbed the Fire/Water skill and healed +1 HP!`, "heal");
+                    }
+                  }
+
+                  // Apply shield reduction
+                  if (target.shield && target.shield > 0 && netDmg > 0) {
+                    if (netDmg <= target.shield) {
+                      target.shield -= netDmg;
+                      addLog(`🛡️ Shield absorbed ${netDmg} damage! (Remaining Shield: ${target.shield} HP)`, "combat");
+                      netDmg = 0;
+                    } else {
+                      netDmg -= target.shield;
+                      target.shield = 0;
+                      addLog(`🛡️ Shield broke! ${netDmg} damage carried through.`, "combat");
+                    }
+                  }
+
+                  // Yveltal HP drain effects
+                  if (skill.skillName === "Oblivion Wing") {
+                    const healAmt = Math.max(0, netDmg - 2);
+                    if (healAmt > 0) {
+                      applyHeal(actor, healAmt);
+                      addLog(`🔺 Oblivion Wing drained energy! Healed ${actor.species} for +${healAmt} HP.`, "heal");
+                    }
+                  }
+                  if (skill.skillName === "Crimson Feast") {
+                    applyHeal(actor, 1);
+                    addLog(`🔺 Crimson Feast drained HP! Healed ${actor.species} for +1 HP.`, "heal");
+                  }
+                  if (skill.skillName === "Soul Drain Eclipse") {
+                    if (!target.modifiers) target.modifiers = [];
+                    addModifier(target, { stat: "atk", amount: -1, duration: 2, source: "Soul Drain Eclipse" });
+                    
+                    if (!actor.modifiers) actor.modifiers = [];
+                    addModifier(actor, { stat: "atk", amount: 1, duration: 2, source: "Soul Drain Eclipse" });
+                    
+                    const darkAllies = list.filter(p => {
+                      if (p.player !== actor.player || p.fainted || p.id === actor.id) return false;
+                      const db = DB[p.species];
+                      return db && (db.t1 === "Dark" || db.t2 === "Dark");
+                    });
+                    if (darkAllies.length > 0) {
+                      darkAllies.sort((a, b) => a.hp - b.hp);
+                      const lowestAlly = darkAllies[0];
+                      applyHeal(lowestAlly, 3);
+                      addLog(`🔺 Soul Drain Eclipse healed dark ally ${lowestAlly.species} for +3 HP!`, "heal");
+                    }
+                  }
+
+                  // Custom bar updates on hit
+                  if (target.customBar && target.customBar.type === "Angry" && netDmg > 0) {
+                    target.customBar.value = Math.min(target.customBar.max, target.customBar.value + 1);
+                  }
+                  if (target.customBar && target.customBar.type === "Happiness") {
+                    target.customBar.value = Math.max(0, target.customBar.value - 1);
+                  }
+                  const isFireSkill = (adb && (adb.t1 === "Fire" || adb.t2 === "Fire")) || skill.skillName.toLowerCase().includes("fire") || skill.skillName.toLowerCase().includes("flame") || skill.skillName.toLowerCase().includes("burn");
+                  if (isFireSkill) {
+                    if (target.customBar && target.customBar.type === "Frost") {
+                      target.customBar.value = Math.max(0, target.customBar.value - 1);
+                    }
+                  }
+
+                  const startingHp = target.hp;
+                  target.hp = Math.max(0, target.hp - netDmg);
+                  target.damageReceivedThisTurn = (target.damageReceivedThisTurn || 0) + netDmg;
+                  addLog(`✨ ${actor.species} casted ${skill.skillName} at ${target.species} for ${netDmg} damage!${isCrit ? " (CRITICAL HIT!)" : ""}`, "combat");
+
+                  // Check Sturdy for skill damage
+                  if (target.hp <= 0 && targetDb && targetDb.ability === "Sturdy" && startingHp === target.maxHp) {
+                    target.hp = 1;
+                    addLog(`🛡️ Sturdy! ${target.species} survived the lethal blow with 1 HP!`, "combat");
+                  }
+
+                  checkPowerConstruct(target, list);
+
+                  if (targetDb && targetDb.ability === "Color Change" && netDmg > 0) {
+                    const atkType = actor.reflectedType || adb.t1;
+                    target.reflectedType = atkType;
+                    addLog(`🌈 Color Change! ${target.species} changed its type to ${atkType}!`, "sys");
+                  }
+                } else {
+                  // Non-damaging cast
+                  addLog(`✨ ${actor.species} casted ${skill.skillName} at ${target.species}!`, "combat");
+                }
+
+                // Custom Unique Skill Behavior: Roar
+                if (skill.skillName === "Roar") {
+                  if (!target.modifiers) target.modifiers = [];
+                  addModifier(target, { stat: "atk", amount: -1, duration: 2, source: "Roar" });
+                  addLog(`🔊 Roar! ${target.species}'s Attack was lowered by 1 for 2 turns!`, "atk");
+                }
+
+                // Custom Unique Skill Behavior: Mist
+                if (skill.skillName === "Mist" && target.player === actor.player) {
+                  target.status = null;
+                  target.statusTurns = 0;
+                  target.modifiers = target.modifiers.filter(m => m.amount >= 0);
+                  addModifier(target, { stat: "def", amount: 1, duration: 2, source: "Mist" });
+                  addLog(`🌫️ Mist! Cleansed all debuffs from ${target.species} (+1 Def for 2 turns)!`, "heal");
+                }
+
+                // Custom Unique Skill Behavior: Tidal bell
+                if (skill.skillName === "Tidal bell" && target.player === actor.player) {
+                  addModifier(target, { stat: "def", amount: 2, duration: 2, source: "Tidal bell" });
+                  addLog(`🔔 Tidal Bell tolls! Granted ${target.species} +2 Def for 2 turns!`, "heal");
+                }
+
+                // Custom Unique Skill Behavior: Appliance Pulse (Normal, Heat, Fan forms)
+                if (skill.skillName === "Appliance Pulse") {
+                  const form = actor.rotomForm || "Normal";
+                  if (form === "Normal" && target.player !== actor.player && !target.fainted) {
+                    if (applyStatusEffect(target, "paralysis", 0, actor)) {
+                      addLog(`⚡ Appliance Pulse! Inflicted Paralysis on ${target.species}!`, "combat");
+                    }
+                  } else if (form === "Heat" && target.player !== actor.player && !target.fainted) {
+                    if (applyStatusEffect(target, "burn", 0, actor)) {
+                      addLog(`🔥 Appliance Pulse! Inflicted Burn on ${target.species}!`, "combat");
+                    }
+                  } else if (form === "Fan" && !target.fainted) {
+                    const pushPullResult = resolvePushPull(actor, target, 2, 0, list, peds, gameConfig.boardSize);
+                    if (pushPullResult.moved) {
+                      target.col = pushPullResult.col;
+                      target.row = pushPullResult.row;
+                      addLog(`💫 Appliance Pulse! ${target.species} was pushed 2 tiles to ${String.fromCharCode(65 + target.col)}${target.row + 1}!`, "sys");
+                    }
+                  }
+                }
+
+                // Push/Pull Physics
+                const pushAmt = skill.pushAmount || 0;
+                const pullAmt = skill.pullAmount || 0;
+                if ((pushAmt > 0 || pullAmt > 0) && !target.fainted) {
+                  const pushPullResult = resolvePushPull(actor, target, pushAmt, pullAmt, list, peds, gameConfig.boardSize);
+                  if (pushPullResult.moved) {
+                    target.col = pushPullResult.col;
+                    target.row = pushPullResult.row;
+                    addLog(`💫 ${target.species} was ${pushAmt > 0 ? "pushed" : "pulled"} to ${String.fromCharCode(65 + target.col)}${target.row + 1}!`, "sys");
+                  }
+                }
+
+                // Volcanion Steam Pressure: target gains a steam stack
+                if (actor.species === "Volcanion" && target.player !== actor.player && !target.fainted) {
+                  target.steamStacks = (target.steamStacks || 0) + 1;
+                  addLog(`💨 Steam Pressure: ${target.species} gained 1 Steam stack (Total: ${target.steamStacks}/3)`, "sys");
+                  if (target.steamStacks >= 3) {
+                    target.steamStacks = 0;
+                    if (applyStatusEffect(target, "burn", 0, actor)) {
+                      addLog(`🔥 Steam Pressure: ${target.species} reached 3 Steam stacks and is Burned for 2 turns!`, "combat");
+                    }
+                  }
+                }
+
+                triggerSkillsEffect(target);
+
+                // Gengar Cursed Body on skill hit
+                if (targetDb && targetDb.ability === "Cursed Body" && !actor.fainted) {
+                  if (Math.random() < 0.3) {
+                    if (!actor.skillCooldowns) actor.skillCooldowns = {};
+                    actor.skillCooldowns[skill.skillName] = 2;
+                    addLog(`👻 Cursed Body! ${target.species} disabled ${actor.species}'s ${skill.skillName} for 2 turns!`, "combat");
+                  }
+                }
+
+                if (target.hp <= 0) {
+                  target.fainted = true;
+                  addLog(`💀 ${target.species} fainted!`, "sys");
+                  if (targetDb && targetDb.ability === "Aftermath" && !actor.fainted) {
+                    const distance = Math.max(Math.abs(actor.col - target.col), Math.abs(actor.row - target.row));
+                    if (distance <= 1) {
+                      const aftermathDmg = (target.species === "Drifblim" || target.species === "Garbodor") ? 4 : 2;
+                      actor.hp = Math.max(0, actor.hp - aftermathDmg);
+                      addLog(`💥 Aftermath! ${target.species} dealt ${aftermathDmg} retribution damage to ${actor.species}!`, "combat");
+                      if (actor.hp <= 0) {
+                        actor.fainted = true;
+                        addLog(`💀 ${actor.species} fainted to Aftermath!`, "sys");
+                      }
+                    }
+                  }
+                  if (actor.heldItem === "Lucky Egg") {
+                    if (actor.heldItem !== "Oval Stone") {
+                      actor.exp += 1;
+                    }
+                  }
+                }
+              }
+            } else if (targetPed) {
+              targetsHit++;
+              const pedDmgRaw = Math.max(0, rawDmg + skillAbilityBonus);
+              const pedDmg = Math.min(1, Math.max(0, pedDmgRaw - 1));
+              targetPed.hp = Math.max(0, targetPed.hp - pedDmg);
+              addLog(`✨ ${actor.species} casted ${skill.skillName} on Pedestal for ${pedDmg} skill damage! (Pedestal takes max 1 damage)`, "combat");
+            }
+          }
+        });
+
+        if (accumulatedRolls.length > 0) {
+          setChancePopup({
+            statusType: skill.statusChance || "Critical Hit Check",
+            rolls: accumulatedRolls
+          } as any);
+          setTimeout(() => setChancePopup(null), 3500);
+        }
+
+        // Ice-type freeze-to-Frost conversion check for all Ice-types in the skill area
+        processIceFrostRolls(skill, affectedCells, list);
+
+        // Custom Unique Skill Behavior: Hidden Power
+        if (skill.skillName === "Hidden Power") {
+          const adjacentAllies = list.filter(other => {
+            if (other.player !== actor.player || other.fainted || other.id === actor.id) return false;
+            const dist = Math.max(Math.abs(other.col - actor.col), Math.abs(other.row - actor.row));
+            return dist === 1;
+          });
+          adjacentAllies.forEach(ally => {
+            if (!ally.modifiers) ally.modifiers = [];
+            addModifier(ally, { stat: "atk", amount: 1, duration: 2, source: "Hidden Power" });
+            addLog(`✨ Hidden Power boosted ${ally.species}'s Atk by 1 for 2 turns!`, "heal");
+          });
+        }
+
+        // Global skills effects like self heals, Sunny day, Snowscape
+        if (skill.skillHeal && skill.skillHealTarget === "self") {
+          actor.hp = Math.min(actor.maxHp, actor.hp + skill.skillHeal);
+          addLog(`💚 Self restore! ${actor.species} recovered +${skill.skillHeal} HP.`, "heal");
+        }
+        if (skill.selfDamage) {
+          actor.hp = Math.max(0, actor.hp - skill.selfDamage);
+          addLog(`⚠️ recoil! ${actor.species} takes ${skill.selfDamage} backlash damage from ${skill.skillName}`, "atk");
+          if (actor.hp <= 0) {
+            actor.fainted = true;
+            addLog(`${actor.species} fainted.`, "sys");
+          }
+        }
+
+        if (actor.heldItem !== "Oval Stone") {
+          actor.exp += 2;
+        }
+        actor.hasUsedSkill = true;
+        if (!actor.skillUses) actor.skillUses = {};
+        actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+        if (skill.cooldown && skill.cooldown > 0) {
+          if (!actor.skillCooldowns) actor.skillCooldowns = {};
+          actor.skillCooldowns[skill.skillName] = skill.cooldown;
+        }
+
+        if (hasType(actor, "Fairy")) {
+          list.forEach(p => {
+            if (p.species === "Xerneas" && p.player === actor.player && !p.fainted) {
+              gainHappiness(p, 1, list);
+            }
+          });
+          const hasWhimsicott = list.some(p => p.player === actor.player && p.species === "Whimsicott" && !p.fainted);
+          if (hasWhimsicott) {
+            gainHappiness(actor, 1, list);
+            addLog(`🍃 Fairy Wind! Whimsicott on the field granted +1 Happiness to ${actor.species}!`, "heal");
+          }
+        }
+
+        const nextPokemon = [...list];
+        const nextPedestals = [...peds];
+        checkWinner(nextPedestals, nextPokemon);
+
+        setGameState(prev => ({
+          ...prev,
+          pokemon: nextPokemon,
+          pedestals: nextPedestals,
+          actionMode: null,
+          highlightedCells: [],
+          energy: {
+            ...prev.energy,
+            [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+          }
+        }));
+        return;
+      }
+    }
+
+    // Default Selection click
+    const itemAtCell = pkAt(col, row, list);
+    const pedAtCell = pedAt(col, row, peds);
+
+    if (itemAtCell || pedAtCell) {
+      // Refresh cell preview ranges
+      setGameState(prev => ({
+        ...prev,
+        selectedCell: { col, row },
+        actionMode: null,
+        highlightedCells: []
+      }));
+    } else {
+      setGameState(prev => ({
+        ...prev,
+        selectedCell: null,
+        actionMode: null,
+        highlightedCells: []
+      }));
+    }
+  };
+
+  // Move / Melee Attack / Skill initialization trigger
+  const handleSelectAction = (type: "move" | "attack" | "skill", id: number, skillIdx?: number) => {
+    if (p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber) {
+      return;
+    }
+    const actor = gameState.pokemon.find(p => p.id === id);
+    if (!actor) return;
+    if (actor.species === "Clear Bell" || actor.species === "Tidal Bell" || actor.species === "Tidal bell" || (actor.isSummon && actor.summonConfig?.isStatic)) {
+      return;
+    }
+    if (actor.species === "Zygarde Reassembly Unit" && type !== ("active_ability" as any)) {
+      addLog("❌ Zygarde Reassembly Unit cannot move, attack, or use skills.", "sys");
+      return;
+    }
+    const dbEntry = DB[actor.species];
+
+    if (actor.isEgg && !actor.hasHatched) {
+      addLog("The Egg is currently dormant. Spend Command EXP first to hatch it!", "sys");
+      return;
+    }
+
+    if (type === ("active_ability" as any)) {
+      if (actor.activeAbilityUsed) return;
+      if (actor.species === "Regigigas") {
+        if (!actor.regigigasLocked || gameState.turn < 16) {
+          addLog("❌ Regigigas cannot awake yet or is already awake.", "sys");
+          return;
+        }
+        const updatedPokemon = gameState.pokemon.map(p => {
+          if (p.id === actor.id) {
+            return {
+              ...p,
+              regigigasLocked: false,
+              activeAbilityUsed: true
+            };
+          }
+          return p;
+        });
+        addLog(`⭐ Awake! Regigigas woke up early from its slumber!`, "sys");
+        setGameState(prev => ({
+          ...prev,
+          pokemon: updatedPokemon,
+          actionMode: null,
+          highlightedCells: []
+        }));
+        return;
+      }
+
+      let cells: { col: number; row: number; type: "atk" | "move" | "atk-preview" | "skill-preview" }[] = [];
+      if (actor.species === "Mesprit" || actor.species === "Cryogonal") {
+        cells = gameState.pokemon
+          .filter(p => !p.fainted && p.player === actor.player)
+          .map(p => ({ col: p.col, row: p.row, type: "atk" as const }));
+      } else if (actor.species === "Palkia") {
+        cells = gameState.pokemon
+          .filter(p => !p.fainted && p.player === actor.player && p.id !== actor.id)
+          .map(p => ({ col: p.col, row: p.row, type: "atk" as const }));
+      } else if (actor.species === "Talonflame") {
+        cells = adjCells(actor.col, actor.row, 2, true, gameConfig.boardSize)
+          .filter(c => !pkAt(c.col, c.row, gameState.pokemon) && !pedAt(c.col, c.row, gameState.pedestals))
+          .map(c => ({ col: c.col, row: c.row, type: "move" as const }));
+      } else if (actor.species === "Zygarde Reassembly Unit") {
+        cells = adjCells(actor.col, actor.row, 1, true, gameConfig.boardSize)
+          .filter(c => !pkAt(c.col, c.row, gameState.pokemon) && !pedAt(c.col, c.row, gameState.pedestals))
+          .map(c => ({ col: c.col, row: c.row, type: "move" as const }));
+      } else if (actor.species === "Giratina") {
+        if (actor.giratinaSummoned) {
+          addLog("❌ Giratina's Soul Prison was already summoned this match.", "sys");
+          return;
+        }
+        cells = adjCells(actor.col, actor.row, 1, true, gameConfig.boardSize)
+          .filter(c => !pkAt(c.col, c.row, gameState.pokemon) && !pedAt(c.col, c.row, gameState.pedestals))
+          .map(c => ({ col: c.col, row: c.row, type: "move" as const }));
+      } else if (actor.species === "Hoopa") {
+        cells = gameState.pokemon
+          .filter(p => !p.fainted && p.player === actor.player)
+          .map(p => ({ col: p.col, row: p.row, type: "atk" as const }));
+      }
+      setGameState(prev => ({
+        ...prev,
+        actionMode: { type: "active_ability" as any, pokeId: id },
+        highlightedCells: cells
+      }));
+      return;
+    }
+
+    if (type === "move") {
+      const cells = getRoleBasedMoves(actor, gameState.pokemon, gameState.pedestals, gameConfig.boardSize);
+      setGameState(prev => ({
+        ...prev,
+        actionMode: { type, pokeId: id },
+        highlightedCells: cells.map(c => ({ col: c.col, row: c.row, type: "move" as const }))
+      }));
+    } else if (type === "attack") {
+      const cells = getAtkCells(actor, gameState.pokemon, gameState.pedestals, gameConfig.boardSize);
+      setGameState(prev => ({
+        ...prev,
+        actionMode: { type, pokeId: id },
+        highlightedCells: cells.map(c => ({ col: c.col, row: c.row, type: "atk" as const }))
+      }));
+    } else {
+      // SKILL TRIGGER MODE
+      if (!verifyActionStatus(actor)) {
+        return;
+      }
+      const activeSkillIdx = typeof skillIdx !== "undefined" ? skillIdx : 0;
+      const skill = getSkillData(dbEntry, activeSkillIdx);
+
+      if (actor.skillUses?.[skill.skillName] && actor.skillUses[skill.skillName] > 0) {
+        addLog(`❌ ${actor.species} has already used ${skill.skillName} this turn!`, "sys");
+        return;
+      }
+
+      if (actor.skillCooldowns?.[skill.skillName] && actor.skillCooldowns[skill.skillName] > 0) {
+        addLog(`❌ ${skill.skillName} is on cooldown for ${actor.skillCooldowns[skill.skillName]} more turns!`, "sys");
+        return;
+      }
+
+      const targetType = getSkillTargetType(skill, dbEntry, actor.rotomForm);
+
+      const isTerrainSkill = ["Electric Terrain", "Grassy Terrain", "Misty Terrain", "Psychic Terrain"].includes(skill.skillName);
+      const isWeatherSkill = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(skill.skillName);
+      const isInstantSkill = (
+        skill.skillDesc === "All" ||
+        targetType === "self" ||
+        targetType === "all_allies" ||
+        targetType === "all_ice" ||
+        skill.skillDesc?.toLowerCase() === "self" ||
+        isWeatherSkill ||
+        isTerrainSkill
+      ) && skill.skillName !== "Transform";
+
+      if (isInstantSkill) {
+        // Instant/self-casts require consecutive clicks to prevent accidental triggers
+        const act = gameState.actionMode;
+        if (act && act.type === "skill" && act.pokeId === id && act.confirmingIdx === activeSkillIdx) {
+          // CONSECUTIVE: Trigger Cast
+          executeInstantSkill(actor, skill, activeSkillIdx);
+        } else {
+          // FIRST CLICK: Highlight targets
+          const scCost = skill.skillCost || dbEntry.skillCost || 2;
+          let showCells: { col: number; row: number; type: "move" | "atk" | "atk-preview" | "skill-preview" }[] = [];
+
+          if (targetType === "all_allies") {
+            showCells = gameState.pokemon
+              .filter(p => !p.fainted && p.player === actor.player)
+              .map(p => ({ col: p.col, row: p.row, type: "atk" as const }));
+          } else {
+            showCells = getSkillShapeCells(actor, gameState.pokemon, gameState.pedestals, activeSkillIdx, gameConfig.boardSize).map(c => ({ col: c.col, row: c.row, type: "atk" as const }));
+          }
+
+          setGameState(prev => ({
+            ...prev,
+            actionMode: { type: "skill", pokeId: id, skillIdx: activeSkillIdx, confirmingIdx: activeSkillIdx },
+            highlightedCells: showCells
+          }));
+
+          addLog(`Ready to cast ${skill.skillName}! Click the skills button again to confirm cast (${scCost} Energy cost).`, "sys");
+        }
+      } else {
+        // Targeted standard skills
+        const cells = getSkillCells(actor, gameState.pokemon, gameState.pedestals, activeSkillIdx, gameConfig.boardSize);
+        setGameState(prev => ({
+          ...prev,
+          actionMode: { type: "skill", pokeId: id, skillIdx: activeSkillIdx, confirmingIdx: null },
+          highlightedCells: cells
+        }));
+      }
+    }
+  };
+
+  const executeInstantSkill = (actor: PokemonEntity, skill: Skill, skillIdx: number) => {
+    const list = [...gameState.pokemon];
+    const peds = [...gameState.pedestals];
+    const dbEntry = DB[actor.species];
+
+    if (actor.species === "Celebi") {
+      if (!actor.modifiers) actor.modifiers = [];
+      addModifier(actor, { stat: "atk", amount: -2, duration: 1, source: "Celebi backlash" });
+      addLog(`🍃 Celebi suffered a -2 ATK debuff for this turn!`, "sys");
+    }
+
+    let scCost = skill.skillCost || dbEntry.skillCost || 2;
+
+    if (actor.heldItem === "Miracle Seed" && !actor.hasUsedSkill) {
+      scCost = Math.max(0, scCost - 1);
+    }
+
+    const isPowderSnow = skill.skillName === "Powder Snow";
+    let pressureUnit: PokemonEntity | undefined = undefined;
+    if (isPowderSnow) {
+      pressureUnit = list.find(p => {
+        if (p.player === actor.player || p.fainted) return false;
+        const pDb = DB[p.species];
+        return pDb && pDb.ability === "Pressure" && !p.pressureTriggered;
+      });
+      if (pressureUnit) {
+        scCost += 1;
+      }
+    }
+
+    if (gameState.energy[gameState.currentPlayer] < scCost) {
+      addLog("Not enough energy to cast this skill!", "sys");
+      setGameState(prev => ({ ...prev, actionMode: null, highlightedCells: [] }));
+      return;
+    }
+
+    if (pressureUnit) {
+      const match = list.find(p => p.id === pressureUnit!.id);
+      if (match) {
+        match.pressureTriggered = true;
+      }
+      addLog(`💥 Pressure! ${pressureUnit.species}'s presence increases skill cost by +1!`, "sys");
+    }
+
+    // Apply self heals
+    if (skill.skillHeal && skill.skillHealTarget === "self") {
+      applyHeal(actor, skill.skillHeal);
+      addLog(`💚 Self restore! ${actor.species} recovered +${skill.skillHeal} HP.`, "heal");
+    }
+
+    // Apply weather configs
+    if (skill.skillName === "Sunny Day" || skill.skillName === "Rain Dance" || skill.skillName === "Sandstorm" || skill.skillName === "Hail") {
+      const weatherMap: Record<string, string> = {
+        "Sunny Day": "Sunlight",
+        "Rain Dance": "Rain",
+        "Sandstorm": "Sandstorm",
+        "Hail": "Hail Storm"
+      };
+      const wt = weatherMap[skill.skillName] || "Clear";
+      if (canOverrideWeather(gameState.weather.type, wt)) {
+        setGameState(prev => ({
+          ...prev,
+          weather: { type: wt, duration: 5 }
+        }));
+        addLog(`🌤️ Weather is now altered to ${wt}!`, "sys");
+      } else {
+        addLog(`❌ Weather change to ${wt} failed due to existing stronger weather!`, "sys");
+      }
+    }
+
+    // Apply terrain configs
+    if (["Electric Terrain", "Grassy Terrain", "Misty Terrain", "Psychic Terrain"].includes(skill.skillName)) {
+      const terrainMap: Record<string, string> = {
+        "Electric Terrain": "Electric",
+        "Grassy Terrain": "Grassy",
+        "Misty Terrain": "Misty",
+        "Psychic Terrain": "Psychic"
+      };
+      const tt = terrainMap[skill.skillName];
+      setGameState(prev => ({
+        ...prev,
+        terrain: { type: tt, duration: 5 }
+      }));
+      addLog(`🔮 Terrain is now altered to ${tt} Terrain!`, "sys");
+    }
+
+    // Apply stat modifier buffs to matching allies
+    const targetType = getSkillTargetType(skill, dbEntry, actor.rotomForm);
+
+    if (skill.skillName === "Life Dew" || targetType === "all_allies") {
+      list.forEach(p => {
+        if (!p.fainted && p.player === actor.player) {
+          applyHeal(p, 2);
+          addLog(`💧 Life Dew restored +2 HP to ally ${p.species}!`, "heal");
+        }
+      });
+    }
+
+    if (targetType === "all_ice") {
+      list.forEach(p => {
+        if (!p.fainted && hasType(p, "Ice")) {
+          addModifier(p, { stat: "def", amount: 1, duration: 2, source: "Snow Scape" });
+          addLog(`${p.species} gained +1 Def from Snow Scape.`, "heal");
+        }
+      });
+    }
+
+    if (targetType === "self") {
+      const eff = skill.skillEffect || dbEntry.skillEffect;
+      if (eff) {
+        if (!actor.modifiers) actor.modifiers = [];
+        addModifier(actor, {
+          stat: eff.stat,
+          amount: eff.amount,
+          duration: eff.duration,
+          source: skill.skillName
+        });
+        addLog(`🛡️ ${actor.species} gained +${eff.amount} ${eff.stat.toUpperCase()} from ${skill.skillName} for ${eff.duration} turns!`, "heal");
+      }
+    }
+
+    const updatedPlayers = { ...gameState.players };
+
+    // Custom Unique Skill Behavior: Appliance Pulse (Wash, Frost, Mow forms)
+    if (skill.skillName === "Appliance Pulse") {
+      const form = actor.rotomForm || "Normal";
+      if (form === "Wash") {
+        const adj = adjCells(actor.col, actor.row, 1, true, gameConfig.boardSize);
+        let healCount = 0;
+        list.forEach(p => {
+          if (!p.fainted && p.player === actor.player && adj.some(c => c.col === p.col && c.row === p.row)) {
+            if (healCount < 3) {
+              applyHeal(p, 1);
+              addLog(`💦 Wash Rotom healed ${p.species} for 1 HP!`, "heal");
+              healCount++;
+            }
+          }
+        });
+        if (healCount === 0) {
+          addLog(`💦 Wash Rotom casted Appliance Pulse, but no adjacent allies were found.`, "sys");
+        }
+      } else if (form === "Frost") {
+        const enemyPlayer = actor.player === 1 ? 2 : 1;
+        updatedPlayers[enemyPlayer] = {
+          ...updatedPlayers[enemyPlayer],
+          frostRotomDebuff: true
+        };
+        addLog(`❄️ Frost Rotom's Appliance Pulse will reduce Player ${enemyPlayer}'s MP next turn!`, "sys");
+      } else if (form === "Mow") {
+        applyHeal(actor, 3);
+        addLog(`🌿 Mow Rotom healed itself for 3 HP!`, "heal");
+      }
+    }
+
+    if (skill.skillName === "Powder Snow") {
+      const accumulatedRolls: any[] = [];
+      list.forEach(p => {
+        if (!p.fainted) {
+          const pDb = DB[p.species];
+          const isIce = pDb && (pDb.t1 === "Ice" || pDb.t2 === "Ice");
+
+          const defVal = getModifiedStat(p, "def", list, { bySkill: true, weather: gameState.weather.type });
+          let netDmg = Math.max(0, 1 - defVal);
+          netDmg = applyTidalBellReduction(p, netDmg, list);
+          p.hp = Math.max(0, p.hp - netDmg);
+          addLog(`❄️ Powder Snow hit ${p.species} for ${netDmg} damage! (Def: ${defVal})`, "combat");
+
+          if (p.hp <= 0) {
+            p.fainted = true;
+            addLog(`💀 ${p.species} fainted!`, "sys");
+          } else if (!isIce && canInflictStatus(p, "freeze")) {
+            const chance = 0.1;
+            const threshold = Math.floor(chance * 20);
+            const roll = Math.floor(Math.random() * 20) + 1;
+            const succ = roll <= threshold;
+            
+            accumulatedRolls.push({
+              statusType: "freeze",
+              targetName: p.species,
+              chance,
+              roll,
+              success: succ
+            });
+
+            if (succ) {
+              if (applyStatusEffect(p, "freeze", 0, actor)) {
+                addLog(`❄️ Status triggered! ${p.species} got frozen! (rolled ${roll}/20)`, "combat");
+              }
+            }
+          }
+        }
+      });
+
+      if (accumulatedRolls.length > 0) {
+        setChancePopup({
+          statusType: "freeze",
+          rolls: accumulatedRolls
+        } as any);
+        setTimeout(() => setChancePopup(null), 3500);
+      }
+
+      const allCells: { col: number; row: number }[] = [];
+      for (let c = 0; c < gameConfig.boardSize; c++) {
+        for (let r = 0; r < gameConfig.boardSize; r++) {
+          allCells.push({ col: c, row: r });
+        }
+      }
+      processIceFrostRolls(skill, allCells, list);
+    }
+
+    if (skill.selfDamage) {
+      actor.hp = Math.max(0, actor.hp - skill.selfDamage);
+      if (actor.hp <= 0) actor.fainted = true;
+    }
+
+    if (actor.heldItem !== "Oval Stone") {
+      actor.exp += 2;
+    }
+    actor.hasUsedSkill = true;
+    if (!actor.skillUses) actor.skillUses = {};
+    actor.skillUses[skill.skillName] = (actor.skillUses[skill.skillName] || 0) + 1;
+
+    if (skill.cooldown && skill.cooldown > 0) {
+      if (!actor.skillCooldowns) actor.skillCooldowns = {};
+      actor.skillCooldowns[skill.skillName] = skill.cooldown;
+    }
+
+    if (hasType(actor, "Fairy")) {
+      list.forEach(p => {
+        if (p.species === "Xerneas" && p.player === actor.player && !p.fainted) {
+          gainHappiness(p, 1, list);
+        }
+      });
+      const hasWhimsicott = list.some(p => p.player === actor.player && p.species === "Whimsicott" && !p.fainted);
+      if (hasWhimsicott) {
+        gainHappiness(actor, 1, list);
+        addLog(`🍃 Fairy Wind! Whimsicott on the field granted +1 Happiness to ${actor.species}!`, "heal");
+      }
+    }
+
+    let nextHazards = [...(gameState.hazards || [])];
+    const hasHoneyNest = list.some(p => p.player === actor.player && !p.fainted && DB[p.species]?.ability === "Honey Nest");
+    if (hasHoneyNest) {
+      const affectedCells = skill.skillName === "Powder Snow" ? list.filter(p => p.player !== actor.player && !p.fainted).map(p => ({ col: p.col, row: p.row })) : [];
+      affectedCells.forEach(cell => {
+        const target = pkAt(cell.col, cell.row, list);
+        if (target && target.player !== actor.player && !target.fainted) {
+          const existingHoneyIdx = nextHazards.findIndex(h => h.col === cell.col && h.row === cell.row && h.type === "honey" && h.player === actor.player);
+          if (existingHoneyIdx >= 0) {
+            nextHazards[existingHoneyIdx].duration = 3;
+          } else {
+            nextHazards.push({
+              col: cell.col,
+              row: cell.row,
+              type: "honey",
+              duration: 3,
+              player: actor.player
+            });
+          }
+          addLog(`🍯 Honey Nest: Vespiquen team aura spawned a Honey Tile (3 turns) under enemy ${target.species}!`, "heal");
+        }
+      });
+    }
+
+    setGameState(prev => ({
+      ...prev,
+      pokemon: list,
+      pedestals: peds,
+      actionMode: null,
+      highlightedCells: [],
+      hazards: nextHazards,
+      players: updatedPlayers,
+      energy: {
+        ...prev.energy,
+        [gameState.currentPlayer]: Math.max(0, prev.energy[gameState.currentPlayer] - scCost)
+      }
+    }));
+
+    addLog(`✨ ${actor.species} successfully deployed ${skill.skillName}!`, "atk");
+  };
+
+  // End turn mechanics
+  const handleEndTurn = () => {
+    if (p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber) {
+      return;
+    }
+    const list = [...gameState.pokemon];
+    const peds = [...gameState.pedestals];
+    const curPlayer = gameState.currentPlayer;
+
+    // Resolve Eevee pending turn-end evolutions and standard pending evolutions
+    list.forEach(p => {
+      if (p.player === curPlayer && !p.fainted) {
+        if (p.species === "Eevee" && p.pendingEvoTo) {
+          const oldName = p.species;
+          p.species = p.pendingEvoTo;
+          const evolvedDb = DB[p.pendingEvoTo];
+          if (evolvedDb) {
+            p.maxHp = evolvedDb.hp;
+            p.hp = evolvedDb.hp; // healed to full
+            p.atk = evolvedDb.atk;
+            p.def = evolvedDb.def || 0;
+            p.exp = 0;
+            p.pendingEvoChoice = false;
+            p.pendingEvoTo = undefined;
+            p.customBar = getCustomBarForSpecies(p.species);
+            addLog(`🌿 Turn-End Evolution! Eevee has evolved into ${p.species}!`, "heal");
+          }
+        } else if (p.pendingEvo) {
+          const dbEntry = DB[p.species];
+          if (dbEntry && dbEntry.evoTo) {
+            const oldName = p.species;
+            p.species = dbEntry.evoTo;
+            const evolvedDb = DB[dbEntry.evoTo];
+            if (evolvedDb) {
+              p.maxHp = evolvedDb.hp;
+              p.hp = evolvedDb.hp; // healed to full
+              p.atk = evolvedDb.atk;
+              p.def = evolvedDb.def || 0;
+              p.exp = 0;
+              p.pendingEvo = false;
+              p.customBar = getCustomBarForSpecies(p.species);
+              addLog(`🌿 Turn-End Evolution! ${oldName} has evolved into ${p.species}!`, "heal");
+              if (oldName === "Nincada" && p.species === "Ninjask") {
+                spawnShedinja(p, list, peds);
+              }
+            }
+          }
+        }
+      }
+    });
+    // Reset pressure and rotate damageReceived for all units
+    list.forEach(p => {
+      p.pressureTriggered = false;
+      p.damageReceivedLastTurn = p.damageReceivedThisTurn || 0;
+      p.damageReceivedThisTurn = 0;
+    });
+    // Resolve Future Sight countdown and banishment ticking
+    list.forEach(p => {
+      if (p.fainted) return;
+
+      // Tick Future Sight countdown
+      if (p.futureSightCountdown !== undefined && p.futureSightCountdown > 0 && p.futureSightCasterPlayer === curPlayer) {
+        p.futureSightCountdown -= 1;
+        if (p.futureSightCountdown === 0) {
+          p.banishedTurns = 2;
+          p.banishedCol = p.col;
+          p.banishedRow = p.row;
+          p.col = -1;
+          p.row = -1;
+          addLog(`🌀 Future Sight triggered! ${p.species} has been banished 2 turns into the future!`, "combat");
+        } else {
+          addLog(`⏳ Future Sight ticking on ${p.species}... (${p.futureSightCountdown} turn(s) left before banishment)`, "sys");
+        }
+      }
+
+      // Tick Future Sight banishment duration
+      else if (p.banishedTurns !== undefined && p.banishedTurns > 0 && p.futureSightCasterPlayer === curPlayer) {
+        p.banishedTurns -= 1;
+        if (p.banishedTurns === 0) {
+          let targetCol = p.banishedCol!;
+          let targetRow = p.banishedRow!;
+          if (pkAt(targetCol, targetRow, list) || pedAt(targetCol, targetRow, peds)) {
+            let found = false;
+            for (let d = 1; d < 11 && !found; d++) {
+              const candidates: { col: number; row: number; dist: number }[] = [];
+              for (let dx = -d; dx <= d; dx++) {
+                for (let dy = -d; dy <= d; dy++) {
+                  if (Math.abs(dx) === d || Math.abs(dy) === d) {
+                    const c = targetCol + dx;
+                    const r = targetRow + dy;
+                    if (c >= 0 && c < 11 && r >= 0 && r < 11) {
+                      if (!pkAt(c, r, list) && !pedAt(c, r, peds)) {
+                        candidates.push({ col: c, row: r, dist: Math.sqrt(dx * dx + dy * dy) });
+                      }
+                    }
+                  }
+                }
+              }
+              if (candidates.length > 0) {
+                candidates.sort((a, b) => a.dist - b.dist);
+                targetCol = candidates[0].col;
+                targetRow = candidates[0].row;
+                found = true;
+              }
+            }
+          }
+          p.col = targetCol;
+          p.row = targetRow;
+          p.banishedCol = undefined;
+          p.banishedRow = undefined;
+          p.futureSightCasterPlayer = undefined;
+          addLog(`🌀 Future Sight ended! ${p.species} returned to the board at ${String.fromCharCode(65 + p.col)}${p.row + 1}!`, "combat");
+        } else {
+          addLog(`🌀 ${p.species} is banished in the future... (${p.banishedTurns} turn(s) remaining)`, "sys");
+        }
+      }
+    });
+
+    // A. Tick status condition damage for ending player
+    list.forEach(p => {
+      if (p.player !== curPlayer || p.fainted) return;
+      if (p.banishedTurns && p.banishedTurns > 0) return;
+      if (p.species === "Clear Bell" || p.species === "Tidal Bell" || p.species === "Tidal bell") return;
+
+      // Seed drain
+      if (p.leechSeed) {
+        const seedSource = list.find(s => s.id === p.leechSeed?.sourceId && !s.fainted);
+        p.hp = Math.max(0, p.hp - 1);
+        addLog(`☠️ Leech Seed drain! ${p.species} loses -1 HP.`, "atk");
+        if (p.customBar && p.customBar.type === "Angry") {
+          p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 1);
+        }
+        if (seedSource) {
+          applyHeal(seedSource, 1);
+        }
+        if (p.hp <= 0) {
+          p.fainted = true;
+          addLog(`${p.species} fainted from Leech Seed drain!`, "sys");
+        }
+      }
+
+      // Poison / Burn ticks (Magic Guard immune)
+      if ((p.status === "poison" || p.status === "toxic" || p.status === "burn") && DB[p.species]?.ability !== "Magic Guard") {
+        p.hp = Math.max(0, p.hp - 1);
+        addLog(`❤️ affliction! ${p.species} takes -1 HP from ${p.status.toUpperCase()}`, "atk");
+        if (p.customBar && p.customBar.type === "Angry") {
+          p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 1);
+        }
+        if (p.hp <= 0) {
+          p.fainted = true;
+          addLog(`${p.species} fainted from damage over time!`, "sys");
+        }
+      }
+
+      // Bad Dreams sleep ticks
+      if (p.status === "sleep") {
+        const isDarkraiActive = list.some(d => d.species === "Darkrai" && !d.fainted);
+        if (isDarkraiActive) {
+          p.hp = Math.max(0, p.hp - 1);
+          addLog(`🔮 Bad Dreams! Sleeping ${p.species} takes -1 true damage from the nightmare.`, "atk");
+          if (p.customBar && p.customBar.type === "Angry") {
+            p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 1);
+          }
+          if (p.hp <= 0) {
+            p.fainted = true;
+            addLog(`${p.species} fainted to Bad Dreams!`, "sys");
+          }
+        }
+      }
+
+      // Burn status maximum 2 turns limit
+      if (p.status === "burn" && !p.fainted) {
+        p.statusTurns = (p.statusTurns || 0) + 1;
+        if (p.statusTurns >= 2) {
+          p.status = null;
+          p.statusTurns = 0;
+          addLog(`🔥 ${p.species}'s Burn has subsided after 2 turns!`, "heal");
+        }
+      }
+
+      // Leftovers
+      if (p.heldItem === "Leftovers" && p.hp < p.maxHp) {
+        applyHeal(p, 1);
+        addLog(`🍏 leftovers! ${p.species} recovered +1 HP.`, "heal");
+      }
+
+      // End-of-turn abilities (Regenerator, Shed Skin, Natural Cure, Rain Dish, Solar Power decay)
+      const dbEntry = DB[p.species];
+      if (dbEntry && !p.fainted) {
+        // Rain Dish
+        if (dbEntry.ability === "Rain Dish" && (gameState.weather.type === "Rain" || gameState.weather.type === "Heavy Rain") && p.hp < p.maxHp) {
+          applyHeal(p, 1);
+          addLog(`🌧️ Rain Dish! ${p.species} recovered +1 HP in rain.`, "heal");
+        }
+        // Regenerator
+        if (dbEntry.ability === "Regenerator" && p.hp < p.maxHp) {
+          applyHeal(p, 1);
+          addLog(`🌱 Regenerator! ${p.species} recovered +1 HP.`, "heal");
+        }
+        // Solar Power decay
+        if (dbEntry.ability === "Solar Power" && (gameState.weather.type === "Sunlight" || gameState.weather.type === "Harsh Sunlight")) {
+          p.hp = Math.max(0, p.hp - 1);
+          addLog(`☀️ Solar Power! ${p.species} takes -1 HP from solar heat.`, "atk");
+          if (p.hp <= 0) {
+            p.fainted = true;
+            addLog(`${p.species} fainted to Solar Power!`, "sys");
+          }
+        }
+        // Ice Body
+        if (dbEntry.ability === "Ice Body" && (gameState.weather.type === "Hail Storm") && p.hp < p.maxHp) {
+          applyHeal(p, 1);
+          addLog(`❄️ Ice Body! ${p.species} recovered +1 HP in hail.`, "heal");
+        }
+        // Hydration
+        if (dbEntry.ability === "Hydration" && (gameState.weather.type === "Rain" || gameState.weather.type === "Heavy Rain") && p.status) {
+          addLog(`💧 Hydration! ${p.species} washed away its ${p.status.toUpperCase()} in rain.`, "heal");
+          p.status = null;
+        }
+        // Harvest
+        if (dbEntry.ability === "Harvest" && p.heldItem && Math.random() < 0.5) {
+          // Check if the held item is a berry
+          const berryItems = ["Oran Berry", "Sitrus Berry", "Lum Berry", "Chesto Berry", "Pecha Berry", "Rawst Berry", "Aspear Berry", "Cheri Berry", "Persim Berry", "Leppa Berry", "Salac Berry", "Petaya Berry", "Ganlon Berry", "Liechi Berry", "Apicot Berry", "Starf Berry", "Lansat Berry", "Kee Berry", "Maranga Berry", "Micle Berry", "Custap Berry", "Jaboca Berry", "Rowap Berry", "Enigma Berry"];
+          if (berryItems.includes(p.heldItem)) {
+            addLog(`🍓 Harvest! ${p.species} replenished its ${p.heldItem}.`, "heal");
+            // Effectively restores berry - already consumed, this is just a log message
+          }
+        }
+        // Shed Skin
+        if (dbEntry.ability === "Shed Skin" && p.status) {
+          if (Math.random() < 0.3) {
+            addLog(`✨ Shed Skin! ${p.species} shed its skin and cured its ${p.status.toUpperCase()}!`, "heal");
+            p.status = null;
+          }
+        }
+        // Natural Cure
+        if (dbEntry.ability === "Natural Cure" && p.status) {
+          addLog(`✨ Natural Cure! ${p.species} recovered from status ${p.status.toUpperCase()}!`, "heal");
+          p.status = null;
+        }
+      }
+
+      // Freeze status ticking (only reduces if player with status ends turn)
+      if (p.status === "freeze" && !p.fainted) {
+        p.statusTurns = (p.statusTurns || 0) + 1;
+        if (p.statusTurns >= 1) {
+          p.status = null;
+          p.statusTurns = 0;
+          addLog(`❄️ ${p.species} thawed out!`, "heal");
+        }
+      }
+
+      // Moody ability for Smeargle
+      if (dbEntry && dbEntry.ability === "Moody" && !p.fainted) {
+        const roll = Math.floor(Math.random() * 20) + 1;
+        let stat = "";
+        let change = 0;
+        if (roll >= 10) {
+          if (roll % 2 === 0) {
+            stat = "def";
+            change = 1;
+          } else {
+            stat = "atk";
+            change = 1;
+          }
+        } else {
+          if (roll % 2 === 0) {
+            stat = "def";
+            change = -1;
+          } else {
+            stat = "atk";
+            change = -1;
+          }
+        }
+        if (!p.modifiers) p.modifiers = [];
+        addModifier(p, {
+          stat,
+          amount: change,
+          duration: 9999, // Permanent
+          source: "Moody"
+        });
+        addLog(`🎲 Moody! Smeargle rolled ${roll} on d20. ${stat.toUpperCase()} modified by ${change >= 0 ? "+" : ""}${change}!`, "heal");
+      }
+
+      // EXP passive checks
+      if (p.heldItem === "EXP Share" && !p.hasMoved && !p.hasAttacked && !p.hasUsedSkill) {
+        p.exp += 1;
+        addLog(`🎓 EXP share! ${p.species} gains +1 EXP.`, "heal");
+      }
+
+      // Core egg hatch pools progress
+      if (p.isEgg && !p.hasHatched) {
+        const dbEntry = DB[p.species];
+        if (!p.pendingHatch) {
+          p.hatchProgress = (p.hatchProgress || 0) + 1;
+          const cost = dbEntry?.hatchCost || (p.species === "Aerodactyl" ? 18 : 30);
+          if (p.hatchProgress >= cost) {
+            p.pendingHatch = true;
+          }
+        }
+        if (p.pendingHatch) {
+          p.isEgg = false;
+          p.hasHatched = true;
+          p.pendingHatch = false;
+          p.maxHp = dbEntry.hp;
+          p.hp = dbEntry.hp;
+          p.def = dbEntry.def || 0;
+          if (p.species === "Aerodactyl") {
+            addLog(`🦴 Fossil cleaned! A fierce Aerodactyl rises from the stone onto the battlefield!`, "combat");
+          } else {
+            addLog(`✨ Golden Egg hatched! A Legendary ${p.species} joins the battlefield!`, "combat");
+          }
+        }
+      } else {
+        // Regigigas Slumber Growth
+        if (p.species === "Regigigas" && p.regigigasLocked) {
+          if (gameState.turn >= 16 && gameState.turn <= 19) {
+            p.maxHp += 2;
+            p.hp += 2;
+            p.atk += 1;
+            addLog(`⏳ Regigigas grows in its slumber (Max HP +2, Atk +1)!`, "heal");
+          } else if (gameState.turn >= 20) {
+            p.regigigasLocked = false;
+            addLog(`⭐ Regigigas awoke automatically from its slumber! It is now fully active, immune to push/pull, and increases team Max MP and MP regen!`, "heal");
+          }
+        }
+
+        if (p.species !== "Clear Bell" && p.species !== "Tidal Bell" && p.species !== "Tidal bell") {
+          if (p.heldItem === "Oval Stone") {
+            if (p.customBar && p.customBar.type === "Happiness") {
+              gainHappiness(p, 1, list);
+              addLog(`💖 Oval Stone: ${p.species} gained +1 Happiness.`, "heal");
+            }
+          } else {
+            // Standard experience accumulation
+            p.exp += 1;
+            const dbEntry = DB[p.species];
+            if (dbEntry?.evoCost && p.exp >= dbEntry.evoCost) {
+              if (p.species === "Eevee") {
+                p.pendingEvoChoice = true;
+                addLog(`✨ Eevee is ready to evolve! Choose its evolution form durings your upcoming turns.`, "heal");
+              } else {
+                const oldName = p.species;
+                p.species = dbEntry.evoTo!;
+                const evolvedDb = DB[dbEntry.evoTo!];
+                p.maxHp = evolvedDb.hp;
+                p.hp = evolvedDb.hp;
+                p.atk = evolvedDb.atk;
+                p.def = evolvedDb.def || 0;
+                p.exp = 0;
+                p.customBar = getCustomBarForSpecies(p.species);
+                addLog(`🌿 Evolution! ${oldName} evolved into ${p.species}!`, "heal");
+                if (oldName === "Nincada" && p.species === "Ninjask") {
+                  spawnShedinja(p, list, peds);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Decrement transformState duration
+      if (p.transformState) {
+        p.transformState.turnsLeft -= 1;
+        if (p.transformState.turnsLeft <= 0) {
+          addLog(`🧬 Transform worn off! ${p.species} reverted back to ${p.transformState.originalSpecies}.`, "sys");
+          p.species = p.transformState.originalSpecies;
+          p.atk = p.transformState.originalAtk;
+          p.def = p.transformState.originalDef;
+          p.maxHp = p.transformState.originalMaxHp;
+          p.hp = Math.min(p.hp, p.transformState.originalMaxHp);
+          p.reflectedType = null;
+          p.transformState = null;
+        }
+      }
+
+      // Decrement stat modifier durations
+      if (p.modifiers && p.modifiers.length > 0) {
+        p.modifiers = p.modifiers.map(m => {
+          const nextDur = m.duration - 1;
+          if (nextDur <= 0) {
+            addLog(`⏳ ${p.species}'s stat modifier ${m.source} (${m.stat.toUpperCase()} +${m.amount}) has worn off.`, "sys");
+          }
+          return { ...m, duration: nextDur };
+        }).filter(m => m.duration > 0);
+      }
+
+      // Decrement skill cooldowns
+      if (p.skillCooldowns) {
+        const nextCooldowns: { [key: string]: number } = {};
+        Object.keys(p.skillCooldowns).forEach(name => {
+          const cd = p.skillCooldowns![name];
+          if (cd > 1) {
+            nextCooldowns[name] = cd - 1;
+          } else if (cd === 1) {
+            addLog(`⏳ ${p.species}'s skill ${name} is off cooldown.`, "sys");
+          }
+        });
+        p.skillCooldowns = nextCooldowns;
+      }
+
+      // Curry Decay
+      if (p.curryEffect) {
+        p.curryEffect.turnsLeft -= 1;
+        if (p.curryEffect.turnsLeft <= 0) {
+          const oldMaxHp = p.maxHp;
+          p.maxHp = Math.max(1, p.maxHp - p.curryEffect.hpBoost);
+          p.hp = Math.min(p.hp, p.maxHp);
+          p.curryEffect = null;
+          addLog(`🍲 Curry effect wore off for ${p.species}. Max HP returned from ${oldMaxHp} to ${p.maxHp}.`, "sys");
+        }
+      }
+
+      // Frost Weather Ticks
+      if (gameState.weather.type === "Hail Storm") {
+        if (p.customBar && p.customBar.type === "Frost") {
+          p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 1);
+          addLog(`❄️ Hail Storm! Ice-type ${p.species} gains +1 Frost.`, "sys");
+        }
+      } else if (gameState.weather.type === "Sunlight" || gameState.weather.type === "Harsh Sunlight") {
+        if (p.customBar && p.customBar.type === "Frost") {
+          p.customBar.value = Math.max(0, p.customBar.value - 1);
+          addLog(`☀️ Sunlight! Ice-type ${p.species} loses -1 Frost.`, "sys");
+        }
+      }
+
+      // Decay Shields
+      if (p.shield !== undefined && p.shield > 0) {
+        if (p.shieldDuration !== undefined && p.shieldDuration > 0) {
+          p.shieldDuration -= 1;
+          if (p.shieldDuration === 0) {
+            p.shield = 0;
+            addLog(`🛡️ ${p.species}'s shield has expired.`, "sys");
+          } else {
+            addLog(`🛡️ ${p.species}'s shield ticking... (${p.shieldDuration} turn(s) left)`, "sys");
+          }
+        }
+      }
+
+      // Clear trackers flags
+      p.hasMoved = false;
+      p.hasAttacked = false;
+      p.hasUsedSkill = false;
+      p.hasUsedMP = false;
+      p.skillUses = {};
+    });
+
+    // Reset activeAbilityUsed for all units
+    list.forEach(p => {
+      p.activeAbilityUsed = false;
+    });
+
+    // Zygarde cell spawning
+    list.forEach(z => {
+      if (z.species === "Zygarde Reassembly Unit" && !z.fainted) {
+        const cells = adjCells(z.col, z.row, 2, true, gameConfig.boardSize);
+        let nextId = Math.max(0, ...list.map(p => p.id)) + 1;
+        cells.forEach(c => {
+          if (!pkAt(c.col, c.row, list) && !pedAt(c.col, c.row, peds)) {
+            if (Math.random() < 0.10) {
+              list.push({
+                id: nextId++,
+                species: "Zygarde Cell",
+                player: 0,
+                col: c.col,
+                row: c.row,
+                hp: 1,
+                maxHp: 1,
+                atk: 0,
+                def: 0,
+                fainted: false,
+                exp: 0,
+                status: null,
+                modifiers: [],
+                heldItem: null,
+                isEgg: false,
+                hasHatched: true,
+                isSummon: true
+              });
+              addLog(`🟢 Zygarde Cell spawned at ${String.fromCharCode(65 + c.col)}${c.row + 1}!`, "heal");
+            }
+          }
+        });
+      }
+    });
+
+    // Clear Bell turn-end passive healing
+    list.forEach(bell => {
+      if ((bell.species === "Clear Bell" || bell.species === "Clear bell") && !bell.fainted && bell.player === curPlayer) {
+        list.forEach(ally => {
+          if (ally.player === curPlayer && !ally.fainted && !(ally.banishedTurns && ally.banishedTurns > 0) && ally.species !== "Clear Bell" && ally.species !== "Clear bell" && ally.species !== "Tidal Bell" && ally.species !== "Tidal bell") {
+            const dc = Math.abs(ally.col - bell.col);
+            const dr = Math.abs(ally.row - bell.row);
+            if (dc <= 1 && dr <= 1) {
+              if (ally.hp < ally.maxHp) {
+                applyHeal(ally, 1);
+                addLog(`🔔 Clear Bell healed ${ally.species} for +1 HP!`, "heal");
+              }
+            }
+          }
+        });
+      }
+    });
+
+    // Generic end of turn abilities for player's summoned units
+    list.forEach(summon => {
+      if (summon.isSummon && !summon.fainted && summon.player === curPlayer) {
+        const sc = summon.summonConfig;
+        if (sc && sc.aoeCondition === "end_turn") {
+          const range = sc.aoeRange || 1;
+          const cells = adjCells(summon.col, summon.row, range, true, gameConfig.boardSize);
+          cells.push({ col: summon.col, row: summon.row });
+          list.forEach(target => {
+            if (target.fainted || (target.banishedTurns && target.banishedTurns > 0)) return;
+            const isInArea = cells.some(c => c.col === target.col && c.row === target.row);
+            if (!isInArea) return;
+
+            const isAlly = target.player === summon.player;
+            const isNotSelf = target.id !== summon.id;
+
+            if (sc.aoeEffect === "heal" && isAlly && isNotSelf) {
+              const amount = sc.aoeHeal || 1;
+              if (target.hp < target.maxHp) {
+                applyHeal(target, amount);
+                addLog(`🔔 ${summon.species} healed ally ${target.species} for +${amount} HP!`, "heal");
+              }
+            } else if (sc.aoeEffect === "damage" && !isAlly) {
+              const amount = sc.aoeDmg || 1;
+              const reducedDmg = applyTidalBellReduction(target, amount, list);
+              target.hp = Math.max(0, target.hp - reducedDmg);
+              addLog(`🔔 ${summon.species} dealt ${reducedDmg} damage to enemy ${target.species}!`, "combat");
+              if (target.hp <= 0) target.fainted = true;
+            }
+          });
+        }
+      }
+    });
+
+    // Decrement summon durations for active player's summons at their turn end
+    list.forEach(p => {
+      if (p.isSummon && typeof p.summonDurationLeft === "number" && !p.fainted && p.player === curPlayer) {
+        p.summonDurationLeft -= 1;
+        if (p.summonDurationLeft <= 0) {
+          p.hp = 0;
+          p.fainted = true;
+          addLog(`💨 ${p.species} collapsed/expired!`, "sys");
+        }
+      }
+    });
+
+    // Stone Pillar end-of-opponent-turn trigger
+    const endOpponentPlayer = curPlayer === 1 ? 2 : 1;
+    list.forEach(pillar => {
+      if (pillar.species === "Stone Pillar" && !pillar.fainted && pillar.player === endOpponentPlayer) {
+        const shape = pillar.summonConfig?.shape || "plus";
+        list.forEach(target => {
+          if (!target.fainted && target.id !== pillar.id && !(target.banishedTurns && target.banishedTurns > 0)) {
+            const dc = Math.abs(target.col - pillar.col);
+            const dr = Math.abs(target.row - pillar.row);
+            let inRange = false;
+            if (shape === "plus") {
+              inRange = (dc === 0 && dr === 1) || (dr === 0 && dc === 1);
+            } else if (shape === "aoe1") {
+              inRange = dc <= 1 && dr <= 1;
+            }
+            if (inRange) {
+              const baseDmg = 2;
+              const reducedDmg = applyTidalBellReduction(target, baseDmg, list);
+              target.hp = Math.max(0, target.hp - reducedDmg);
+              addLog(`🪨 Stone Pillar dealt ${reducedDmg} damage to ${target.species}!`, "combat");
+              if (target.customBar && target.customBar.type === "Angry") {
+                target.customBar.value = Math.min(target.customBar.max, target.customBar.value + 1);
+              }
+              if (target.hp <= 0) {
+                target.fainted = true;
+                addLog(`${target.species} fainted!`, "sys");
+              }
+            }
+          }
+        });
+      }
+    });
+
+    // B. Swap players
+    const nextPlayer = curPlayer === 1 ? 2 : 1;
+
+    // Generic start of turn abilities for the NEXT player's summoned units
+    list.forEach(summon => {
+      if (summon.isSummon && !summon.fainted && summon.player === nextPlayer) {
+        const sc = summon.summonConfig;
+        if (sc && sc.aoeCondition === "start_turn") {
+          const range = sc.aoeRange || 1;
+          const cells = adjCells(summon.col, summon.row, range, true, gameConfig.boardSize);
+          cells.push({ col: summon.col, row: summon.row });
+          list.forEach(target => {
+            if (target.fainted || (target.banishedTurns && target.banishedTurns > 0)) return;
+            const isInArea = cells.some(c => c.col === target.col && c.row === target.row);
+            if (!isInArea) return;
+
+            const isAlly = target.player === summon.player;
+            const isNotSelf = target.id !== summon.id;
+
+            if (sc.aoeEffect === "heal" && isAlly && isNotSelf) {
+              const amount = sc.aoeHeal || 1;
+              if (target.hp < target.maxHp) {
+                applyHeal(target, amount);
+                addLog(`🔔 ${summon.species} healed ally ${target.species} for +${amount} HP!`, "heal");
+              }
+            } else if (sc.aoeEffect === "damage" && !isAlly) {
+              const amount = sc.aoeDmg || 1;
+              const reducedDmg = applyTidalBellReduction(target, amount, list);
+              target.hp = Math.max(0, target.hp - reducedDmg);
+              addLog(`🔔 ${summon.species} dealt ${reducedDmg} damage to enemy ${target.species}!`, "combat");
+              if (target.hp <= 0) target.fainted = true;
+            }
+          });
+        }
+      }
+    });
+    let nextTurn = gameState.turn;
+    if (nextPlayer === 1) {
+      nextTurn += 1;
+    }
+
+    // Phase evaluation
+    let nextPhase = gameState.phase;
+    if (nextTurn >= 10 && nextTurn < 25) {
+      nextPhase = 2;
+    } else if (nextTurn >= 25 && nextTurn < 40) {
+      nextPhase = 3;
+    } else if (nextTurn >= 40) {
+      nextPhase = 4;
+    }
+
+    // Compute max Energy limits
+    const maxE = nextPhase === 1 ? 3 : nextPhase === 2 ? 4 : 5;
+
+    // Gold payouts on turn increments 1, 6, 11, 16, 21 etc.
+    const payoutTurns = [1, 6, 11, 16, 21, 26, 31, 36, 41, 46, 51, 56];
+    const updatedPlayers = { ...gameState.players };
+
+    // Ending player phase-based gold income
+    const goldEarned = gameState.phase === 1 ? 3 : (gameState.phase === 2 || gameState.phase === 3) ? 4 : 5;
+    updatedPlayers[curPlayer].gold += goldEarned;
+    addLog(`🪙 Turn-End Gold Payout: Player ${curPlayer} earned +${goldEarned} Gold from phase dynamics.`, "sys");
+
+    if (payoutTurns.includes(nextTurn) && nextPlayer === 1) {
+      const bonusGold = nextTurn > 30 ? 7 : nextTurn > 15 ? 6 : 5;
+      updatedPlayers[1].gold += bonusGold;
+      updatedPlayers[2].gold += bonusGold;
+      addLog(`💰 payout! All players earned +${bonusGold} Gold from turn milestone.`, "sys");
+    }
+
+    // Allocate 2 free command EXP points
+    updatedPlayers[nextPlayer].freeExp += 2;
+
+    // Geomancy ticks
+    list.forEach(p => {
+      if (p.player === nextPlayer && !p.fainted && p.species === "Xerneas" && p.geomancyCharge !== undefined && p.geomancyCharge > 0) {
+        p.geomancyCharge -= 1;
+        if (p.geomancyCharge === 0) {
+          const aoeCells = [...adjCells(p.col, p.row, 2, true, gameConfig.boardSize), { col: p.col, row: p.row }];
+          const alliesInAoE = list.filter(a => !a.fainted && a.player === nextPlayer && aoeCells.some(c => c.col === a.col && c.row === a.row));
+          alliesInAoE.forEach(ally => {
+            applyHeal(ally, 3);
+            if (!ally.modifiers) ally.modifiers = [];
+            addModifier(ally, {
+              stat: "atk",
+              amount: 2,
+              duration: 2,
+              source: "Geomancy"
+            });
+          });
+          addLog(`🌟 Geomancy activates for ${p.species}! Healed allies in AoE(2) by 3 HP and granted Atk +2 for 2 turns!`, "heal");
+        } else {
+          addLog(`⏳ Geomancy charging on ${p.species}... (${p.geomancyCharge} turn(s) left)`, "sys");
+        }
+      }
+    });
+
+    // Weather setter abilities
+    // Trigger once per active pokemon with weather abilities
+    const activeMons = list.filter(p => !p.fainted);
+    const nextWeather = { ...gameState.weather };
+    activeMons.forEach(p => {
+      const db = DB[p.species];
+      if (db) {
+        if (db.ability === "Drought" && !p.weatherTriggered) {
+          if (canOverrideWeather(nextWeather.type, "Sunlight")) {
+            nextWeather.type = "Sunlight";
+            nextWeather.duration = 5;
+            addLog(`☀️ Drought! ${p.species} bathed the zone in brilliant Sunlight for 5 turns!`, "sys");
+          } else {
+            addLog(`☀️ Drought was blocked by existing stronger weather!`, "sys");
+          }
+          p.weatherTriggered = true;
+        }
+        if (db.ability === "Drizzle" && !p.weatherTriggered) {
+          if (canOverrideWeather(nextWeather.type, "Rain")) {
+            nextWeather.type = "Rain";
+            nextWeather.duration = 5;
+            addLog(`🌧️ Drizzle! ${p.species} summoned a downpour for 5 turns!`, "sys");
+          } else {
+            addLog(`🌧️ Drizzle was blocked by existing stronger weather!`, "sys");
+          }
+          p.weatherTriggered = true;
+        }
+        if (db.ability === "Sand Stream" && !p.weatherTriggered) {
+          if (canOverrideWeather(nextWeather.type, "Sandstorm")) {
+            nextWeather.type = "Sandstorm";
+            nextWeather.duration = 5;
+            addLog(`⏳ Sand Stream! ${p.species} whipped up a Sandstorm for 5 turns!`, "sys");
+          } else {
+            addLog(`⏳ Sand Stream was blocked by existing stronger weather!`, "sys");
+          }
+          p.weatherTriggered = true;
+        }
+        if (db.ability === "Snow Warning" && !p.weatherTriggered) {
+          if (canOverrideWeather(nextWeather.type, "Hail Storm")) {
+            nextWeather.type = "Hail Storm";
+            nextWeather.duration = 5;
+            addLog(`❄️ Snow Warning! ${p.species} summoned a Hail Storm for 5 turns!`, "sys");
+          } else {
+            addLog(`❄️ Snow Warning was blocked by existing stronger weather!`, "sys");
+          }
+          p.weatherTriggered = true;
+        }
+      }
+    });
+
+    // Weather decay
+    if (nextWeather && nextWeather.type && nextWeather.duration > 0) {
+      nextWeather.duration -= 1;
+      if (nextWeather.duration <= 0) {
+        addLog(`☀️ Weather returned to normal (${nextWeather.type} has ended).`, "sys");
+        nextWeather.type = null;
+        nextWeather.duration = 0;
+      } else {
+        addLog(`🌦️ Weather ${nextWeather.type} continues for ${nextWeather.duration} more turns.`, "sys");
+      }
+    }
+
+    // Terrain decay
+    const nextTerrain = { ...gameState.terrain };
+    if (nextTerrain && nextTerrain.type && nextTerrain.duration > 0) {
+      nextTerrain.duration -= 1;
+      
+      // Grassy Terrain healing: on turn 2 and 4 of its duration
+      if (nextTerrain.type === "Grassy" && (nextTerrain.duration === 3 || nextTerrain.duration === 1)) {
+        list.forEach(p => {
+          if (!p.fainted && !(p.banishedTurns && p.banishedTurns > 0) && p.species !== "Clear Bell" && p.species !== "Tidal Bell" && p.species !== "Tidal bell") {
+            p.hp = Math.min(p.maxHp, p.hp + 1);
+            addLog(`🌿 Grassy Terrain heals ${p.species} for +1 HP!`, "heal");
+          }
+        });
+      }
+
+      if (nextTerrain.duration <= 0) {
+        addLog(`🔮 Terrain returned to normal (${nextTerrain.type} Terrain has ended).`, "sys");
+        nextTerrain.type = null;
+        nextTerrain.duration = 0;
+      } else {
+        addLog(`🔮 Terrain ${nextTerrain.type} continues for ${nextTerrain.duration} more turns.`, "sys");
+      }
+    }
+
+    const nextPokemonList = [...list];
+    const nextPedestals = [...peds];
+    checkWinner(nextPedestals, nextPokemonList);
+
+    // Zygarde 10% -> 50% evolution check at the end of turn
+    nextPokemonList.forEach(p => {
+      if (p.species === "Zygarde 10%" && !p.fainted) {
+        const cells = p.zygCellsCollected || 0;
+        if (cells >= 50) {
+          const oldName = p.species;
+          const damageTaken = p.maxHp - p.hp;
+          p.species = "Zygarde 50%";
+          p.maxHp = 11;
+          p.hp = Math.max(1, 11 - damageTaken);
+          p.atk = 4;
+          p.def = 3;
+          p.customBar = getCustomBarForSpecies("Zygarde 50%");
+          addLog(`🌿 Turn-End Evolution! Zygarde 10% evolved into Zygarde 50%!`, "heal");
+          
+          if (cells >= 100) {
+            checkPowerConstruct(p, nextPokemonList);
+          }
+        }
+      }
+    });
+
+    // Check existing Zygarde 50% units for Power Construct (in case they reached >= 100 cells or <= 50% HP)
+    nextPokemonList.forEach(p => {
+      if (p.species === "Zygarde 50%" && !p.fainted) {
+        checkPowerConstruct(p, nextPokemonList);
+      }
+    });
+
+
+
+    // Forecast turn-start checks for Castform
+    nextPokemonList.forEach(p => {
+      if (p.species === "Castform" && !p.fainted && p.player === nextPlayer) {
+        const isSunny = nextWeather.type === "Sunlight" || nextWeather.type === "Harsh Sunlight";
+        const isRain = nextWeather.type === "Rain" || nextWeather.type === "Heavy Rain";
+        const isHail = nextWeather.type === "Hail Storm";
+        if (isSunny || isRain || isHail) {
+          const adj = adjCells(p.col, p.row, 1, true, gameConfig.boardSize);
+          const adjacentAllies = nextPokemonList.filter(ally => {
+            if (ally.player !== p.player || ally.fainted || ally.id === p.id) return false;
+            return adj.some(c => c.col === ally.col && c.row === ally.row);
+          });
+
+          adjacentAllies.forEach(ally => {
+            if (isSunny) {
+              if (!ally.modifiers) ally.modifiers = [];
+              addModifier(ally, { stat: "atk", amount: 1, duration: 1, source: "Forecast" });
+              addLog(`☀️ Forecast: Castform gave adjacent ally ${ally.species} Atk +1 for this turn!`, "sys");
+            } else if (isRain) {
+              if (ally.hp < ally.maxHp) {
+                applyHeal(ally, 1);
+                addLog(`🌧️ Forecast: Castform healed adjacent ally ${ally.species} for 1 HP!`, "sys");
+              }
+            } else if (isHail) {
+              if (!ally.modifiers) ally.modifiers = [];
+              addModifier(ally, { stat: "def", amount: 1, duration: 1, source: "Forecast" });
+              addLog(`❄️ Forecast: Castform gave adjacent ally ${ally.species} Def +1 for this turn!`, "sys");
+            }
+          });
+        }
+      }
+    });
+
+    // Kyurem's Frozen Core: allied Ice Pokémon gain +1 Frost
+    const hasKyurem = nextPokemonList.some(p => p.player === nextPlayer && !p.fainted && p.species === "Kyurem");
+    if (hasKyurem) {
+      nextPokemonList.forEach(p => {
+        if (p.player === nextPlayer && !p.fainted && hasType(p, "Ice")) {
+          if (p.customBar && p.customBar.type === "Frost") {
+            p.customBar.value = Math.min(p.customBar.max, p.customBar.value + 1);
+            addLog(`❄️ Frozen Core! Kyurem on the field granted +1 Frost to ${p.species}!`, "heal");
+          }
+        }
+      });
+    }
+
+    const hasActiveXerneasHappiness20 = nextPokemonList.some(p => p.player === nextPlayer && !p.fainted && p.species === "Xerneas" && p.customBar && p.customBar.type === "Happiness" && p.customBar.value >= 20);
+    const finalMaxE = hasActiveXerneasHappiness20 ? maxE + 1 : maxE;
+    if (hasActiveXerneasHappiness20) {
+      addLog(`🌸 Xerneas Blessing Aura! Player ${nextPlayer} starts their turn with +1 Max Energy (${finalMaxE})!`, "heal");
+    }
+
+    const hasRegigigasAwake = nextPokemonList.some(p => p.player === nextPlayer && !p.fainted && p.species === "Regigigas" && !p.regigigasLocked);
+    const maxMP = hasRegigigasAwake ? 5 : 4;
+    let regenMP = hasRegigigasAwake ? 4 : 3;
+
+    if (updatedPlayers[nextPlayer].frostRotomDebuff) {
+      regenMP = Math.max(0, regenMP - 1);
+      updatedPlayers[nextPlayer] = {
+        ...updatedPlayers[nextPlayer],
+        frostRotomDebuff: false
+      };
+      addLog(`❄️ Frost Rotom's Appliance Pulse! Player ${nextPlayer}'s MP regeneration was reduced by 1!`, "sys");
+    }
+
+    setGameState(prev => ({
+      ...prev,
+      turn: nextTurn,
+      phase: nextPhase,
+      currentPlayer: nextPlayer,
+      pokemon: nextPokemonList,
+      pedestals: nextPedestals,
+      weather: nextWeather,
+      terrain: nextTerrain,
+      players: updatedPlayers,
+      selectedCell: null,
+      highlightedCells: [],
+      actionMode: null,
+      movePoints: {
+        ...(prev.movePoints || { 1: 3, 2: 3 }),
+        [nextPlayer]: Math.min(maxMP, (prev.movePoints?.[nextPlayer] ?? 3) + regenMP)
+      },
+      consumablesUsedThisTurn: { total: 0, powerHerb: 0 },
+      energy: {
+        ...prev.energy,
+        [nextPlayer]: finalMaxE
+      },
+      maxEnergy: {
+        ...prev.maxEnergy,
+        [nextPlayer]: finalMaxE
+      }
+    }));
+
+    addLog(`--- Player ${nextPlayer}'s Turn (Turn ${nextTurn} - Phase ${nextPhase}) ---`, "sys");
+    setTurnNotice(nextPlayer);
+  };
+
+  // Rotate Skill helper
+  const handleRotateSkill = (id: number) => {
+    if (p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber) {
+      return;
+    }
+    const actor = gameState.pokemon.find(p => p.id === id);
+    if (!actor) return;
+
+    const currentRotation = actor.rotation ?? 0;
+    const nextRotation = (currentRotation + 1) % 4;
+
+    const updatedPokemonList = gameState.pokemon.map(p => {
+      if (p.id === id) {
+        return { ...p, rotation: nextRotation };
+      }
+      return p;
+    });
+
+    setGameState(prev => {
+      let nextHighlighted = prev.highlightedCells;
+      if (prev.actionMode && prev.actionMode.type === "skill" && prev.actionMode.pokeId === id) {
+        const activeSkillIdx = prev.actionMode.skillIdx ?? 0;
+        const tempActor = { ...actor, rotation: nextRotation };
+        const tempPokemonList = updatedPokemonList;
+
+        const dbEntry = DB[tempActor.species];
+        const skill = getSkillData(dbEntry, activeSkillIdx);
+        const targetType = getSkillTargetType(skill, dbEntry, tempActor.rotomForm);
+
+        const isWeatherSkill = ["Sunny Day", "Rain Dance", "Hail", "Sandstorm"].includes(skill.skillName);
+        const isInstantSkill = (
+          skill.skillDesc === "All" ||
+          targetType === "self" ||
+          targetType === "all_allies" ||
+          targetType === "all_ice" ||
+          skill.skillDesc?.toLowerCase() === "self" ||
+          isWeatherSkill
+        ) && skill.skillName !== "Transform";
+
+        if (isInstantSkill) {
+          if (targetType === "all_allies") {
+            nextHighlighted = tempPokemonList
+              .filter(p => !p.fainted && p.player === tempActor.player)
+              .map(p => ({ col: p.col, row: p.row, type: "atk" as const }));
+          } else {
+            nextHighlighted = getSkillShapeCells(tempActor, tempPokemonList, prev.pedestals, activeSkillIdx, gameConfig.boardSize).map(c => ({ col: c.col, row: c.row, type: "atk" as const }));
+          }
+        } else {
+          nextHighlighted = getSkillCells(tempActor, tempPokemonList, prev.pedestals, activeSkillIdx, gameConfig.boardSize);
+        }
+      }
+
+      return {
+        ...prev,
+        pokemon: updatedPokemonList,
+        highlightedCells: nextHighlighted
+      };
+    });
+  };
+
+  // EXP invest helper
+  const handleAllocateExp = (id: number) => {
+    if (p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber) {
+      return;
+    }
+    const list = [...gameState.pokemon];
+    const p = list.find(x => x.id === id);
+    if (!p) return;
+    if (p.heldItem === "Oval Stone") {
+      addLog("❌ Cannot invest command EXP! Oval Stone blocks all EXP gains.", "sys");
+      return;
+    }
+    const dbEntry = DB[p.species];
+
+    if (p.hasHatched && dbEntry?.legendary) {
+      addLog(`❌ Cannot invest command EXP! Legendary ${p.species} has already hatched.`, "sys");
+      return;
+    }
+
+    if (!p.isEgg && !dbEntry?.evoCost) {
+      addLog(`❌ Cannot invest command EXP! ${p.species} cannot evolve.`, "sys");
+      return;
+    }
+
+    const updatedPlayers = { ...gameState.players };
+    if (updatedPlayers[gameState.currentPlayer].freeExp < 1) return;
+
+    updatedPlayers[gameState.currentPlayer].freeExp -= 1;
+
+    if (p.isEgg) {
+      p.hatchProgress = (p.hatchProgress || 0) + 1;
+      const cost = dbEntry?.hatchCost || (p.species === "Aerodactyl" ? 18 : 30);
+      if (p.species === "Aerodactyl") {
+        addLog(`Invested 1 command EXP in Fossil: +1 Cleaning Progress (${p.hatchProgress}/${cost})`, "heal");
+      } else {
+        addLog(`Invested 1 command EXP in Egg: +1 Hatch Progress (${p.hatchProgress}/${cost})`, "heal");
+      }
+      if (p.hatchProgress >= cost) {
+        p.pendingHatch = true;
+        addLog(`✨ Egg/Fossil is ready to hatch! It will hatch when you end your turn.`, "heal");
+      }
+    } else {
+      p.exp += 1;
+      addLog(`Invested 1 command EXP on ${p.species} (+1 EXP: ${p.exp}/${dbEntry?.evoCost || 0})`, "heal");
+      if (dbEntry?.evoCost && p.exp >= dbEntry.evoCost) {
+        if (p.species === "Eevee") {
+          p.pendingEvoChoice = true;
+          addLog(`✨ Eevee is ready to evolve! Select its upcoming form from the interface.`, "heal");
+        } else {
+          p.pendingEvo = true;
+          addLog(`✨ ${p.species} is ready to evolve! It will evolve when you end your turn.`, "heal");
+        }
+      }
+    }
+
+    setGameState(prev => ({
+      ...prev,
+      pokemon: list,
+      players: updatedPlayers
+    }));
+  };
+
+  // Unequip item helper
+  const handleUnequipItem = (id: number) => {
+    if (p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber) {
+      return;
+    }
+    const list = [...gameState.pokemon];
+    const p = list.find(x => x.id === id);
+    if (!p || !p.heldItem) return;
+
+    const stateCopy = { ...gameState.players[gameState.currentPlayer] };
+    stateCopy.inventory.held.push(p.heldItem);
+
+    addLog(`Unequipped ${p.heldItem} from ${p.species}. Item returned to Backpack.`, "sys");
+    p.heldItem = null;
+
+    setGameState(prev => ({
+      ...prev,
+      pokemon: list,
+      players: {
+        ...prev.players,
+        [gameState.currentPlayer]: stateCopy
+      }
+    }));
+  };
+
+  // Shop item transaction purchase
+  const handleBuyItem = (name: string) => {
+    if (p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber) {
+      return;
+    }
+    const item = ITEMS[name];
+    if (!item) return;
+    const playerBal = gameState.players[gameState.currentPlayer];
+
+    if (playerBal.gold < item.cost) {
+      addLog("Purchase aborted: Insufficient gold balance.", "sys");
+      return;
+    }
+
+    const updatedPlayers = { ...gameState.players };
+    updatedPlayers[gameState.currentPlayer].gold -= item.cost;
+
+    if (item.type === "held") {
+      updatedPlayers[gameState.currentPlayer].inventory.held.push(name);
+    } else {
+      updatedPlayers[gameState.currentPlayer].inventory.consumable.push(name);
+    }
+
+    setGameState(prev => ({
+      ...prev,
+      players: updatedPlayers
+    }));
+
+    addLog(`Bought ${name} for ${item.cost} Gold! Item sent to Backpack inventory.`, "heal");
+  };
+
+  // Use overlay item config targeting mode
+  const handleUseItemAction = (name: string, type: "held" | "consumable") => {
+    if (p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber) {
+      return;
+    }
+    // Put UI into equip destination highlight mode
+    setInventoryOpen(false);
+    addLog(`Targeting: Click any active ally token on the board to allocate ${name}.`, "sys");
+
+    // Highlight all user owned units
+    const cells = gameState.pokemon
+      .filter(p => !p.fainted && p.player === gameState.currentPlayer)
+      .map(p => ({ col: p.col, row: p.row, type: "move" as const }));
+
+    setGameState(prev => ({
+      ...prev,
+      actionMode: { type: "equip", item: name, itemType: type },
+      highlightedCells: cells
+    }));
+  };
+
+  const selectEeveeEvolution = (eeveeId: number, targetForm: string) => {
+    setGameState(prev => {
+      const list = prev.pokemon.map(p => {
+        if (p.id === eeveeId) {
+          return { ...p, pendingEvoTo: targetForm };
+        }
+        return p;
+      });
+      return { ...prev, pokemon: list };
+    });
+    addLog(`🧬 Species Selected: Eevee determined to evolve into ${targetForm} at turn-end!`, "heal");
+  };
+
+  const handleRestart = () => {
+    if (p2pStatus === "connected") {
+      sendP2PMessage({ type: "restart_game" });
+      setP1Ready(false);
+      setP2Ready(false);
+      setPeerP1Slots(undefined);
+      setPeerP1Placements(undefined);
+      setPeerP2Slots(undefined);
+      setPeerP2Placements(undefined);
+    }
+    setScreen("landing");
+  };
+
+  return (
+    <main className="min-h-vh w-full flex flex-col p-4 md:p-6 bg-[#0b0f19] select-none text-slate-100 font-sans antialiased overflow-x-hidden relative">
+      {/* 1. SETUP SCREEN VIEW */}
+      {/* 0a. LANDING PAGE VIEW */}
+      {screen === "landing" && (
+        <div 
+          className="flex-grow flex flex-col items-center justify-center min-h-[calc(100vh-3rem)] relative p-6 bg-cover bg-center bg-no-repeat"
+          style={{
+            backgroundImage: `url("blob:https://gemini.google.com/da24b70d-a3cc-481a-8ac6-ca20bdca051e"), radial-gradient(circle, #1a1a3a 0%, #06060f 100%)`,
+            backgroundBlendMode: "overlay"
+          }}
+        >
+          <div className="w-full max-w-xl p-8 md:p-12 rounded-3xl bg-slate-950/80 border border-[#0f3460]/80 shadow-[0_0_50px_rgba(15,52,96,0.3)] backdrop-blur-md text-center flex flex-col items-center gap-8 relative overflow-hidden">
+            <div className="absolute -top-24 -left-24 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+
+            <div>
+              <div className="text-[11px] font-black text-cyan-400 uppercase tracking-[0.25em] mb-3 animate-pulse">
+                💥 Agentic Tactical Board Game
+              </div>
+              <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-400 to-purple-400 uppercase tracking-wider mb-2 drop-shadow-md">
+                Pokémon Chess
+              </h1>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                A turn-based multiplayer chess game featuring unique elemental synergies, customized dynamic boards, and interactive Pokédex editing.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
+              <button
+                onClick={() => setScreen("preparation")}
+                className="group relative px-8 py-4 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-black text-sm uppercase tracking-widest rounded-2xl transition duration-300 transform hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(6,182,212,0.4)] cursor-pointer outline-none flex items-center justify-center gap-2"
+              >
+                <span>🎮</span> Preperation Setup
+              </button>
+              
+              <button
+                onClick={() => setScreen("pokedex")}
+                className="group relative px-8 py-4 bg-[#16213e]/70 hover:bg-[#202e56]/80 text-white font-bold text-sm uppercase tracking-widest rounded-2xl border border-[#2a3a5a] hover:border-cyan-500/50 transition duration-300 transform hover:-translate-y-0.5 hover:shadow-[0_0_20px_rgba(32,46,86,0.3)] cursor-pointer outline-none flex items-center justify-center gap-2"
+              >
+                <span>📕</span> Pokédex Database
+              </button>
+            </div>
+
+            <div className="text-[10px] text-slate-500 font-mono">
+              Designed by Antigravity v1.0.0
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 0b. PREPARATION CONFIGURATION VIEW */}
+      {screen === "preparation" && (
+        <div 
+          className="flex-grow flex flex-col items-center justify-center min-h-[calc(100vh-3rem)] relative p-6 bg-cover bg-center bg-no-repeat"
+          style={{
+            backgroundImage: `url("blob:https://gemini.google.com/da24b70d-a3cc-481a-8ac6-ca20bdca051e"), radial-gradient(circle, #1a1a3a 0%, #06060f 100%)`,
+            backgroundBlendMode: "overlay"
+          }}
+        >
+          <div className="w-full max-w-lg p-8 rounded-3xl bg-slate-950/80 border border-[#0f3460]/80 shadow-[0_0_50px_rgba(15,52,96,0.3)] backdrop-blur-md relative overflow-hidden">
+            <div className="absolute -top-24 -left-24 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+            
+            <div className="border-b border-[#0f3460]/45 pb-4 mb-6">
+              <h2 className="text-2xl font-black text-white uppercase tracking-wider flex items-center gap-2 font-sans">
+                <span>⚙️</span> Battleground Configuration
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">Configure grid dimensions and roster restrictions for the match.</p>
+            </div>
+
+            <div className="flex flex-col gap-5">
+              <div className="flex flex-col bg-[#16213e]/20 p-4 border border-[#0f3460]/30 rounded-2xl">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-xs font-black text-gray-300 uppercase tracking-wider font-sans">
+                    Grid Board Size (n × n)
+                  </label>
+                  <span className="text-xs font-bold font-mono text-cyan-400 bg-cyan-950/40 border border-cyan-800/40 px-2 py-0.5 rounded">
+                    {gameConfig.boardSize} × {gameConfig.boardSize}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={15}
+                  step={2}
+                  value={gameConfig.boardSize}
+                  onChange={e => setGameConfig(prev => ({ ...prev, boardSize: parseInt(e.target.value, 10) }))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                />
+                <span className="text-[10px] text-gray-500 mt-1">
+                  Adjust grid size. Typically 11 × 11 is default. Odd sizes ensure centered pedestals.
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="flex flex-col bg-[#16213e]/20 p-4 border border-[#0f3460]/30 rounded-2xl">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 font-sans">
+                    Max Roster Units
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={gameConfig.maxUnits}
+                    onChange={e => setGameConfig(prev => ({ ...prev, maxUnits: Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)) }))}
+                    className="bg-[#0f0f1a] border border-[#2a3a5a] text-xs text-white p-2.5 rounded-xl focus:outline-none focus:border-cyan-400 font-mono text-center"
+                  />
+                </div>
+
+                <div className="flex flex-col bg-[#16213e]/20 p-4 border border-[#0f3460]/30 rounded-2xl">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 font-sans">
+                    Max Roster Cost
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={50}
+                    value={gameConfig.maxCost}
+                    onChange={e => setGameConfig(prev => ({ ...prev, maxCost: Math.max(5, Math.min(50, parseInt(e.target.value, 10) || 5)) }))}
+                    className="bg-[#0f0f1a] border border-[#2a3a5a] text-xs text-white p-2.5 rounded-xl focus:outline-none focus:border-cyan-400 font-mono text-center"
+                  />
+                </div>
+
+                <div className="flex flex-col bg-[#16213e]/20 p-4 border border-[#0f3460]/30 rounded-2xl">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 font-sans">
+                    Max Legendaries
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={5}
+                    value={gameConfig.maxLegendary}
+                    onChange={e => setGameConfig(prev => ({ ...prev, maxLegendary: Math.max(0, Math.min(5, parseInt(e.target.value, 10) ?? 0)) }))}
+                    className="bg-[#0f0f1a] border border-[#2a3a5a] text-xs text-white p-2.5 rounded-xl focus:outline-none focus:border-cyan-400 font-mono text-center"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Game Rules Section */}
+            <div className="mt-6 bg-[#0f172a]/90 border border-[#1e3a5f]/60 rounded-2xl p-5 space-y-4">
+              <h3 className="text-sm font-black text-cyan-400 uppercase tracking-wider flex items-center gap-2">
+                <span>📜</span> How to Play
+              </h3>
+
+              <div className="space-y-3 text-[11px] leading-relaxed">
+                {/* Goal */}
+                <div className="flex items-start gap-2.5 bg-cyan-950/20 border border-cyan-800/20 rounded-xl p-3">
+                  <span className="text-base shrink-0 mt-0.5">🏆</span>
+                  <div>
+                    <span className="font-bold text-cyan-300">Goal:</span>
+                    <span className="text-slate-300"> Destroy the opponent's </span>
+                    <span className="text-amber-400 font-semibold">🏛️ Pedestal</span>
+                    <span className="text-slate-300"> OR defeat all their Pokémon to win the match.</span>
+                  </div>
+                </div>
+
+                {/* Energy */}
+                <div className="flex items-start gap-2.5 bg-purple-950/20 border border-purple-800/20 rounded-xl p-3">
+                  <span className="text-base shrink-0 mt-0.5">⚡</span>
+                  <div>
+                    <span className="font-bold text-purple-300">Energy System:</span>
+                    <span className="text-slate-300"> Each turn you get </span>
+                    <span className="text-yellow-300 font-mono font-semibold">3 Energy</span>
+                    <span className="text-slate-300"> (scales up at turns 10 & 30). Spend energy to </span>
+                    <span className="text-emerald-400 font-semibold">Move (1)</span>
+                    <span className="text-slate-300">, </span>
+                    <span className="text-red-400 font-semibold">Attack (1)</span>
+                    <span className="text-slate-300">, or use </span>
+                    <span className="text-cyan-400 font-semibold">Skills (2+)</span>
+                    <span className="text-slate-300">.</span>
+                  </div>
+                </div>
+
+                {/* Gold & Shop */}
+                <div className="flex items-start gap-2.5 bg-amber-950/20 border border-amber-800/20 rounded-xl p-3">
+                  <span className="text-base shrink-0 mt-0.5">🪙</span>
+                  <div>
+                    <span className="font-bold text-amber-300">Gold Economy:</span>
+                    <span className="text-slate-300"> Earn gold periodically. Buy </span>
+                    <span className="text-emerald-400 font-semibold">Held Items</span>
+                    <span className="text-slate-300"> and </span>
+                    <span className="text-blue-400 font-semibold">Consumables</span>
+                    <span className="text-slate-300"> from the Shop to power up your team.</span>
+                  </div>
+                </div>
+
+                {/* Evolution */}
+                <div className="flex items-start gap-2.5 bg-emerald-950/20 border border-emerald-800/20 rounded-xl p-3">
+                  <span className="text-base shrink-0 mt-0.5">🧬</span>
+                  <div>
+                    <span className="font-bold text-emerald-300">Evolution:</span>
+                    <span className="text-slate-300"> Pokémon gain </span>
+                    <span className="text-yellow-300 font-mono font-semibold">EXP</span>
+                    <span className="text-slate-300"> through combat. Evolve into stronger forms when reaching the required EXP threshold. </span>
+                    <span className="text-amber-300 font-semibold">★ Legendary Eggs</span>
+                    <span className="text-slate-300"> need extra EXP to hatch into their true forms!</span>
+                  </div>
+                </div>
+
+                {/* Types */}
+                <div className="flex items-start gap-2.5 bg-rose-950/20 border border-rose-800/20 rounded-xl p-3">
+                  <span className="text-base shrink-0 mt-0.5">🔥</span>
+                  <div>
+                    <span className="font-bold text-rose-300">Type Matchups:</span>
+                    <span className="text-slate-300"> Every Pokémon has </span>
+                    <span className="text-indigo-400 font-semibold">elemental types</span>
+                    <span className="text-slate-300">. Attacks deal </span>
+                    <span className="text-green-400 font-semibold">+1 bonus damage</span>
+                    <span className="text-slate-300"> vs weak types and </span>
+                    <span className="text-red-400 font-semibold">-1 less damage</span>
+                    <span className="text-slate-300"> vs resistant types.</span>
+                  </div>
+                </div>
+
+                {/* Movement */}
+                <div className="flex items-start gap-2.5 bg-blue-950/20 border border-blue-800/20 rounded-xl p-3">
+                  <span className="text-base shrink-0 mt-0.5">♟️</span>
+                  <div>
+                    <span className="font-bold text-blue-300">Role-Based Movement:</span>
+                    <span className="text-slate-300"> Each class moves differently — </span>
+                    <span className="text-red-400 font-semibold">Attack</span>
+                    <span className="text-slate-300"> (aggressive), </span>
+                    <span className="text-cyan-400 font-semibold">Defense</span>
+                    <span className="text-slate-300"> (protective), </span>
+                    <span className="text-green-400 font-semibold">Support</span>
+                    <span className="text-slate-300"> (flexible), </span>
+                    <span className="text-purple-400 font-semibold">Assassin</span>
+                    <span className="text-slate-300"> (precise). Evolutions expand movement range!</span>
+                  </div>
+                </div>
+
+                {/* Turn Flow */}
+                <div className="flex items-start gap-2.5 bg-slate-800/40 border border-slate-700/30 rounded-xl p-3">
+                  <span className="text-base shrink-0 mt-0.5">🔄</span>
+                  <div>
+                    <span className="font-bold text-slate-300">Turn Flow:</span>
+                    <span className="text-slate-400"> Players alternate turns. Each turn: earn gold → spend energy (move/attack/skill) → distribute EXP → end turn. Plan carefully — every move counts!</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setScreen("setup")}
+                className="flex-1 py-3 px-6 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs uppercase tracking-widest rounded-xl transition duration-200 cursor-pointer text-center outline-none"
+              >
+                ✨ Create Battle
+              </button>
+              
+              <button
+                onClick={() => setScreen("landing")}
+                className="py-3 px-6 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition duration-200 cursor-pointer text-center outline-none"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 0c. POKEDEX DATABASE VIEW */}
+      {screen === "pokedex" && (
+        <div 
+          className="flex-grow min-h-[calc(100vh-3rem)] relative p-6 bg-cover bg-center bg-no-repeat overflow-y-auto"
+          style={{
+            backgroundImage: `radial-gradient(circle, #161a2b 0%, #06060c 100%)`
+          }}
+        >
+          <Pokedex
+            onBack={() => setScreen("landing")}
+            boardSize={gameConfig.boardSize}
+          />
+        </div>
+      )}
+
+      {screen === "setup" && (
+        <SetupScreen
+          onStartGame={handleStartGame}
+          p2pStatus={p2pStatus}
+          peerId={peerId}
+          myPlayerNumber={myPlayerNumber}
+          p1Ready={p1Ready}
+          p2Ready={p2Ready}
+          onHostGame={onHostGame}
+          onJoinGame={onJoinGame}
+          onDisconnectP2P={onDisconnectP2P}
+          onToggleReady={onToggleReady}
+          onSyncSetupData={handleSyncSetupData}
+          peerP1Slots={peerP1Slots}
+          peerP1Placements={peerP1Placements}
+          peerP2Slots={peerP2Slots}
+          peerP2Placements={peerP2Placements}
+          boardSize={gameConfig.boardSize}
+          maxUnits={gameConfig.maxUnits}
+          maxCost={gameConfig.maxCost}
+          maxLegendary={gameConfig.maxLegendary}
+        />
+      )}
+
+      {/* 2. GAME SCREEN VIEW */}
+      {screen === "game" && (
+        <div className="game-wrapper max-w-[1400px] w-full mx-auto bg-[#0f0f1a] rounded-3xl border border-[#0f3460]/60 shadow-2xl flex flex-col overflow-hidden relative">
+
+          {/* Header row stats menu */}
+          <div className="game-header bg-[#16213e] p-4 flex flex-wrap justify-between items-center gap-4 border-b border-[#0f3460]/90">
+            <div className="turn-info flex flex-col">
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-black font-sans leading-none tracking-wide" style={{ color: gameState.currentPlayer === 1 ? '#4fc3f7' : '#ef5350' }}>
+                  Player {gameState.currentPlayer} Turn
+                </h1>
+                {p2pStatus === "connected" && myPlayerNumber !== 0 && (
+                  <span className={`text-[9px] uppercase font-black px-2 py-0.5 rounded border ${gameState.currentPlayer === myPlayerNumber
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/25"
+                      : "bg-amber-500/10 text-amber-400 border-amber-500/25"
+                    }`}>
+                    {gameState.currentPlayer === myPlayerNumber ? "Your Turn" : "Opponent's Turn"}
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2 items-center text-xs text-slate-400 mt-1.5 leading-none">
+                <span className="font-mono">Turn: #{gameState.turn} (Phase: {gameState.phase})</span>
+                <span>•</span>
+                <span onClick={() => { setShopOpen(true); }} className="text-amber-400 font-black cursor-pointer hover:underline">
+                  Gold: {gameState.players[gameState.currentPlayer].gold} 💰
+                </span>
+                <span>•</span>
+                <span className="text-emerald-400 font-sans">
+                  Command Pool XP: +{gameState.players[gameState.currentPlayer].freeExp}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex gap-2 items-center">
+              {p2pStatus === "connected" && (
+                <button
+                  onClick={onDisconnectP2P}
+                  className="bg-rose-900/50 hover:bg-rose-900 border border-rose-500/30 text-rose-200 text-xs px-3 py-1.5 rounded-full transition cursor-pointer font-bold shrink-0 outline-none"
+                >
+                  Leave Online
+                </button>
+              )}
+
+              {/* Weather status */}
+              {/* Weather status */}
+              <div className="relative">
+                <button
+                  onClick={() => setWeatherInfoOpen(!weatherInfoOpen)}
+                  className="weather-badge bg-[#0f3460] hover:bg-[#1a4a7a] transition font-sans text-xs px-4 py-2 border border-slate-700/80 rounded-full font-bold cursor-pointer flex items-center gap-1.5"
+                >
+                  🌤️ Weather System: <span className="text-indigo-300 font-black font-mono ml-0.5">{gameState.weather.type || "Clear Skies"}</span>
+                  <span>{weatherInfoOpen ? "▲" : "▼"}</span>
+                </button>
+
+                {weatherInfoOpen && (
+                  <div className="absolute top-[40px] left-1/2 -translate-x-1/2 bg-[#0f0f1a] border border-slate-700 rounded-xl p-4 w-[280px] shadow-2xl z-[1500] text-left">
+                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2 border-b border-slate-800 pb-1">
+                      Weather System Diagnostics
+                    </h4>
+                    <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-1">
+                      {/* Clear Skies */}
+                      <div className={`p-1.5 rounded text-xs ${!gameState.weather.type ? "bg-slate-800 border border-slate-700 text-white font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-gray-200">☀️ Clear Skies {!gameState.weather.type && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">No effect.</div>
+                      </div>
+                      {/* Sunlight */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.weather.type === "Sunlight" ? "bg-amber-955/40 border border-amber-500/30 text-amber-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-amber-400">☀️ Sunlight {gameState.weather.type === "Sunlight" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Fire moves +1 ATK.</div>
+                      </div>
+                      {/* Rain */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.weather.type === "Rain" ? "bg-blue-955/40 border border-blue-500/30 text-blue-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-blue-400">🌧️ Rain {gameState.weather.type === "Rain" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Water moves +1 ATK.</div>
+                      </div>
+                      {/* Hail */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.weather.type === "Hail Storm" ? "bg-cyan-955/40 border border-cyan-500/30 text-cyan-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-cyan-400">❄️ Hail Storm {gameState.weather.type === "Hail Storm" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">All units Normal Attack DMG -1.</div>
+                      </div>
+                      {/* Sandstorm */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.weather.type === "Sandstorm" ? "bg-yellow-955/40 border border-yellow-500/30 text-yellow-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-yellow-400">⏳ Sandstorm {gameState.weather.type === "Sandstorm" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">All units Skill DMG -1; Rock types +1 DEF.</div>
+                      </div>
+                      {/* Harsh Sunlight */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.weather.type === "Harsh Sunlight" ? "bg-orange-955/40 border border-orange-500/30 text-orange-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-orange-400">🔥 Harsh Sunlight {gameState.weather.type === "Harsh Sunlight" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Fire +1 ATK, Water -2 ATK. Overridden only by Heavy Rain/Strong Winds.</div>
+                      </div>
+                      {/* Heavy Rain */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.weather.type === "Heavy Rain" ? "bg-indigo-955/40 border border-indigo-500/30 text-indigo-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-indigo-400">🌊 Heavy Rain {gameState.weather.type === "Heavy Rain" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Water +1 ATK, Fire -2 ATK. Overridden only by Harsh Sunlight/Strong Winds.</div>
+                      </div>
+                      {/* Strong Winds */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.weather.type === "Strong Winds" ? "bg-purple-955/40 border border-purple-500/30 text-purple-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-purple-400">🌀 Strong Winds {gameState.weather.type === "Strong Winds" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Flying types immune to super-effective hits. Overrides all; cannot be overridden by Harsh Sunlight/Heavy Rain.</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Terrain status */}
+              <div className="relative">
+                <button
+                  onClick={() => setTerrainInfoOpen(!terrainInfoOpen)}
+                  className="terrain-badge bg-[#0f3460] hover:bg-[#1a4a7a] transition font-sans text-xs px-4 py-2 border border-slate-700/80 rounded-full font-bold cursor-pointer flex items-center gap-1.5 font-sans"
+                >
+                  🔮 Terrain System: <span className="text-indigo-300 font-black font-mono ml-0.5">{gameState.terrain?.type ? `${gameState.terrain.type}` : "Normal"}</span>
+                  <span>{terrainInfoOpen ? "▲" : "▼"}</span>
+                </button>
+
+                {terrainInfoOpen && (
+                  <div className="absolute top-[40px] left-1/2 -translate-x-1/2 bg-[#0f0f1a] border border-slate-700 rounded-xl p-4 w-[280px] shadow-2xl z-[1500] text-left">
+                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2 border-b border-slate-800 pb-1">
+                      Terrain System Diagnostics
+                    </h4>
+                    <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-1">
+                      {/* Normal Terrain */}
+                      <div className={`p-1.5 rounded text-xs ${!gameState.terrain?.type ? "bg-slate-800 border border-slate-700 text-white font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-gray-200">🔮 Normal Terrain {!gameState.terrain?.type && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">No effect.</div>
+                      </div>
+                      {/* Electric Terrain */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.terrain?.type === "Electric" ? "bg-yellow-955/40 border border-yellow-500/30 text-yellow-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-yellow-400">⚡ Electric Terrain {gameState.terrain?.type === "Electric" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Electric types +1 Atk. Any unit on the board cannot fall asleep.</div>
+                      </div>
+                      {/* Grassy Terrain */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.terrain?.type === "Grassy" ? "bg-emerald-955/40 border border-emerald-500/30 text-emerald-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-emerald-400">🌿 Grassy Terrain {gameState.terrain?.type === "Grassy" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Grass types +1 Atk. Every active target on the board heals 1 HP on turn 2 and 4 of the duration.</div>
+                      </div>
+                      {/* Misty Terrain */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.terrain?.type === "Misty" ? "bg-purple-955/40 border border-purple-500/30 text-purple-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-purple-400">🌫️ Misty Terrain {gameState.terrain?.type === "Misty" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Every unit on the board cannot get any status effects. Dragon type units Atk -1.</div>
+                      </div>
+                      {/* Psychic Terrain */}
+                      <div className={`p-1.5 rounded text-xs ${gameState.terrain?.type === "Psychic" ? "bg-pink-955/40 border border-pink-500/30 text-pink-300 font-bold" : "text-gray-400"}`}>
+                        <div className="font-bold text-[11px] text-pink-400">👁️ Psychic Terrain {gameState.terrain?.type === "Psychic" && " (Active)"}</div>
+                        <div className="text-[10px] mt-0.5">Psychic types +1 Atk. Move cost is fixed to 1; cost-reducing items/abilities are disabled.</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Move Points indicator */}
+            {(() => {
+              const currentRegigigasAwake = gameState.pokemon.some(p => p.player === gameState.currentPlayer && !p.fainted && p.species === "Regigigas" && !p.regigigasLocked);
+              const maxMPForCurrent = currentRegigigasAwake ? 5 : 4;
+              return (
+                <div className="mp-box bg-[#0f3460] py-1.5 px-4 rounded-xl border border-slate-700 flex items-center gap-3">
+                  <div className="text-center">
+                    <div className="text-[10px] text-gray-400 uppercase font-black leading-none">Move Points</div>
+                    <div className="text-xs text-cyan-400 font-extrabold font-mono mt-0.5 leading-none">
+                      {gameState.movePoints?.[gameState.currentPlayer] ?? 0} / {maxMPForCurrent} 🚶
+                    </div>
+                  </div>
+
+                  <div className="stars flex gap-1.5">
+                    {Array.from({ length: maxMPForCurrent }).map((_, sIdx) => (
+                      <div
+                        key={sIdx}
+                        className={`w-3.5 h-3.5 rounded transition ${sIdx < (gameState.movePoints?.[gameState.currentPlayer] ?? 0)
+                            ? "bg-[#4fc3f7] ring-2 ring-[#4fc3f7]/20 scale-110 shadow-md shadow-[#4fc3f7]/20"
+                            : "bg-slate-700"
+                          }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Energy points indicators stars */}
+            <div className="energy-box bg-[#0f3460] py-1.5 px-4 rounded-xl border border-slate-700 flex items-center gap-3">
+              <div className="text-center">
+                <div className="text-[10px] text-gray-400 uppercase font-black leading-none">Command Pool</div>
+                <div className="text-xs text-amber-500 font-extrabold font-mono mt-0.5 leading-none">
+                  {gameState.energy[gameState.currentPlayer]} / {gameState.maxEnergy[gameState.currentPlayer]} ⚡
+                </div>
+              </div>
+
+              <div className="stars flex gap-1.5">
+                {Array.from({ length: gameState.maxEnergy[gameState.currentPlayer] }).map((_, sIdx) => (
+                  <div
+                    key={sIdx}
+                    className={`w-3.5 h-3.5 rounded transition ${sIdx < gameState.energy[gameState.currentPlayer]
+                        ? "bg-[#ff9800] ring-2 ring-[#ff9800]/20 scale-110 shadow-md shadow-[#ff9800]/20"
+                        : "bg-slate-700"
+                      }`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Button selections modals */}
+            <div className="action-buttons flex gap-2">
+              <button
+                disabled={p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber}
+                onClick={() => {
+                  if (inventoryOpen) {
+                    setInventoryOpen(false);
+                  } else if (!shopOpen) {
+                    setInventoryOpen(true);
+                  }
+                }}
+                className={`action-btn px-4 py-2 bg-[#0f3460] border border-slate-700 rounded-lg text-xs font-bold uppercase transition shrink-0 outline-none ${p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber
+                    ? "opacity-50 cursor-not-allowed border-slate-800"
+                    : "hover:bg-[#1a4a7a] cursor-pointer"
+                  }`}
+              >
+                🎒 BACKPACK (B)
+              </button>
+              <button
+                disabled={p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber}
+                onClick={() => {
+                  if (shopOpen) {
+                    setShopOpen(false);
+                  } else if (!inventoryOpen) {
+                    setShopOpen(true);
+                  }
+                }}
+                className={`action-btn px-4 py-2 bg-[#0f3460] border border-slate-700 rounded-lg text-xs font-bold uppercase transition shrink-0 outline-none ${p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber
+                    ? "opacity-50 cursor-not-allowed border-slate-800"
+                    : "hover:bg-[#1a4a7a] cursor-pointer"
+                  }`}
+              >
+                🛒 SHOP (F)
+              </button>
+              <button
+                onClick={() => setTypeChartOpen(!typeChartOpen)}
+                className="action-btn px-4 py-2 bg-[#0f3460] border border-slate-700 hover:bg-[#1a4a7a] rounded-lg text-xs font-bold uppercase transition shrink-0 outline-none cursor-pointer text-white"
+              >
+                📊 TYPE CHART (C)
+              </button>
+              <button
+                disabled={p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber}
+                onClick={handleEndTurn}
+                className={`action-btn end px-5 py-2 bg-[#ef5350] text-white transition font-black text-xs uppercase rounded-lg shadow-md shadow-[#ef5350]/15 shrink-0 outline-none ${p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber
+                    ? "opacity-50 cursor-not-allowed"
+                    : "hover:bg-red-700 cursor-pointer"
+                  }`}
+              >
+                END TURN (E)
+              </button>
+            </div>
+          </div>
+
+          {/* Main 4-Column flexible Grid Dashboard */}
+          <div className="main-grid flex flex-col lg:flex-row gap-5 p-4 md:p-6 w-full items-start relative">
+
+            {/* Col 1: Horizontal active trackers */}
+            <FieldTrackers
+              pokemon={gameState.pokemon}
+              selectedCell={gameState.selectedCell}
+              onSelectCell={handleCellClick}
+            />
+
+            {/* Col 2: Tactical Board grid */}
+            <div className="flex-1 flex justify-center min-w-0">
+              <Board
+                pokemon={gameState.pokemon}
+                pedestals={gameState.pedestals}
+                selectedCell={gameState.selectedCell}
+                highlightedCells={gameState.highlightedCells}
+                onCellClick={handleCellClick}
+                actionModeTargets={gameState.actionMode?.targets}
+                onCellHover={(col, row) => setHoveredCell({ col, row })}
+                onCellHoverEnd={() => setHoveredCell(null)}
+                actionMode={gameState.actionMode}
+                weather={gameState.weather.type}
+                terrain={gameState.terrain?.type}
+                hazards={gameState.hazards}
+                boardSize={gameConfig.boardSize}
+              />
+            </div>
+
+            {/* Col 3: stats inspector metrics details */}
+            <div className="w-full lg:w-[280px] shrink-0">
+              <StatsCard
+                selectedCell={gameState.selectedCell}
+                pokemon={gameState.pokemon}
+                pedestals={gameState.pedestals}
+                currentPlayer={gameState.currentPlayer}
+                myPlayerNumber={myPlayerNumber}
+                energy={gameState.energy[gameState.currentPlayer]}
+                freeExp={gameState.players[gameState.currentPlayer].freeExp}
+                onSelectAction={handleSelectAction}
+                onAllocateExp={handleAllocateExp}
+                onUnequipItem={handleUnequipItem}
+                onRotateSkill={handleRotateSkill}
+                actionMode={gameState.actionMode}
+                skillMenuFor={gameState.skillMenuFor}
+                onToggleSkillMenu={(id) => setGameState(prev => ({ ...prev, skillMenuFor: prev.skillMenuFor === id ? null : id }))}
+                weather={gameState.weather.type}
+                terrain={gameState.terrain?.type}
+                movePoints={gameState.movePoints}
+                hoveredCell={hoveredCell}
+                boardSize={gameConfig.boardSize}
+                hazards={gameState.hazards}
+                turn={gameState.turn}
+              />
+            </div>
+
+            {/* Col 4: skills details and battle history logs */}
+            <SkillsAndLog
+              selectedCell={gameState.selectedCell}
+              pokemon={gameState.pokemon}
+              logs={gameState.logs}
+              actionMode={gameState.actionMode}
+              hoveredCell={hoveredCell}
+              pedestals={gameState.pedestals}
+              weather={gameState.weather.type}
+              boardSize={gameConfig.boardSize}
+            />
+
+            {/* Opponent's turn is displayed via header indicators and interaction blocks directly instead of a fullscreen overlay censor scene */}
+          </div>
+        </div>
+      )}
+
+      {/* 3. GAME END SCREEN OVER */}
+      {screen === "end" && winner && (
+        <div id="screen-end" className="max-w-md mx-auto p-8 bg-[#16213e] border border-[#ef5350] rounded-2xl text-center shadow-2xl mt-12 animate-fade-in">
+          <span className="text-6xl block mb-4">🏆</span>
+          <h2 className="text-3xl font-black text-white uppercase tracking-wider mb-2" id="end-title">
+            Player {winner.player} Victory!
+          </h2>
+          <p className="text-sm text-gray-400 mb-8" id="end-score">
+            {winner.reason}
+          </p>
+
+          <button
+            onClick={handleRestart}
+            className="primary w-full py-4 text-center bg-[#4caf50] hover:bg-[#388e3c] text-[#0f0f1a] font-extrabold rounded-xl capitalize tracking-wide select-none outline-none focus:outline-none transition shadow-lg shadow-[#4caf50]/20"
+          >
+            Declare Next Match ➡️
+          </button>
+        </div>
+      )}
+
+      {/* Interactive overlays item shop & backpack inventory */}
+      <Modals
+        shopOpen={shopOpen}
+        onToggleShop={() => setShopOpen(!shopOpen)}
+        inventoryOpen={inventoryOpen}
+        onToggleInventory={() => setInventoryOpen(!inventoryOpen)}
+        playerState={gameState.players[gameState.currentPlayer]}
+        onBuyItem={handleBuyItem}
+        onUseItemAction={handleUseItemAction}
+        consumablesUsedThisTurn={gameState.consumablesUsedThisTurn}
+        typeChartOpen={typeChartOpen}
+        onToggleTypeChart={() => setTypeChartOpen(!typeChartOpen)}
+      />
+
+      {/* Eevee Evolution Modal */}
+      {(() => {
+        const eeveesToEvolve = gameState.pokemon.filter(
+          p => p.player === gameState.currentPlayer && !p.fainted && p.species === "Eevee" && p.pendingEvoChoice && !p.pendingEvoTo && (myPlayerNumber === 0 || p.player === myPlayerNumber)
+        );
+        if (eeveesToEvolve.length === 0) return null;
+        const eevee = eeveesToEvolve[0];
+
+        return (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[3000] p-4">
+            <div className="bg-slate-900 border-2 border-[#0f3460] rounded-2xl p-6 max-w-md w-full shadow-2xl relative">
+              <h3 className="text-xl font-black text-center text-yellow-400 uppercase tracking-widest mb-2 flex items-center justify-center gap-1">
+                <span>🧬 Eevee Evolution Path</span>
+              </h3>
+              <p className="text-xs text-center text-gray-400 mb-6 font-medium">
+                Your Eevee on tile ({eevee.col}, {eevee.row}) accumulated enough EXP!
+                Choose its path. It will transform at the **end of your turn**.
+              </p>
+
+              <div className="grid grid-cols-1 gap-3">
+                {/* Vaporeon (Water) */}
+                <button
+                  onClick={() => selectEeveeEvolution(eevee.id, "Vaporeon")}
+                  className="group flex items-center justify-between p-4 bg-[#1a2c4e] border border-[#2b4c80] hover:border-cyan-400 rounded-xl transition cursor-pointer select-none text-left"
+                >
+                  <div>
+                    <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider block mb-0.5">🌊 Water Path</span>
+                    <strong className="text-sm text-gray-100 group-hover:text-cyan-300 transition">Vaporeon</strong>
+                    <p className="text-[10px] text-gray-400 mt-1">High HP (12) • Acid Armor defensive buffs</p>
+                  </div>
+                  <span className="text-2xl group-hover:scale-110 transition">🌊</span>
+                </button>
+
+                {/* Jolteon (Electric) */}
+                <button
+                  onClick={() => selectEeveeEvolution(eevee.id, "Jolteon")}
+                  className="group flex items-center justify-between p-4 bg-[#2c2b1e] border border-[#504e28] hover:border-yellow-400 rounded-xl transition cursor-pointer select-none text-left"
+                >
+                  <div>
+                    <span className="text-[10px] text-yellow-400 font-bold uppercase tracking-wider block mb-0.5">⚡ Electric Path</span>
+                    <strong className="text-sm text-gray-100 group-hover:text-yellow-300 transition">Jolteon</strong>
+                    <p className="text-[10px] text-gray-400 mt-1">High ATK (4) • Shock Wave ranged skills</p>
+                  </div>
+                  <span className="text-2xl group-hover:scale-110 transition">⚡</span>
+                </button>
+
+                {/* Flareon (Fire) */}
+                <button
+                  onClick={() => selectEeveeEvolution(eevee.id, "Flareon")}
+                  className="group flex items-center justify-between p-4 bg-[#2c1e1d] border border-[#522b28] hover:border-rose-400 rounded-xl transition cursor-pointer select-none text-left"
+                >
+                  <div>
+                    <span className="text-[10px] text-rose-400 font-bold uppercase tracking-wider block mb-0.5">🔥 Fire Path</span>
+                    <strong className="text-sm text-gray-100 group-hover:text-rose-300 transition">Flareon</strong>
+                    <p className="text-[10px] text-gray-400 mt-1">Extreme ATK (5) • Fire Spin area skills</p>
+                  </div>
+                  <span className="text-2xl group-hover:scale-110 transition">🔥</span>
+                </button>
+              </div>
+
+              <div className="mt-5 text-center text-[10px] text-slate-500 italic">
+                *Once selected, Eevee stays active as normal; evolution resolves when Turn ends.
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Chance pop-ups visual modifier element */}
+      {chancePopup && (() => {
+        const rollsList = (chancePopup as any).rolls || [{
+          statusType: chancePopup.statusType,
+          targetName: undefined,
+          chance: chancePopup.chance,
+          roll: chancePopup.roll,
+          success: chancePopup.success
+        }];
+        return (
+          <div className="fixed bottom-6 right-6 bg-slate-900 border border-slate-700 p-4 rounded-xl shadow-2xl z-[2000] animate-bounce w-[240px] max-h-[320px] overflow-y-auto custom-scrollbar animate-fade-in-up">
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1 flex justify-between">
+              <span>Status Roller</span>
+              <span className="text-amber-400 font-mono">D20</span>
+            </h4>
+            <div className="text-xs text-gray-200 mb-2">
+              Applying <span className="font-bold text-indigo-400 uppercase">{chancePopup.statusType}</span>
+            </div>
+
+            {rollsList.map((item: any, idx: number) => (
+              <div key={idx} className="mt-2 border-t border-slate-800 pt-2 first:mt-0 first:border-0 first:pt-0">
+                <div className="text-[10px] text-gray-300 font-semibold mb-1 flex justify-between">
+                  <span>🎯 {item.targetName || "Target"}</span>
+                  <span className="text-indigo-400 uppercase font-bold">{item.statusType}</span>
+                </div>
+                <div className="relative h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-950">
+                  {/* Threshold marker */}
+                  <div
+                    className="absolute h-full bg-[#43a047]"
+                    style={{ width: `${item.chance * 100}%` }}
+                  />
+                  {/* Roll pointer marker */}
+                  <div
+                    className={`absolute top-0 bottom-0 w-1 bg-white ${item.success ? "shadow-md shadow-emerald-500/50" : "shadow-md shadow-red-500/50"}`}
+                    style={{ left: `${(item.roll / 20) * 100}%` }}
+                  />
+                </div>
+
+                <div className="flex justify-between items-center text-[10px] mt-1 leading-none">
+                  <span className="text-gray-400 font-semibold font-mono">Roll: {item.roll}/20</span>
+                  <span className={`font-black uppercase tracking-wider ${item.success ? "text-emerald-400" : "text-red-400"}`}>
+                    {item.success ? "Success" : "Failed"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* Turn Transition Notice Popup */}
+      {turnNotice !== null && (myPlayerNumber === 0 || myPlayerNumber === turnNotice) && (
+        <div 
+          onClick={() => setTurnNotice(null)}
+          className="fixed top-6 left-1/2 -translate-x-1/2 bg-slate-900 border-2 border-amber-400 p-4 rounded-xl shadow-[0_0_25px_rgba(245,158,11,0.6)] z-[4000] animate-bounce w-[240px] cursor-pointer transition-all hover:scale-105"
+        >
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Battle Turn</span>
+            <span className="text-base animate-pulse">⚔️</span>
+          </div>
+          <div className="text-sm font-black text-white uppercase tracking-wide">
+            {myPlayerNumber === 0 ? `Player ${turnNotice}'s Turn` : "YOUR TURN!"}
+          </div>
+          <div className="flex justify-between items-center text-[9px] mt-2 leading-none text-gray-400 font-medium">
+            <span>Press <span className="text-white font-mono bg-slate-800 px-1 rounded">Q</span> or click to close</span>
+            <span className="text-amber-400 font-bold font-mono">3s</span>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
