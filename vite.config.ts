@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: '/PokeChess/',
+    base: '/PokemonChess/',
     plugins: [react(), tailwindcss()],
     build: {
       outDir: 'docs', // Tells Vite to make a 'docs' folder instead of 'dist'
