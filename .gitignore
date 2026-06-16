@@ -1,7 +1,12 @@
 node_modules/
 __pycache__/
 *.pyc
-.env
-_vscode/
-.idea/
+build/
+coverage/
+.DS_Store
 *.log
+.env*
+!.env.example
+.env.local
+.vscode/
+.idea/

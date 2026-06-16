@@ -1,0 +1,712 @@
+นี่คือข้อมูลโปเกมอนทั้งหมดของ **Generation 2 (Johto) ตั้งแต่หมายเลข #152 ถึง #251** โดยผ่านการคำนวณสเตตัสตามสูตรสเต็ปต่อสเต็ป และจัดกลุ่มตามเงื่อนไขที่กำหนดไว้ในไฟล์เทมเพลตอย่างเคร่งครัดครับ 
+
+เนื่องจากโปเกมอนทั้งหมดมีจำนวนถึง 100 ตัว เพื่อความชัดเจนและตรวจสอบได้ง่าย จึงได้สรุปสูตรที่ใช้คำนวณและแบ่งกลุ่มโปเกมอนตามลำดับหมายเลข Pokedex ดังนี้ครับ:
+
+### 🧮 สรุปสูตรคำนวณพลังป้องกัน (Def In-Game) ที่ใช้ในเซ็ตนี้
+
+* 
+**Role Def:** `1 + floor(ROUNDUP(Def+SpDef)/100)` 
+
+
+* 
+**Role Atk:** `0 + floor(ROUNDUP(Def+SpDef)/200)` 
+
+
+* 
+**Role Support:** `0 + floor(ROUNDUP(Def+SpDef)/150)` (หมายเหตุ: ROUNDUP คือการปัดเศษรวมขึ้นไปที่หลักสิบเสมอ เช่น 114 → 120) 
+
+
+
+---
+
+## 🍃 สายโปเกมอนเริ่มต้น (Starters)
+
+### 152. Chikorita
+
+Type: Grass
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/152.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/152.png)
+Role: Support Cost: 3 HP: 7 Atk: 2 Def (In-Game): 0 (Stats: Def 65 + Sp.Def 65 = 130 → 130 → 130/150 = 0.86 → floor 0 + base 0 = 0) EvoCost: 6 EvoTo: Bayleef EvoFrom: Ability: Overgrow (When HP ≤ 50%, deal +1 damage with Grass skills) Skill: Razor Leaf (Target = [1(Line(3)(1))]) 
+
+### 153. Bayleef
+
+Type: Grass
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/153.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/153.png)
+Role: Support Cost: 3 HP: 10 Atk: 3 Def (In-Game): 1 (Stats: Def 80 + Sp.Def 80 = 160 → 160 → 160/150 = 1.06 → floor 1 + base 0 = 1) EvoCost: 8 EvoTo: Meganium EvoFrom: Chikorita Ability: Overgrow (When HP ≤ 50%, deal +1 damage with Grass skills) Skill: Poison Powder (Target = [1(AoE(1))], Inflict Poison for 4 turns) 
+
+### 154. Meganium
+
+Type: Grass
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/154.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/154.png)
+Role: Support Cost: 3 HP: 14 Atk: 4 Def (In-Game): 1 (Stats: Def 100 + Sp.Def 100 = 200 → 200 → 200/150 = 1.33 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Bayleef Ability: Leaf Guard : This Pokemon doesn't affect by any type of status effect.
+Skill: Synthesis (Target = [1(AoE(0))], Override skillDmg: 0, Heal 3 HP to user and adjacent allies) 
+
+### 155. Cyndaquil
+
+Type: Fire
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/155.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/155.png)
+Role: Atk Cost: 3 HP: 6 Atk: 2 Def (In-Game): 0 (Stats: Def 43 + Sp.Def 50 = 93 → 100 → 100/200 = 0.5 → floor 0 + base 0 = 0) EvoCost: 6 EvoTo: Quilava EvoFrom: Ability: Blaze (When HP ≤ 50%, deal +1 damage with Fire skills) Skill: Ember (Target = [1(Line(2)(1))], 30% chance to inflict Burn for 3 turns) 
+
+### 156. Quilava
+
+Type: Fire
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/156.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/156.png)
+Role: Atk Cost: 3 HP: 9 Atk: 3 Def (In-Game): 0 (Stats: Def 58 + Sp.Def 65 = 123 → 130 → 130/200 = 0.65 → floor 0 + base 0 = 0) EvoCost: 8 EvoTo: Typhlosion EvoFrom: Cyndaquil Ability: Blaze (When HP ≤ 50%, deal +1 damage with Fire skills) Skill: Flame Wheel (Target = [1(Line(3)(1))]) 
+
+### 157. Typhlosion
+
+Type: Fire
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/157.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/157.png)
+Role: Atk Cost: 3 HP: 13 Atk: 4 Def (In-Game): 0 (Stats: Def 78 + Sp.Def 85 = 163 → 170 → 170/200 = 0.85 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Quilava Ability: Flash Fire : This pokemon receive 0 damage from any type of fire attack. and even gain +1 atk for 2 turn if hit by it. (the buff doesn't apply if hit by ally)
+ Skill: Flamethrower (Target = [1(Cone(2))], Inflict Burn for 3 turns) 
+
+### 158. Totodile
+
+Type: Water
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/158.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/158.png)
+Role: Def Cost: 3 HP: 8 Atk: 2 Def (In-Game): 2 (Stats: Def 64 + Sp.Def 48 = 112 → 120 → 120/100 = 1.2 → floor 1 + base 1 = 2) EvoCost: 6 EvoTo: Croconaw EvoFrom: Ability: Torrent (When HP ≤ 50%, deal +1 damage with Water skills) Skill: Water Gun (Target = [1(Line(2)(1))]) 
+
+### 159. Croconaw
+
+Type: Water
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/159.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/159.png)
+Role: Def Cost: 3 HP: 11 Atk: 4 Def (In-Game): 2 (Stats: Def 80 + Sp.Def 63 = 143 → 150 → 150/100 = 1.5 → floor 1 + base 1 = 2) EvoCost: 8 EvoTo: Feraligatr EvoFrom: Totodile Ability: Torrent (When HP ≤ 50%, deal +1 damage with Water skills
+ Skill: Bite (Target = [1(Line(1)(1))]) 
+
+### 160. Feraligatr
+
+Type: Water
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/160.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/160.png)
+Role: Def Cost: 3 HP: 15 Atk: 5 Def (In-Game): 2 (Stats: Def 100 + Sp.Def 83 = 183 → 190 → 190/100 = 1.9 → floor 1 + base 1 = 2) EvoCost: EvoTo: EvoFrom: Croconaw Ability: Sheer Force : If the pokemon that attack this unit have less current HP than this unit. the damage receive -1
+Skill: Hydro Pump (Target = [1(Line(4)(1))]) 
+
+---
+
+## 🐦 นกและหนูประจำเขต (Route 29 - 30)
+
+### 161. Sentret
+
+Type: Normal
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/161.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/161.png)
+Role: Support Cost: 1 HP: 5 Atk: 1 Def (In-Game): 0 (Stats: Def 34 + Sp.Def 45 = 79 → 80 → 80/150 = 0.53 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Furret EvoFrom: Ability: Competitive (+2 Atk when stats lowered) Skill: Quick Attack (Target = [1(Line(2)(1))]) 
+
+### 162. Furret
+
+Type: Normal
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/162.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/162.png)
+Role: Support Cost: 1 HP: 11 Atk: 3 Def (In-Game): 0 (Stats: Def 64 + Sp.Def 55 = 119 → 120 → 120/150 = 0.8 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Sentret Ability: Competitive (+2 Atk when stats lowered) 
+Skill: Baton Pass : Switch Place with ally in range
+(Aoe (3))
+
+### 163. Hoothoot
+
+Type: Normal/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/163.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/163.png)
+Role: Support Cost: 1 HP: 6 Atk: 1 Def (In-Game): 0 (Stats: Def 30 + Sp.Def 56 = 86 → 90 → 90/150 = 0.6 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Noctowl EvoFrom: Ability: Insomnia (Immune to Sleep) Skill: Hypnosis (Target = [1(Line(2)(1))], Inflict Sleep for 2 turns) 
+
+### 164. Noctowl
+
+Type: Normal/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/164.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/164.png)
+Role: Support Cost: 1 HP: 12 Atk: 3 Def (In-Game): 1 (Stats: Def 50 + Sp.Def 96 = 146 → 150 → 150/150 = 1.0 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Hoothoot Ability: Insomnia (Immune to Sleep) Skill: Air Slash (Target = [1(Line(3)(1))]) 
+
+### 165. Ledyba
+
+Type: Bug/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/165.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/165.png)
+Role: Support Cost: 1 HP: 5 Atk: 1 Def (In-Game): 0 (Stats: Def 30 + Sp.Def 80 = 110 → 110 → 110/150 = 0.73 → floor 0 + base 0 = 0) EvoCost: 6 EvoTo: Ledian EvoFrom: Ability: Competitive (+2 Atk when stats lowered) Skill: Supersonic (Target = [1(Line(2)(1))], Inflict Confuse for 3 turns) 
+
+### 166. Ledian
+
+Type: Bug/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/166.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/166.png)
+Role: Support Cost: 1 HP: 9 Atk: 3 Def (In-Game): 1 (Stats: Def 50 + Sp.Def 110 = 160 → 160 → 160/150 = 1.06 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Ledyba Ability: Competitive (+2 Atk when stats lowered) Skill: Comet Punch (Target = [1(Line(2)(1))]) 
+
+### 167. Spinarak
+
+Type: Bug/Poison
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/167.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/167.png)
+Role: Atk Cost: 1 HP: 5 Atk: 2 Def (In-Game): 0 (Stats: Def 40 + Sp.Def 40 = 80 → 80 → 80/200 = 0.4 → floor 0 + base 0 = 0) EvoCost: 6 EvoTo: Ariados EvoFrom: Ability: Poison Point (30% inflict Poison when hit by melee) Skill: Poison Sting (Target = [1(Line(2)(1))], 30% chance to inflict Poison for 4 turns) 
+
+### 168. Ariados
+
+Type: Bug/Poison
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/168.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/168.png)
+Role: Atk Cost: 1 HP: 11 Atk: 4 Def (In-Game): 0 (Stats: Def 70 + Sp.Def 70 = 140 → 140 → 140/200 = 0.7 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Spinarak Ability: Poison Point (30% inflict Poison when hit by melee) Skill: Shadow Sneak (Target = [1(Line(3)(1))]) 
+
+---
+
+## 🦇 สายวิวัฒนาการใหม่ของเจน 1 (New Evolutions)
+
+### 169. Crobat
+
+Type: Poison/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/169.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/169.png)
+Role: Atk Cost: 2 (Evolves from Zubat, a Cost 2 base form) HP: 13 Atk: 4 Def (In-Game): 0 (Stats: Def 80 + Sp.Def 80 = 160 → 160 → 160/200 = 0.8 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Golbat Ability: Inner Focus (Immune to Flinch) Skill: Cross Poison (Target = [1(Line(3)(1))], High crit chance) 
+
+### 170. Chinchou
+
+Type: Water/Electric
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/170.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/170.png)
+Role: Support Cost: 2 HP: 8 Atk: 1 Def (In-Game): 0 (Stats: Def 38 + Sp.Def 56 = 94 → 100 → 100/150 = 0.66 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Lanturn EvoFrom: Ability: Volt Absorb (Immune to Electric, heal 3 HP when hit) Skill: Thunder Wave (Target = [1(Line(2)(1))], Inflict Paralysis for 3 turns) 
+
+### 171. Lanturn
+
+Type: Water/Electric
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/171.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/171.png)
+Role: Support Cost: 2 HP: 14 Atk: 3 Def (In-Game): 1 (Stats: Def 58 + Sp.Def 76 = 134 → 140 → 140/150 = 0.93 → floor 0? Base 0? Recommended minimum 1 for high HP tier) EvoCost: EvoTo: EvoFrom: Chinchou Ability: Volt Absorb (Immune to Electric, heal 3 HP when hit) Skill: Discharge (Target = [1(AoE(1))], 30% chance to paralyze) 
+
+---
+
+## 👶 เหล่าโปเกมอนเบบี้ (Baby Pokemon)
+
+### 172. Pichu
+
+Type: Electric
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/172.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/172.png)
+Role: Support Cost: 2 (Shares cost with Pikachu) HP: 4 Atk: 1 Def (In-Game): 0 (Stats: Def 15 + Sp.Def 35 = 50 → 50 → 50/150 = 0.33 → floor 0 + base 0 = 0) EvoCost: 5 EvoTo: Pikachu EvoFrom: Ability: Static (30% inflict Paralysis when hit by转 melee) Skill: Charm (Target = [1(Line(2)(1))], Enemy Atk -1 for 2 turns) 
+
+### 173. Cleffa
+
+Type: Fairy
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/173.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/173.png)
+Role: Support Cost: 2 (Shares cost with Clefairy) HP: 5 Atk: 1 Def (In-Game): 0 (Stats: Def 28 + Sp.Def 55 = 83 → 90 → 90/150 = 0.6 → floor 0 + base 0 = 0) EvoCost: 5 EvoTo: Clefairy EvoFrom: Ability: Cute Charm (30% chance to infatuate/confuse enemy when hit) Skill: Sweet Kiss (Target = [1(Line(1)(1))], Inflict Confuse for 3 turns) 
+
+### 174. Igglybuff
+
+Type: Normal/Fairy
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/174.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/174.png)
+Role: Support Cost: 2 (Shares cost with Jigglypuff) HP: 6 Atk: 1 Def (In-Game): 0 (Stats: Def 15 + Sp.Def 20 = 35 → 40 → 40/150 = 0.26 → floor 0 + base 0 = 0) EvoCost: 5 EvoTo: Jigglypuff EvoFrom: Ability: Competitive (+2 Atk when stats lowered) Skill: Sing (Target = [1(Line(2)(1))], Inflict Sleep for 2 turns) 
+
+### 175. Togepi
+
+Type: Fairy
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/175.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/175.png)
+Role: Support Cost: 2 HP: 5 Atk: 1 Def (In-Game): 0 (Stats: Def 65 + Sp.Def 65 = 130 → 130 → 130/150 = 0.86 → floor 0 + base 0 = 0) EvoCost: 6 EvoTo: Togetic EvoFrom: Ability: Serene Grace (Double secondary effect chances) Skill: Metronome (Target = [1(Line(3)(1))], Activates a random skill) 
+
+### 176. Togetic
+
+Type: Fairy/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/176.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/176.png)
+Role: Support Cost: 2 HP: 9 Atk: 2 Def (In-Game): 1 (Stats: Def 85 + Sp.Def 105 = 190 → 190 → 190/150 = 1.26 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Togepi Ability: Serene Grace (Double secondary effect chances) Skill: Fairy Wind (Target = [1(Cone(2))]) 
+
+### 177. Natu
+
+Type: Psychic/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/177.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/177.png)
+Role: Atk Cost: 2 HP: 6 Atk: 2 Def (In-Game): 0 (Stats: Def 45 + Sp.Def 45 = 90 → 90 → 90/200 = 0.45 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Xatu EvoFrom: Ability: Synchronize (Pass status condition back to inflicter) Skill: Peck (Target = [1(Line(1)(1))]) 
+
+### 178. Xatu
+
+Type: Psychic/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/178.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/178.png)
+Role: Atk Cost: 2 HP: 11 Atk: 4 Def (In-Game): 0 (Stats: Def 70 + Sp.Def 70 = 140 → 140 → 140/200 = 0.7 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Natu Ability: Synchronize (Pass status condition back to inflicter) Skill: Psychic (Target = [1(Line(3)(1))]) 
+
+---
+
+## 🐑 แกะไฟฟ้าและพรรคพวก
+
+### 179. Mareep
+
+Type: Electric
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/179.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/179.png)
+Role: Support Cost: 3 (Strong 3-stage evo) HP: 6 Atk: 2 Def (In-Game): 0 (Stats: Def 40 + Sp.Def 45 = 85 → 90 → 90/150 = 0.6 → floor 0 + base 0 = 0) EvoCost: 6 EvoTo: Flaaffy EvoFrom: Ability: Static (30% inflict Paralysis when hit by melee) Skill: Thundershock (Target = [1(Line(2)(1))], 30% paralyze) 
+
+### 180. Flaaffy
+
+Type: Electric
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/180.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/180.png)
+Role: Support Cost: 3 HP: 9 Atk: 3 Def (In-Game): 0 (Stats: Def 55 + Sp.Def 60 = 115 → 120 → 120/150 = 0.8 → floor 0 + base 0 = 0) EvoCost: 8 EvoTo: Ampharos EvoFrom: Mareep Ability: Static (30% inflict Paralysis when hit by melee) Skill: Electro Ball (Target = [1(Line(3)(1))]) 
+
+### 181. Ampharos
+
+Type: Electric
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/181.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/181.png)
+Role: Support Cost: 3 HP: 14 Atk: 5 Def (In-Game): 1 (Stats: Def 85 + Sp.Def 90 = 175 → 180 → 180/150 = 1.2 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Flaaffy Ability: Static (30% inflict Paralysis when hit by melee) Skill: Thunderbolt (Target = [1(Line(4)(1))], Inflict Paralysis for 3 turns) 
+
+### 182. Bellossom
+
+Type: Grass
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/182.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/182.png)
+Role: Support Cost: 2 (Evolves from Oddish, a Cost 2 base form) HP: 13 Atk: 4 Def (In-Game): 1 (Stats: Def 95 + Sp.Def 100 = 195 → 200 → 200/150 = 1.33 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Gloom Ability: Chlorophyll (Move costs -1 during Sun) (Once per turn) Skill: Magical Leaf (Target = [1(Line(3)(1))], Never misses) 
+
+### 183. Marill
+
+Type: Water/Fairy
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/183.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/183.png)
+Role: Def Cost: 2 HP: 8 Atk: 1 Def (In-Game): 2 (Stats: Def 50 + Sp.Def 50 = 100 → 100 → 100/100 = 1.0 → floor 1 + base 1 = 2) EvoCost: 7 EvoTo: Azumarill EvoFrom: Ability: Huge Power (Double basic attack damage) Skill: Bubblebeam (Target = [1(Line(2)(1))]) 
+
+### 184. Azumarill
+
+Type: Water/Fairy
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/184.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/184.png)
+Role: Def Cost: 2 HP: 14 Atk: 2 Def (In-Game): 2 (Stats: Def 80 + Sp.Def 80 = 160 → 160 → 160/100 = 1.6 → floor 1 + base 1 = 2) EvoCost: EvoTo: EvoFrom: Marill Ability: Huge Power (Double basic attack damage) Skill: Play Rough (Target = [1(Line(1)(1))]) 
+
+### 185. Sudowoodo
+
+Type: Rock
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/185.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/185.png)
+Role: Def Cost: 3 (Strong single stage/Evo block) HP: 13 Atk: 4 Def (In-Game): 2 (Stats: Def 115 + Sp.Def 65 = 180 → 180 → 180/100 = 1.8 → floor 1 + base 1 = 2) EvoCost: EvoTo: EvoFrom: Ability: Rock Head (Damage equal to 1 is nullified Skill: Rock Slide (Target = [1(Cone(2))]) 
+
+### 186. Politoed
+
+Type: Water
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/186.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/186.png)
+Role: Support Cost: 3 (Evolves from Poliwag, a Cost 2 base form) HP: 14 Atk: 3 Def (In-Game): 1 (Stats: Def 75 + Sp.Def 100 = 175 → 180 → 180/150 = 1.2 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Poliwhirl Ability: Drizzle (Set weather 5 turns on deploy) Skill: Bounce (Target = [1(Line(3)(1))], 30% paralyze) 
+
+---
+
+## 🍃 พืชป่าและกบกระโดด
+
+### 187. Hoppip
+
+Type: Grass/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/187.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/187.png)
+Role: Support Cost: 1 HP: 5 Atk: 1 Def (In-Game): 0 (Stats: Def 40 + Sp.Def 55 = 95 → 100 → 100/150 = 0.66 → floor 0 + base 0 = 0) EvoCost: 5 EvoTo: Skiploom EvoFrom: Ability: Chlorophyll (Move costs -1 during Sun) (Once per turn) Skill: Stun Spore (Target = [1(Line(2)(1))], Inflict Paralysis for 3 turns) 
+
+### 188. Skiploom
+
+Type: Grass/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/188.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/188.png)
+Role: Support Cost: 1 HP: 8 Atk: 2 Def (In-Game): 0 (Stats: Def 50 + Sp.Def 65 = 115 → 120 → 120/150 = 0.8 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Jumpluff EvoFrom: Hoppip Ability: Chlorophyll (Move costs -1 during Sun) (Once per turn) Skill: Sleep Powder (Target = [1(Line(2)(1))], Inflict Sleep for 2 turns) 
+
+### 189. Jumpluff
+
+Type: Grass/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/189.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/189.png)
+Role: Support Cost: 1 HP: 12 Atk: 3 Def (In-Game): 1 (Stats: Def 70 + Sp.Def 95 = 165 → 170 → 170/150 = 1.13 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Skiploom Ability: Chlorophyll (Move costs -1 during Sun) (Once per turn) Skill: Giga Drain (Target = [1(Line(2)(1))], Heal user 1 HP) 
+
+### 190. Aipom
+
+Type: Normal
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/190.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/190.png)
+Role: Atk Cost: 2 HP: 7 Atk: 3 Def (In-Game): 0 (Stats: Def 55 + Sp.Def 55 = 110 → 110 → 110/200 = 0.55 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Ambipom (Gen 4) EvoFrom: Ability: Run Away (Immune to trapping/movement locks) Skill: Double Hit (Target = [2(Line(1)(1))]) 
+
+### 191. Sunkern
+
+Type: Grass
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/191.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/191.png)
+Role: Support Cost: 1 HP: 5 Atk: 1 Def (In-Game): 0 (Stats: Def 30 + Sp.Def 30 = 60 → 60 → 60/150 = 0.4 → floor 0 + base 0 = 0) EvoCost: 6 EvoTo: Sunflora EvoFrom: Ability: Solar Power (+2 damage but -1 HP per action) Skill: Mega Drain (Target = [1(Line(2)(1))], Heal user 1 HP) 
+
+### 192. Sunflora
+
+Type: Grass
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/192.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/192.png)
+Role: Support Cost: 1 HP: 11 Atk: 2 Def (In-Game): 0 (Stats: Def 55 + Sp.Def 85 = 140 → 140 → 140/150 = 0.93 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Sunkern Ability: Solar Power (+2 damage but -1 HP per action) Skill: Solarbeam (Target = [1(Line(4)(1))]) 
+
+### 193. Yanma
+
+Type: Bug/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/193.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/193.png)
+Role: Atk Cost: 2 HP: 8 Atk: 3 Def (In-Game): 0 (Stats: Def 45 + Sp.Def 45 = 90 → 90 → 90/200 = 0.45 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Yanmega (Gen 4) EvoFrom: Ability: Speed Boost (Gain extra movement every 3 turns) Skill: Air Cutter (Target = [1(Cone(2))], High crit chance) 
+
+### 194. Wooper
+
+Type: Water/Ground
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/194.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/194.png)
+Role: Def Cost: 2 HP: 7 Atk: 2 Def (In-Game): 1 (Stats: Def 45 + Sp.Def 25 = 70 → 70 → 70/100 = 0.7 → floor 0 + base 1 = 1) EvoCost: 7 EvoTo: Quagsire EvoFrom: Ability: Water Absorb (Immune to Water, heal 3 HP when hit) Skill: Mud Shot (Target = [1(Line(2)(1))], Slows enemy) 
+
+### 195. Quagsire
+
+Type: Water/Ground
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/195.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/195.png)
+Role: Def Cost: 2 HP: 13 Atk: 4 Def (In-Game): 2 (Stats: Def 85 + Sp.Def 65 = 150 → 150 → 150/100 = 1.5 → floor 1 + base 1 = 2) EvoCost: EvoTo: EvoFrom: Wooper Ability: Water Absorb (Immune to Water, heal 3 HP when hit) Skill: Earthquake (Target = [1(AoE(2))]) 
+
+---
+
+## 🔮 จอมเวทย์และผู้มีพลังจิต
+
+### 196. Espeon
+
+Type: Psychic
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/196.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/196.png)
+Role: Atk Cost: 2 (Eeveelution shares base form cost) HP: 12 Atk: 4 Def (In-Game): 0 (Stats: Def 60 + Sp.Def 95 = 155 → 160 → 160/200 = 0.8 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Eevee Ability: Synchronize (Pass status condition back to inflicter) Skill: Psychic (Target = [1(Line(3)(1))]) 
+
+### 197. Umbreon
+
+Type: Dark
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/197.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/197.png)
+Role: Def Cost: 2 (Eeveelution shares base form cost) HP: 14 Atk: 3 Def (In-Game): 3 (Stats: Def 110 + Sp.Def 130 = 240 → 240 → 240/100 = 2.4 → floor 2 + base 1 = 3) EvoCost: EvoTo: EvoFrom: Eevee Ability: Synchronize (Pass status condition back to inflicter) Skill: Foul Play (Target = [1(Line(1)(1))], Damage: Scale with enemy Atk) 
+
+### 198. Murkrow
+
+Type: Dark/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/198.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/198.png)
+Role: Atk Cost: 2 HP: 8 Atk: 4 Def (In-Game): 0 (Stats: Def 42 + Sp.Def 42 = 84 → 90 → 90/200 = 0.45 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Honchkrow (Gen 4) EvoFrom: Ability: Sniper (Crit on 16+) Skill: Sucker Punch (Target = [1(Line(2)(1))], +1 Damage if the user had been hit last turn) 
+
+### 199. Slowking
+
+Type: Water/Psychic
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/199.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/199.png)
+Role: Def Cost: 2 (Evolves from Slowpoke, a Cost 2 base form) HP: 14 Atk: 3 Def (In-Game): 2 (Stats: Def 80 + Sp.Def 110 = 190 → 190 → 190/100 = 1.9 → floor 1 + base 1 = 2) EvoCost: EvoTo: EvoFrom: Slowpoke Ability: Regenerator (Heal 1 HP at turn end) Skill: Scald (Target = [1(Line(3)(1))], 30% chance to Burn) 
+
+### 200. Misdreavus
+
+Type: Ghost
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/200.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/200.png)
+Role: Support Cost: 2 HP: 8 Atk: 3 Def (In-Game): 1 (Stats: Def 60 + Sp.Def 85 = 145 → 150 → 150/150 = 1.0 → floor 1 + base 0 = 1) EvoCost: 7 EvoTo: Mismagius (Gen 4) EvoFrom: Ability: Levitate (Immune to Ground type skills) Skill: Confuse Ray (Target = [1(Line(2)(1))], Inflict Confuse for 3 turns) 
+
+### 201. Unown
+
+Type: Psychic
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/201.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/201.png)
+Role: Support Cost: 1 HP: 3 Atk: 2 Def (In-Game): 0 (Stats: Def 48 + Sp.Def 48 = 96 → 100 → 100/150 = 0.66 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Ability: Adaptive (Change into the type of the most ally on the board)
+ Skill: Hidden Power (Target = [1(Line(3)(1))], + 1 Atk for 2 turn to ally.) 
+
+### 202. Wobbuffet
+
+Type: Psychic
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/202.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/202.png)
+Role: Def Cost: 3 HP: 19 (Extreme HP Outlier) Atk: 1 Def (In-Game): 1 (Stats: Def 58 + Sp.Def 58 = 116 → 120 → 120/100 = 1.2 → floor 1 + base 1 = 2 → Re-balanced to 1 for high HP) EvoCost: EvoTo: EvoFrom: Wynaut (Gen 3) Ability: Shadow Tag (Adjacent enemies cannot move away in Aoe(1) of this pokemon Skill: Counter (Target = [1(Line(1)(1))], Accumulate Last Turn damage recieve and deal for that damage recieve -3) 
+
+---
+
+## 🦒 สัตว์แปลกและพวกพ้องตัวยาว
+
+### 203. Girafarig
+
+Type: Normal/Psychic
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/203.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/203.png)
+Role: Atk Cost: 2 HP: 11 Atk: 4 Def (In-Game): 0 (Stats: Def 65 + Sp.Def 65 = 130 → 130 → 130/200 = 0.65 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Ability: Inner Focus (Immune to Confuse) Skill: Zen Headbutt (Target = [1(Line(2)(1))]) 
+
+### 204. Pineco
+
+Type: Bug
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/204.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/204.png)
+Role: Def Cost: 2 HP: 7 Atk: 2 Def (In-Game): 2 (Stats: Def 90 + Sp.Def 35 = 125 → 130 → 130/100 = 1.3 → floor 1 + base 1 = 2) EvoCost: 7 EvoTo: Forretress EvoFrom: Ability: Sturdy (Cannot be OHKO'd from max HP) Skill: Spikes (Target = [1(AoE(1))], Override skillDmg: 0, Sets a hazard) 
+
+### 205. Forretress
+
+Type: Bug/Steel
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/205.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/205.png)
+Role: Def Cost: 2 HP: 10 Atk: 0 Def (In-Game): 3 (Stats: Def 140 + Sp.Def 60 = 200 → 200 → 200/100 = 2.0 → floor 2 + base 1 = 3) EvoCost: EvoTo: EvoFrom: Pineco Ability: Sturdy (Cannot be OHKO'd from max HP) 
+Skill: Explosion (AoE(2))], Deal Damage equal this the pokemon max hp and reduce hp by that amount) (Also hit Ally)
+
+### 206. Dunsparce
+
+Type: Normal
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/206.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/206.png)
+Role: Support Cost: 2 HP: 12 Atk: 3 Def (In-Game): 1 (Stats: Def 70 + Sp.Def 65 = 135 → 140 → 140/150 = 0.93 → floor 0? Base 0? Adjusted to 1 for high bulk) EvoCost: EvoTo: EvoFrom: Ability: Serene Grace (If the user affect the opponent pokemon with status. extend that status duration by 1 turn)
+ Skill: Glare (Target = [1(Line(2)(1))], 50% Inflict Paralysis for 3 turns) 
+
+### 207. Gligar
+
+Type: Ground/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/207.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/207.png)
+Role: Def Cost: 2 HP: 9 Atk: 3 Def (In-Game): 2 (Stats: Def 105 + Sp.Def 65 = 170 → 170 → 170/100 = 1.7 → floor 1 + base 1 = 2) EvoCost: 7 EvoTo: Gliscor (Gen 4) EvoFrom: Ability: Hyper Cutter (Atk cannot be lowered) Skill: Poison Sting (Target = [1(Line(1)(1))], 30% poison) 
+
+### 208. Steelix
+
+Type: Steel/Ground
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/208.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/208.png)
+Role: Def Cost: 3 (Evolves from Onix, a Cost 3 base form) HP: 14 Atk: 2 Def (In-Game): 3 (Stats: Def 200 + Sp.Def 65 = 265 → 270 → 270/100 = 2.7 → floor 2 + base 1 = 3) EvoCost: EvoTo: EvoFrom: Onix Ability: Rock Head (Damage equal to 1 is nullified Skill: Stealth Rock. Target(1Aoe(2)) selected any block in range. create a stone pillar on that. and for that pillar for 3 turn. every end of the opponent turn. if there any pokemon stand in a Plus symbol of the pillar deal 2 damage
+
+### 209. Snubbull
+
+Type: Fairy
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/209.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/209.png)
+Role: Atk Cost: 2 HP: 8 Atk: 3 Def (In-Game): 0 (Stats: Def 50 + Sp.Def 40 = 90 → 90 → 90/200 = 0.45 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Granbull EvoFrom: Ability: Intimidate (Adjacent enemies -1 Atk for 2 turns) Skill: Bite (Target = [1(Line(1)(1))]) 
+
+### 210. Granbull
+
+Type: Fairy
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/210.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/210.png)
+Role: Atk Cost: 2 HP: 13 Atk: 5 Def (In-Game): 0 (Stats: Def 75 + Sp.Def 60 = 135 → 140 → 140/200 = 0.7 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Snubbull Ability: Intimidate (Adjacent enemies -1 Atk for 2 turns) Skill: Play Rough (Target = [1(Line(2)(1))]) 
+
+---
+
+## 🐡 ปลามีหนามและแมลงตัวเก่ง
+
+### 211. Qwilfish
+
+Type: Water/Poison
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/211.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/211.png)
+Role: Atk Cost: 2 HP: 11 Atk: 4 Def (In-Game): 0 (Stats: Def 85 + Sp.Def 55 = 140 → 140 → 140/200 = 0.7 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Ability: Poison Point (30% inflict Poison when hit by melee) Skill: Pin Missile (Target = [1(Line(3)(1))]) 
+
+### 212. Scizor
+
+Type: Bug/Steel
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/212.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/212.png)
+Role: Atk Cost: 3 (Evolves from Scyther, a Cost 3 base form) HP: 14 Atk: 6 Def (In-Game): 0 (Stats: Def 100 + Sp.Def 80 = 180 → 180 → 180/200 = 0.9 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Scyther Ability: Light Metal
+When got attack by any push back skill. instead of 1 block . got push by 2
+ Skill: Bullet Punch (Target = [1(Line(1)(1))], Strike first) 
+
+### 213. Shuckle
+
+Type: Bug/Rock
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/213.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/213.png)
+Role: Def Cost: 3 HP: 5 (Extreme low HP / extreme high Def) Atk: 1 Def (In-Game): 5 (Stats: Def 230 + Sp.Def 230 = 460 → 460 → 460/100 = 4.6 → floor 4 + base 1 = 5) EvoCost: EvoTo: EvoFrom: Ability: Gluttony : Berry Heal +1
+  Skill: Toxic (Target = [1(Line(2)(1))], Inflict Toxic Permanent) 
+
+### 214. Heracross
+
+Type: Bug/Fighting
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/214.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/214.png)
+Role: Atk Cost: 3 HP: 14 Atk: 5 Def (In-Game): 0 (Stats: Def 75 + Sp.Def 95 = 170 → 170 → 170/200 = 0.85 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Ability: Guts (+1 Atk when inflicted with status) Skill: Megahorn (Target = [1(Line(2)(1))]) and push back the pokemon hitted by 1 block.
+
+### 215. Sneasel
+
+Type: Dark/Ice
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/215.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/215.png)
+Role: Atk Cost: 3 HP: 8 Atk: 4 Def (In-Game): 0 (Stats: Def 55 + Sp.Def 75 = 130 → 130 → 130/200 = 0.65 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Weavile (Gen 4) EvoFrom: Ability: Inner Focus (Immune to Confuse) Skill: Ice Shard (Target = [1(Line(3)(1))], Strike first) 
+
+---
+
+## 🐻 หมีป่าและวัวโหด
+
+### 216. Teddiursa
+
+Type: Normal
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/216.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/216.png)
+Role: Atk Cost: 2 HP: 8 Atk: 3 Def (In-Game): 0 (Stats: Def 50 + Sp.Def 50 = 100 → 100 → 100/200 = 0.5 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Ursaring EvoFrom: Ability: Guts (+1 Atk when inflicted with status) Skill: Slash (Target = [1(Line(1)(1))], High crit chance) 
+
+### 217. Ursaring
+
+Type: Normal
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/217.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/217.png)
+Role: Atk Cost: 2 HP: 14 Atk: 5 Def (In-Game): 0 (Stats: Def 75 + Sp.Def 75 = 150 → 150 → 150/200 = 0.75 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Teddiursa Ability: Guts (+1 Atk when inflicted with status) Skill: Hammer Arm (Target = [1(Line(1)(1))]) 
+
+### 218. Slugma
+
+Type: Fire
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/218.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/218.png)
+Role: Def Cost: 2 HP: 6 Atk: 2 Def (In-Game): 1 (Stats: Def 40 + Sp.Def 40 = 80 → 80 → 80/100 = 0.8 → floor 0 + base 1 = 1) EvoCost: 7 EvoTo: Magcargo EvoFrom: Ability: Flame Body (30% inflict Burn when hit by转 melee) Skill: Smog (Target = [1(Line(2)(1))], 30% poison) 
+
+### 219. Magcargo
+
+Type: Fire/Rock
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/219.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/219.png)
+Role: Def Cost: 2 HP: 11 Atk: 3 Def (In-Game): 2 (Stats: Def 120 + Sp.Def 80 = 200 → 200 → 200/100 = 2.0 → floor 2 + base 1 = 3 → Re-balanced to 2) EvoCost: EvoTo: EvoFrom: Slugma Ability: Flame Body (30% inflict Burn when hit by转 melee) Skill: Rock Slide (Target = [1(Cone(2))]) 
+
+### 220. Swinub
+
+Type: Ice/Ground
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/220.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/220.png)
+Role: Atk Cost: 2 HP: 7 Atk: 2 Def (In-Game): 0 (Stats: Def 40 + Sp.Def 30 = 70 → 70 → 70/200 = 0.35 → floor 0 + base 0 = 0) EvoCost: 6 EvoTo: Piloswine EvoFrom: Ability: Oblivious (Immune to Taunt/Intimidate effects) Skill: Powder Snow (Target = [1(Line(2)(1))]) 
+
+### 221. Piloswine
+
+Type: Ice/Ground
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/221.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/221.png)
+Role: Atk Cost: 2 HP: 12 Atk: 4 Def (In-Game): 0 (Stats: Def 80 + Sp.Def 60 = 140 → 140 → 140/200 = 0.7 → floor 0 + base 0 = 0) EvoCost: 8 (To Mamoswine in Gen 4) EvoTo: Mamoswine (Gen 4) EvoFrom: Swinub Ability: Oblivious (Immune to Taunt/Intimidate) Skill: Ice Crash (Target = [1(Line(2)(1))]) 
+
+### 222. Corsola
+
+Type: Water/Rock
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/222.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/222.png)
+Role: Def Cost: 2 HP: 11 Atk: 2 Def (In-Game): 2 (Stats: Def 95 + Sp.Def 95 = 190 → 190 → 190/100 = 1.9 → floor 1 + base 1 = 2) EvoCost: EvoTo: EvoFrom: Ability: Regenerator (Heal 1 HP at turn end) Skill: Recover (Target = [1(AoE(0))], Override skillDmg: 0, Heal user 3 HP) 
+
+### 223. Remoraid
+
+Type: Water
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/223.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/223.png)
+Role: Atk Cost: 2 HP: 6 Atk: 3 Def (In-Game): 0 (Stats: Def 35 + Sp.Def 35 = 70 → 70 → 70/200 = 0.35 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Octillery EvoFrom: Ability: Sniper (Crit on 16+) Skill: Water Gun (Target = [1(Line(3)(1))]) 
+
+### 224. Octillery
+
+Type: Water
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/224.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/224.png)
+Role: Atk Cost: 2 HP: 12 Atk: 5 Def (In-Game): 0 (Stats: Def 75 + Sp.Def 75 = 150 → 150 → 150/200 = 0.75 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Remoraid Ability: Sniper (Crit on 16+) Skill: Octazooka (Target = [1(Line(3)(1))], May reduce accuracy) 
+
+### 225. Delibird
+
+Type: Ice/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/225.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/225.png)
+Role: Support Cost: 2 HP: 9 Atk: 2 Def (In-Game): 0 (Stats: Def 45 + Sp.Def 45 = 90 → 90 → 90/150 = 0.6 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Ability: Vital Spirit (Immune to Sleep) Skill: Present (Target = [1(Line(2)(1))], Randomly deals 2 damage OR heals 2 HP) 
+
+### 226. Mantine
+
+Type: Water/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/226.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/226.png)
+Role: Def Cost: 3 HP: 13 Atk: 2 Def (In-Game): 3 (Stats: Def 70 + Sp.Def 140 = 210 → 210 → 210/100 = 2.1 → floor 2 + base 1 = 3) EvoCost: EvoTo: EvoFrom: Ability: Water Absorb (Immune to Water, heal 3 HP when hit) Skill: Air Slash (Target = [1(Line(3)(1))]) 
+
+### 227. Skarmory
+
+Type: Steel/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/227.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/227.png)
+Role: Def Cost: 3 HP: 12 Atk: 4 Def (In-Game): 3 (Stats: Def 140 + Sp.Def 70 = 210 → 210 → 210/100 = 2.1 → floor 2 + base 1 = 3) EvoCost: EvoTo: EvoFrom: Ability: Weak armor. when hitted. Atk+1 but Def-1 Permanently
+ Skill: Steel Wing (Target = [1(Line(2)(1))]) 
+
+### 228. Houndour
+
+Type: Dark/Fire
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/228.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/228.png)
+Role: Atk Cost: 3 HP: 7 Atk: 3 Def (In-Game): 0 (Stats: Def 30 + Sp.Def 50 = 80 → 80 → 80/200 = 0.4 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Houndoom EvoFrom: Ability: Flame Body (30% inflict Burn when hit by转 melee) Skill: Ember (Target = [1(Line(2)(1))], 30% Burn) 
+
+### 229. Houndoom
+
+Type: Dark/Fire
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/229.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/229.png)
+Role: Atk Cost: 3 HP: 13 Atk: 5 Def (In-Game): 0 (Stats: Def 50 + Sp.Def 80 = 130 → 130 → 130/200 = 0.65 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Houndour Ability: Flame Body (30% inflict Burn when hit by转 melee) Skill: Flamethrower (Target = [1(Line(3)(1))], Inflict Burn for 3 turns) 
+
+### 230. Kingdra
+
+Type: Water/Dragon
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/230.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/230.png)
+Role: Support Cost: 3 (Competitively strong final evo) HP: 14 Atk: 4 Def (In-Game): 1 (Stats: Def 95 + Sp.Def 95 = 190 → 190 → 190/150 = 1.26 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Seadra Ability: Swift Swim (Move costs -1 during Rain) Skill: Dragon Pulse (Target = [1(Line(3)(1))]) 
+
+---
+
+## 🐘 ช้างป่าและกลุ่มยอดฝีมือ
+
+### 231. Phanpy
+
+Type: Ground
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/231.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/231.png)
+Role: Def Cost: 2 HP: 7 Atk: 2 Def (In-Game): 1 (Stats: Def 60 + Sp.Def 40 = 100 → 100 → 100/100 = 1.0 → floor 1 + base 1 = 2 → Re-balanced to 1 for basic stage) EvoCost: 7 EvoTo: Donphan EvoFrom: Ability: Pickup when hit opponent unit there 30% chance to receive 1 gold
+ Skill: Rollout (Target = [1(Line(2)(1))]) 
+
+### 232. Donphan
+
+Type: Ground
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/232.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/232.png)
+Role: Def Cost: 2 HP: 12 Atk: 4 Def (In-Game): 2 (Stats: Def 120 + Sp.Def 60 = 180 → 180 → 180/100 = 1.8 → floor 1 + base 1 = 2) EvoCost: EvoTo: EvoFrom: Phanpy Ability: Ability: Pickup when hit opponent unit there 30% chance to receive 1 gold
+ Skill: Earthquake (Target = [1(AoE(2))]) 
+
+### 233. Porygon2
+
+Type: Normal
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/233.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/233.png)
+Role: Def Cost: 2 (Evolves from Porygon, a Cost 2 base form) HP: 13 Atk: 0 Def (In-Game): -2 (Stats: Def 90 + Sp.Def 95 = 185 → 190 → 190/100 = 1.9 → floor 1 + base 0 = 1) EvoCost: 8 EvoTo: Porygon-Z (Gen 4) EvoFrom: Porygon 
+Ability: Download Gain +1 Def by hightest per 1 atk of that enemies (update every turn)
+Skill 1: Foul Play,Line(1) Deal damage base on Atk Mods of target *2
+Skill 2: Conversion 2 , change the type to be resistance of the last move hitted.
+
+### 234. Stantler
+
+Type: Normal
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/234.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/234.png)
+Role: Atk Cost: 2 HP: 12 Atk: 4 Def (In-Game): 0 (Stats: Def 62 + Sp.Def 65 = 127 → 130 → 130/200 = 0.65 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Ability: Intimidate (Adjacent enemies -1 Atk for 2 turns) Skill: Stomp (Target = [1(Line(1)(1))]) 
+
+### 235. Smeargle
+
+Type: Normal
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/235.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/235.png)
+Role: Support Cost: 1 HP: 10 Atk: 1 Def (In-Game): 0 (Stats: Def 35 + Sp.Def 45 = 80 → 80 → 80/150 = 0.53 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Ability: Moody , Every end turn
+roll the d20 , if got >= 10, even got Def +1 , odd Atk+1 if got below, even Def-1 , odd Atk -1 | Atk can't go below 0 | but Def can go below 0 , e.g. if it is Def-3 it will take +3 more damage plus by the actual damage
+Skill: Sketch. Randomly Copy one of all the enemie skill once.
+
+### 236. Tyrogue
+
+Type: Fighting
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/236.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/236.png)
+Role: Atk Cost: 2 HP: 6 Atk: 2 Def (In-Game): 0 (Stats: Def 35 + Sp.Def 35 = 70 → 70 → 70/200 = 0.35 → floor 0 + base 0 = 0) EvoCost: 7 EvoTo: Hitmontop EvoFrom: Ability: Guts (+1 Atk when inflicted with status) Skill: Rock Smash (Target = [1(Line(1)(1))]) 
+
+### 237. Hitmontop
+
+Type: Fighting
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/237.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/237.png)
+Role: Atk Cost: 2 HP: 12 Atk: 4 Def (In-Game): 0 (Stats: Def 95 + Sp.Def 110 = 205 → 210 → 210/200 = 1.05 → floor 1 → Re-balanced to 0 for Atk Role) EvoCost: EvoTo: EvoFrom: Tyrogue Ability: Intimidate (Adjacent enemies -1 Atk for 2 turns) Skill: Triple Kick (Target = [3(Line(1)(1))] per hit) 
+
+### 238. Smoochum
+
+Type: Ice/Psychic
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/238.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/238.png)
+Role: Support Cost: 2 (Shares cost with Jynx) HP: 5 Atk: 1 Def (In-Game): 0 (Stats: Def 15 + Sp.Def 65 = 80 → 80 → 80/150 = 0.53 → floor 0 + base 0 = 0) EvoCost: 6 EvoTo: Jynx EvoFrom: Ability: Forewarn (Alerts user to high-damage threat cells) Skill: Sweet Kiss (Target = [1(Line(1)(1))], Inflict Confuse for 3 turns) 
+
+### 239. Elekid
+
+Type: Electric
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/239.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/239.png)
+Role: Atk Cost: 2 (Shares cost with Electabuzz) HP: 6 Atk: 2 Def (In-Game): 0 (Stats: Def 37 + Sp.Def 55 = 92 → 100 → 100/200 = 0.5 → floor 0 + base 0 = 0) EvoCost: 6 EvoTo: Electabuzz EvoFrom: Ability: Static (30% inflict Paralysis when hit by melee) Skill: Thunder Punch (Target = [1(Line(1)(1))], 30% paralyze) 
+
+### 240. Magby
+
+Type: Fire
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/240.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/240.png)
+Role: Atk Cost: 2 (Shares cost with Magmar) HP: 6 Atk: 2 Def (In-Game): 0 (Stats: Def 37 + Sp.Def 55 = 92 → 100 → 100/200 = 0.5 → floor 0 + base 0 = 0) EvoCost: 6 EvoTo: Magmar EvoFrom: Ability: Flame Body (30% inflict Burn when hit by转 melee) Skill: Fire Punch (Target = [1(Line(1)(1))], 30% Burn) 
+
+### 241. Miltank
+
+Type: Normal
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/241.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/241.png)
+Role: Def Cost: 3 HP: 14 Atk: 4 Def (In-Game): 2 (Stats: Def 105 + Sp.Def 70 = 175 → 180 → 180/100 = 1.8 → floor 1 + base 1 = 2) EvoCost: EvoTo: EvoFrom: Ability: Thick Fat (Immune to Fire and Ice secondary status effects) Skill: Milk Drink (Target = [1(AoE(1))], Override skillDmg: 0, Heal target 3 HP) 
+
+### 242. Blissey
+
+Type: Normal
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/242.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/242.png)
+Role: Support Cost: 3 (Evolves from Chansey, a Cost 3 base form) HP: 15 (Extreme Outlier) Atk: 2 Def (In-Game): 2 (Stats: Def 10 + Sp.Def 135 = 145 → 150 → 150/150 = 1.0 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Chansey Ability: Natural Cure At the end of the turn. any ally in Aoe1 50% to Heal from they status.
+and also add that it take 6 more damage from normal attack
+Skill: Soft-Boiled (Target = [1(AoE(1))], Override skillDmg: 0, Heal target 4 HP) 
+
+---
+
+## ⚡ สุนัขเทพและมังกรจำแลง (Pseudo-Legendary & Legendaries)
+
+### 243. Raikou
+
+Type: Electric
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/243.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/243.png)
+Role: Atk Cost: 5 HP: 14 Atk: 5 Def (In-Game): 0 (Stats: Def 75 + Sp.Def 100 = 175 → 180 → 180/200 = 0.9 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Legendary: true HatchGroup: Legendary Ability: Pressure (Enemy skills cost +1 Energy targeting this) (Can't Stack)
+Skill 1: Thunder (Target = [1(Line(2)(1))], Inflict Paralysis for 3 turns)
+Skill 2: Extreme Speed = Can Move infront or backward for maximum of 3 block. if collision with any stop in front of that pokemon and deal damage.
+Skill 3: Roar = Aoe2 , every unit in these skill area Atk-1 (Ally Include)
+
+### 244. Entei
+
+Type: Fire
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/244.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/244.png)
+Role: Support Cost: 5 HP: 15 Atk: 5 Def (In-Game): 1 (Stats: Def 85 + Sp.Def 75 = 160 → 160 → 160/150 = 1.075 → floor 0 + base 0 = 0) EvoCost: EvoTo: EvoFrom: Legendary: true HatchGroup: Legendary Ability: Pressure (Enemy skills cost +1 Energy targeting this) (Can't Stack)
+Skill 1: Sacred Fire (Target = [1(Line(1))], Inflict Burn for 3 turns) 
+Skill 2: Will o wisp (Cone(2) , Inflict Burn for 3 Turn
+Skill 3: Roar = Aoe2 , every unit in these skill area Atk-1 (Ally Include)
+
+### 245. Suicune
+
+Type: Water
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/245.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/245.png)
+Role: Def Cost: 5 HP: 15 Atk: 4 Def (In-Game): 3 (Stats: Def 115 + Sp.Def 115 = 230 → 230 → 230/100 = 2.3 → floor 2 + base 1 = 3) EvoCost: EvoTo: EvoFrom: Legendary: true HatchGroup: Legendary Ability: Pressure (Enemy skills cost +1 Energy targeting this) (Can't Stack)
+Skill 1: Hydro Pump (Target = [1(Line(4)(1))]) 
+Skill 2: Mist (Aoe(2)) Put a Mist effect on every ally in skill area. for 2 turn. The Stats of Atk and Def can't be change (count even if the atk or def duration had end it will extened)
+Skill 3: Roar = Aoe2 , every unit in these skill area Atk-1 (Ally Include)
+
+### 246. Larvitar
+
+Type: Rock/Ground
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/246.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/246.png)
+Role: Atk Cost: 3 HP: 7 Atk: 2 Def (In-Game): 0 (Stats: Def 50 + Sp.Def 50 = 100 → 100 → 100/200 = 0.5 → floor 0 + base 0 = 0) EvoCost: 7 (Pseudo-legendary base) EvoTo: Pupitar EvoFrom: Ability: Guts (+1 Atk when inflicted with status) Skill: Bite (Target = [1(Line(1)(1))]) 
+
+### 247. Pupitar
+
+Type: Rock/Ground
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/247.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/247.png)
+Role: Atk Cost: 3 HP: 11 Atk: 3 Def (In-Game): 2 (Stats: Def 70 + Sp.Def 70 = 140 → 140 → 140/100 = 1.4 → floor 1 + base 1 = 2) EvoCost: 9 (Pseudo-legendary mid) EvoTo: Tyranitar EvoFrom: Larvitar Ability: Shed Skin (30% cure status at turn end) Skill: Rock Slide (Target = [1(Cone(2))]) 
+
+### 248. Tyranitar
+
+Type: Rock/Dark
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/248.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/248.png)
+Role: Atk (High stats but aggressively positioned) Cost: 3 HP: 16 Atk: 6 Def (In-Game): 1 (Stats: Def 110 + Sp.Def 100 = 210 → 210 → 210/200 = 1.05 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Pupitar Ability: Sand Stream (Set weather 5 turns on deploy) 
+Skill 1: Stone Edge (Target = [1(Line(2)(1))], High crit chance) 
+Skill 2: Stealth Rock. Target(1Aoe(2)) selected any block in range. create a stone pillar on that. and for pillar for 3 turn.
+ every end of the opponent turn. if there any pokemon stand in a Aoe(1) of the pillar deal 2 damage
+
+### 249. Lugia
+
+Type: Psychic/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/249.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/249.png)
+Role: Def Cost: 5 HP: 16 Atk: 4 Def (In-Game): 3 (Stats: Def 130 + Sp.Def 154 = 284 → 290 → 290/100 = 2.9 → flo or 2 + base 1 = 3) EvoCost: EvoTo: EvoFrom: Legendary: true HatchGroup: Legendary 
+Ability: Multiscale (When at full HP, reduce incoming damage by 3)
+Skill 1 : Aeroblast (Cone(1))], High crit chance)
+Skill 2 : Tidal bell , for 3 turn selected any block and summon a bell. any ally pokemon inside the bell(aoe(1)) if it take damage, reduce that damage by 2. and the bell charge reduce by 1 when used. (Bell had 3 Charge)
+Skill 3 : Recover , Heal Half of the user HP (twice per game)
+
+### 250. Ho-Oh
+
+Type: Fire/Flying
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/250.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/250.png)
+Role: Support Cost: 5 HP: 16 Atk: 5 Def (In-Game): 1 (Stats: Def 90 + Sp.Def 154 = 244 → 250 → 250/150 = 1.66 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Legendary: true HatchGroup: Legendary Ability: Regenerator (Heal 1 HP at turn end) 
+Skill 1: Sacred Fire (Target = [1(Cone(2))], Inflict Burn for 3 turns)
+Skill 2: Clear Bell (Aoe 2) for 3 turn selected any block and summon a bell. at end of each turn any ally pokemon inside Aoe1 of it heal 1.
+this bell had 3 HP
+SKill 3: Overheat (Aoe2) = Deal 8 Damage to every pokemon in the area (Ally include) But Lose 4 HP.
+
+### 251. Celebi
+
+Type: Psychic/Grass
+Url: [https://assets.pokemon.com/assets/cms2/img/pokedex/detail/251.png](https://www.google.com/search?q=https://assets.pokemon.com/assets/cms2/img/pokedex/detail/251.png)
+Role: Support Cost: 5 HP: 14 Atk: 5 Def (In-Game): 1 (Stats: Def 100 + Sp.Def 100 = 200 → 200 → 200/150 = 1.33 → floor 1 + base 0 = 1) EvoCost: EvoTo: EvoFrom: Legendary: true HatchGroup: Legendary 
+Ability: Natural Cure (Cure all status conditions upon turn end) 
+Skill 1 : Leaf Storm, Cone 3 , once use Atk -2 for 2 turn
+Skill 2 : Heal Bell, Target 2 (aoe2) heal any ally for 3 hp.
+Skill 3 : Future Sight , Cost 3 , in the 2 next turn. Energy for that turn +2

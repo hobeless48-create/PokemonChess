@@ -1,0 +1,6 @@
+{
+  "name": "Pokemon Chess",
+  "description": "An elegant, full-featured strategy chess game where Players build tactical Gen 1 Pokemon teams, deploy them on a board, cast status-inflicting skills, and battle to destroy the enemy pedestal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

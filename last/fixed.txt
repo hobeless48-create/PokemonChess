@@ -1,0 +1,115 @@
+--add accuracy function. all the existing mon and move got 100% accuracy for now.
+and add accuracy edit for each skill in skill editor.
+
+a accuracy will be calculate by d20 roll. each roll resemble 5% . so that mean accuracy will be round roll.
+
+a move with 80% accuracy will need to roll more than d4 to success.
+and this is the debuff for each stage of accuracy debuff. ( this will be fixed. even though the move already got 80% accuracy and got hit by a stage one which will make accuracy be 80% it will still be 80% , the apply will be made once a move with 80% got -2 accuracy debuff stage. that will be 65%.
+-1 | d4
+-2 | d7
+-3 | d9
+-4 | d10
+
+--edit mode change.
+add a radius effect. in a target type skill. that allow to choose one only one target. there could be a radius to deal damage around that selected target. 
+in admin edit or anything. use the same method as the skill radius draw and save it to the file.
+
+add a edit mode some skill of each pokemon can summoning a new unit (only appear in board not in selection menu). this will be a new mini unit of the usual. it will have it own stats and skill to edit like the main of it.
+
+add a edit mode some skill of each pokemon can summon a new unit (no movement button just a standing still (we already it e.g. clear bell of ho-oh and tidal bell of lugia.) it will have it own stats , ability or skill which can have a check box. if the editor check the "skill" box it will give the edit board and skill effect.
+while if the editor check the "ability" box it will have a 2 choice. the ability will apply on "start of the turn" or "end of the turn"
+and there will be the area board like the skill for the editor to change the damage / heal or the area to apply this ability.
+
+
+--change max move point to be 4 . but only regen 3 per turn like normal.
+
+
+--change the gold logic. from getting 5 every 5 turn. to be 3 per turn. every turn.
+and increase by 1 when it reach phase 2 and 4.
+
+--shop change
+Increase the cost of all held item by *3
+
+Cost for Sitrus Berry increase to = 5
+Cost for Lum Berry increase to = 4
+Cost for Berry Juice increase to = 3.
+Cost for Mental Herb increase to = 3.
+mental herb will be use as a held item. it the same function as Lum berry. but on requirement that it had to be equip before the user got the status.
+
+add held item call "Oval stone" prevent the unit from getting any type of exp. and every end of the turn that unit gain 1 Happiness
+
+add new consumable.
+All these status cure berry cost is fixed to 2.
+and even though it will be in consumable page. it can be put into pokemon as held item.
+it will apply the cure. if the unit with this held got hit and get the status effect.
+(e.g. Chansey held an Aspear Berry first. and the next turn the opponent freeze Chansey. that freeze won't apply and be cure. but the damage will still be done)
+
+Cheri Berry : Cures Palalysis. 
+Url : https://archives.bulbagarden.net/media/upload/6/61/Bag_Cheri_Berry_Sprite.png
+Chesto Berry : Cures Sleep.
+Url : https://archives.bulbagarden.net/media/upload/3/3f/Bag_Chesto_Berry_Sprite.png
+Pecha Berry : Cures Poison.
+Url : https://archives.bulbagarden.net/media/upload/8/8f/Bag_Pecha_Berry_Sprite.png
+Rawst Berry : Cure Burn.
+Url:https://archives.bulbagarden.net/media/upload/e/e5/Bag_Rawst_Berry_Sprite.png
+Aspear Berry : Cure Freeze.
+Url : https://archives.bulbagarden.net/media/upload/1/18/Bag_Aspear_Berry_Sprite.png
+Persim Berry : Cure Confuse.
+Url : https://archives.bulbagarden.net/media/upload/0/0b/Bag_Persim_Berry_Sprite.png
+
+
+Curry is just increase Max HP. and happiness.
+Curry (Small) : Max HP +1 for 2 turn | Cost : 6
+Url : https://static.wikia.nocookie.net/pokemonwack/images/0/0f/2929MS.gif/revision/latest?cb=20240627025135
+Curry (Medium) : Max HP +2 for 3 turn | Cost : 8
+Url : https://static.wikia.nocookie.net/pokemonwack/images/0/02/2930MS.gif/revision/latest?cb=20240627021757
+Curry (Big) : Max HP +3 for 3 turn. | Cost : 10
+Url : https://static.wikia.nocookie.net/pokemonwack/images/3/34/2931MS.gif/revision/latest?cb=20240701213228
+Can't be stack the max hp increase.
+
+
+--add a new bar. this bar will be different for each type of pokemon that will be used later on. on default. this bar will be hide unless the ability or skill is used it.
+there might be a custom bar that doesn't use just for type.
+these bar will have a condition for each type to increase it. (which will be add later on. right now just create the basic feature of it.)
+
+Fairy will be "Happiness" max at 20
+Increase by some consumable. Such as Berry juice +1 ,Sitrus +1 , Lum +1 , Curry (Small + 1 , Medium +2 , Big +3)
+When hit by a attack and skill move (exclude status damage or etc.) happiness -1.
+
+Ice will be "Frost" max at 20
+Increase by 1 for every turn the Hail Weather Exist at the end of the turn.
+Decrease by 1 when hit by a fire type pokemon.
+Decrease by 1 When in Sunny Day. at the end of the turn.
+
+Fighting will be "Angry" bar max at 20.
+Increase by one if take any type of damage. (Attack , SKill ,status damage,etc any type is count.) but each type of attack only count as "one" e.g. the move that hit multiple time won't increase multiple Angry.
+Decrease by 1 every time it got heal.
+Decrease by 1 every berry use. (Healing Berry is also count as one. not seperate by both "Heal" and "Berry")
+
+add a new function for Frost bar.
+every time the unit with Ice type was being hit by a radius of any ally or enemie skill. normally the Ice type can't be freeze. so we turn that roll chance to be a chance to increase Frost bar by 1 instead. In either. the ally can or can't be hit by that skill.
+(normaly the only freeze chance that could apply to ally is from being hit by , Articuno powder snow skill. but i want the other skill that not an "all" aoe to be hit too. even though the damage can't be done. the chance of getting freeze will still be convert to the chance of getting frost to add another condition to increase it.
+(e.g. the powder snow. had 10% chance of freeze. so in this case when the ally with Ice type got hit. it will get 10% roll chance of increase Frost by 1.)
+
+
+--add a new function. "Shield" which is a new defense type. Buff.
+Some pokemon got a buff that can attach a sheild to other ally pokemon. which will act like defensive barrier for that unit.
+e.g. a shield of 4. can be use to negate the damage <=4. but once the damage exceed 4. E.g. damage of 5 that shield broke. and it won't be able to reduce any of the damage that exceed that. and once it broke it can't sheild any damage after that.
+If it Sheild is 4. it can take 4 damage like nothing. but if the damage is 5. it take all that 5 damage.
+Add a description bar for this in the selected stats too. 
+if it got a sheild tell that it got and describe how many shield it got. and once it broke that sheild status disappear. or reduce to 0.
+
+
+--adjust debuff to not able to stack by the same skill or ability.
+
+--add a new function which is a custom button to let ability be use like a skill 
+(e.g. Mesprit Buff Cost 1 energy to buff ally. disappear by the end of the turn) (Once per turn)
+(e.g. 2 , palkia . cost 0 energy to move any ally on the board to put in a Aoe(2) of palkia) (once per turn)
+(e.g. 3 , Cyronadel , Cost 0 energy to give ally protection.by it def. (for 3 turn) (once per turn)
+
+
+--read the gen1.txt and gen2.txt then check the ability and skill. with the code function that responsible for each. check if it exist. if it isn't then write the function for it. but if that logic couldn't be write by the logic we have, change it to match our. but if the function responsible already exist but doesn't match with the description for ability and skill in the gen1,gen2 then optimize it.
+if that description in the .txt file doesn't match the logic/function we have. tell me in the implementation plan so i will tell you what to do with that.
+
+e.g. fix steelix stealth rock
+cloyster change it ability to be Shell armor. Critical hit damage doesn't apply on this target.

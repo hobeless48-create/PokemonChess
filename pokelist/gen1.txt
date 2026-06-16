@@ -1,0 +1,1806 @@
+// ============================================
+// GEN 1 POKÉDEX - POKÉMON CHESS (REVISED)
+// Status Duration System + Role-Based Def + Rebalanced Costs
+// ============================================
+
+// STATUS DURATION REFERENCE:
+// Burn: 2 turns (deal -1 damage, take 1 dmg/turn)
+// Poison: 3 turns (take 1 dmg/turn)
+// Toxic: Permanent until cured (take 1 dmg/turn, no cure chance)
+// Paralysis: 3 turns (30% skip action)
+// Sleep: 2-3 turns (cannot act)
+// Freeze: 2 turns (cannot act, 25% thaw/turn)
+// Confuse: 3 turns (30% self-damage 1 )
+
+// Note: Normal Attacks deal floor(Atk/2) damage. Skills deal damage based on below entries.
+
+001. Bulbasaur
+Type: Grass/Poison
+Url: https://assets.pokemon.com/assets/cms2/img/pokedex/detail/001.png
+Role: Support
+Cost: 3
+HP: 8
+Atk: 2
+Def (In-Game): 0 
+EvoCost: 6
+EvoTo: Ivysaur
+Ability: Overgrow (When HP ≤ 50%, deal +1 damage with Grass skills)
+Skill: Leech Seed (Target 1: Drain 1 HP/turn for 2 turns, heal user equal amount)
+
+002. Ivysaur
+Type: Grass/Poison
+Role: Support
+Cost: 3 (inherits from Bulbasaur)
+HP: 10
+Atk: 3
+Def (In-Game): 0
+EvoCost: 9
+EvoTo: Venusaur
+EvoFrom: Bulbasaur
+Ability: Overgrow (When HP ≤ 50%, deal +1 damage with Grass skills)
+Skill: Razor Leaf (Line(2)(1): Deal 3 damage)
+
+003. Venusaur
+Type: Grass/Poison
+Role: Def
+Cost: 3 (inherits from Bulbasaur)
+HP: 14
+Atk: 4
+Def (In-Game): 1
+EvoFrom: Ivysaur
+Ability: Chrollofyl + reduce enerny cost to move by 1 (1 per turn)
+Skill: Solar Beam (Aoe(2): Deal 4 damage. Energy Cost = 4 : If Sunny Day active, costs 1 less Energy)
+
+004. Charmander
+Type: Fire
+Role: Atk
+Cost: 3
+HP: 7
+Atk: 3
+Def (In-Game): 0
+EvoCost: 6
+EvoTo: Charmeleon
+Ability: Blaze (When HP ≤ 50%, deal +1 damage with Fire skills)
+Skill: Ember (Target 2: Deal 2 damage, 30% chance to Burn for 2 turns)
+
+005. Charmeleon
+Type: Fire
+Role: Atk
+Cost: 3 (inherits from Charmander)
+HP: 9
+Atk: 4
+Def (In-Game): 0
+EvoCost: 9
+EvoTo: Charizard
+EvoFrom: Charmander
+Ability: Blaze (When HP ≤ 50%, deal +1 damage with Fire skills)
+Skill: Flamethrower (Line(3)(1): Deal 3 damage, 30% chance to Burn for 2 turns)
+
+006. Charizard
+Type: Fire/Flying
+Role: Atk
+Cost: 3 (inherits from Charmander)
+HP: 12
+Atk: 5
+Def (In-Game): 1
+EvoFrom: Charmeleon
+Ability: Solar Power (In Sunny Weather, Atk +2 but takes 2 damage at the end of the turn)
+Skill: Fire Blast (Cross(1-tile out from target, range 3): Deal 4 damage, 30% chance to Burn for 2 turns)
+
+007. Squirtle
+Type: Water
+Role: Def
+Cost: 3
+HP: 8
+Atk: 2
+Def (In-Game): 1
+EvoCost: 6
+EvoTo: Wartortle
+Ability: Torrent (When HP ≤ 50%, deal +1 damage with Water skills)
+Skill: Water Gun Line(2) Deal 2 damage)
+
+008. Wartortle
+Type: Water
+Role: Def
+Cost: 3 (inherits from Squirtle)
+HP: 10
+Atk: 3
+Def (In-Game): 2
+EvoCost: 9
+EvoTo: Blastoise
+EvoFrom: Squirtle
+Ability: Torrent (When HP ≤ 50%, deal +1 damage with Water skills)
+Skill: Water Pulse Aoe(1): Deal 2 damage, 20% chance to Confuse for 3 turns)
+
+009. Blastoise
+Type: Water
+Role: Def
+Cost: 3 (inherits from Squirtle)
+HP: 13
+Atk: 4
+Def (In-Game): 2
+EvoFrom: Wartortle
+Ability: Rain Dish (In Rain, heals 1 HP at start of turn)
+Skill: Hydro Cannon (Line(3)(1): Deal 6 damage, Cost 3
+
+010. Caterpie
+Type: Bug
+Role: Support
+Cost: 1
+HP: 6
+Atk: 1
+Def (In-Game): 0
+EvoCost: 3
+EvoTo: Metapod
+Ability: Shield Dust (Immune to secondary effects of enemy skills)
+Skill: String Shot Line(1) next turn target move cost +1
+
+011. Metapod
+Type: Bug
+Role: Def
+Cost: 1 (inherits from Caterpie)
+HP: 8
+Atk: 1
+Def (In-Game): 1
+EvoCost: 4
+EvoTo: Butterfree
+EvoFrom: Caterpie
+Ability: Shed Skin (30% chance to cure status conditions at start of turn)
+Skill: Harden (Self: Gain +1 Def for 3 turns)
+
+012. Butterfree
+Type: Bug/Flying
+Role: Support
+Cost: 1 (inherits from Caterpie)
+HP: 10
+Atk: 3
+Def (In-Game): 1
+EvoFrom: Metapod
+Ability: Compound Eyes (Skills have 30% higher status infliction chance)
+Skill: Sleep Powder (Target 3: 50% chance to inflict Sleep for 3 turns)
+
+013. Weedle
+Type: Bug/Poison
+Role: Atk
+Cost: 1
+HP: 5
+Atk: 2
+Def (In-Game): 0
+EvoCost: 3
+EvoTo: Kakuna
+Ability: Shield Dust (Immune to secondary effects of enemy skills)
+Skill: Poison Sting (Target 1: Deal 1 damage, 30% chance to Poison for 3 turns)
+
+014. Kakuna
+Type: Bug/Poison
+Role: Def
+Cost: 1 (inherits from Weedle)
+HP: 7
+Atk: 1
+Def (In-Game): 1
+EvoCost: 4
+EvoTo: Beedrill
+EvoFrom: Weedle
+Ability: Shed Skin (30% chance to cure status conditions at start of turn)
+Skill: Iron Defense (Self: Gain +2 Def for 2 turns)
+
+015. Beedrill
+Type: Bug/Poison
+Role: Assassin
+Cost: 1 (inherits from Weedle)
+HP: 9
+Atk: 4
+Def (In-Game): 1
+EvoFrom: Kakuna
+Ability: Swarm (When HP ≤ 50%, deal +1 damage with Bug skills)
+Skill: Twin Needle (Target 2: Deal 4 damage. Attacks twice, hitting for 2 damage each time)
+
+016. Pidgey
+Type: Normal/Flying
+Role: Support
+Cost: 1
+HP: 6
+Atk: 2
+Def (In-Game): 0
+EvoCost: 4
+EvoTo: Pidgeotto
+Ability: Keen Eye (Stats cannot be lowered by enemies)
+Skill: Sand Attack (Target 2: Reduce target's Atk by 1 for 2 turns)
+
+017. Pidgeotto
+Type: Normal/Flying
+Role: Support
+Cost: 1 (inherits from Pidgey)
+HP: 9
+Atk: 3
+Def (In-Game): 0
+EvoCost: 7
+EvoTo: Pidgeot
+EvoFrom: Pidgey
+Ability: Keen Eye (Stats cannot be lowered by enemies)
+Skill: Gust (Line(2)(1): Deal 3 damage)
+
+018. Pidgeot
+Type: Normal/Flying
+Role: Atk
+Cost: 1 (inherits from Pidgey)
+HP: 12
+Atk: 4
+Def (In-Game): 1
+EvoFrom: Pidgeotto
+Ability: Tangled Feet (When Confused, gains move cost reduce by 1 (2 time))
+Skill: Hurricane (AoE(1-tile radius around target, range 3): Deal 4 damage, 30% chance to Confuse for 3 turns)
+
+019. Rattata
+Type: Normal
+Role: Assassin
+Cost: 1
+HP: 5
+Atk: 3
+Def (In-Game): 0
+EvoCost: 5
+EvoTo: Raticate
+Ability: Run Away (Can move through enemy-occupied tiles)
+Skill: Quick Attack (Target 2: Deal 3 damage. Always moves first in priority)
+
+020. Raticate
+Type: Normal
+Role: Assassin
+Cost: 1 (inherits from Rattata)
+HP: 10
+Atk: 4
+Def (In-Game): 1
+EvoFrom: Rattata
+Ability: Guts (When afflicted with status, Atk +2)
+Skill: Hyper Fang (Target 1: Deal 4 damage, 10% chance target Flinches and skips next turn)
+
+021. Spearow
+Type: Normal/Flying
+Role: Atk
+Cost: 1
+HP: 6
+Atk: 3
+Def (In-Game): 0
+EvoCost: 5
+EvoTo: Fearow
+Ability: Keen Eye (Stats cannot be lowered by enemies)
+Skill: Peck (Target 1: Deal 3 damage)
+
+022. Fearow
+Type: Normal/Flying
+Role: Atk
+Cost: 1 (inherits from Spearow)
+HP: 11
+Atk: 4
+Def (In-Game): 1
+EvoFrom: Spearow
+Ability: Sniper (Critical hits deal +3 damage instead of +2)
+Skill: Drill Peck (Line(2)(1): Deal 4 damage)
+
+023. Ekans
+Type: Poison
+Role: Support
+Cost: 1
+HP: 6
+Atk: 3
+Def (In-Game): 0
+EvoCost: 6
+EvoTo: Arbok
+Ability: Intimidate Any Adjacent Enemie Atk -1
+Skill: Glare (Target 2: 50% chance to Paralyze for 3 turns)
+
+024. Arbok
+Type: Poison
+Role: Def
+Cost: 1 (inherits from Ekans)
+HP: 11
+Atk: 4
+Def (In-Game): 1
+EvoFrom: Ekans
+Ability: Intimidate Any Adjacent Enemie Atk -1
+Skill: Crunch (Target 1: Deal 4 damage, 20% chance to lower target's Def by 1)
+
+025. Pikachu
+Type: Electric
+Role: Atk
+Cost: 2
+HP: 7
+Atk: 3
+Def (In-Game): 0
+EvoCost: 7
+EvoTo: Raichu
+Ability: Static (Contact attacks have a 30% chance to Paralyze the attacker for 3 turns)
+Skill: Thunderbolt (Target 3: Deal 2 damage, 10% chance to Paralyze for 3 turns)
+
+026. Raichu
+Type: Electric
+Role: Atk
+Cost: 2 (inherits from Pikachu)
+HP: 11
+Atk: 5
+Def (In-Game): 1
+EvoFrom: Pikachu
+Ability: Lightning Rod (Draws all single-target Electric skills to itself; immune to Electric damage)
+Skill: Thunder (Target 4: Deal 4 damage, 30% chance to Paralyze for 3 turns)
+
+027. Sandshrew
+Type: Ground
+Role: Def
+Cost: 2
+HP: 8
+Atk: 3
+Def (In-Game): 1
+EvoCost: 6
+EvoTo: Sandslash
+Ability: Sand Veil (In Sandstorm, increases dodge chance by 20%)
+Skill: Rollout (Target 1: Deal 2 damage. Damage increases by 1 each consecutive hit up to +2)
+
+028. Sandslash
+Type: Ground
+Role: Def
+Cost: 2 (inherits from Sandshrew)
+HP: 12
+Atk: 4
+Def (In-Game): 2
+EvoFrom: Sandshrew
+Ability: Sand Rush (In Sandstorm, movement range is doubled)
+Skill: Earthquake (AoE(All tiles within 2-tile radius around user): Deal 4 damage)
+
+029. Nidoran♀
+Type: Poison
+Url: https://assets.pokemon.com/assets/cms2/img/pokedex/detail/029.png
+Role: Support
+Cost: 2
+HP: 8
+Atk: 2
+Def: 1
+EvoCost: 5
+EvoTo: Nidorina
+Ability: Poison Point (When hit by melee, 30% chance Poison attacker for 4 turns)
+Skill: Growl (Cone(2): Enemies in cone get -1 Atk for 2 turns)
+
+030. Nidorina
+Type: Poison
+Role: Support
+Cost: 2
+HP: 10
+Atk: 3
+Def: 1
+EvoCost: 7
+EvoTo: Nidoqueen
+EvoFrom: Nidoran♀
+Ability: Rivalry (Deal +1 damage if target same gender, -1 if opposite)
+Skill: Bite (Line(1): Deal 3 damage, 30% chance Flinch)
+
+031. Nidoqueen
+Type: Poison/Ground
+Role: Def
+Cost: 2
+HP: 14
+Atk: 4
+Def: 2
+EvoFrom: Nidorina
+Ability: Sheer Force (Skills with secondary effects deal +1 damage but lose effects)
+Skill: Earth Power (Line(3)(1): Deal 4 damage, lower target Def by 1 for 2 turns)
+
+032. Nidoran♂
+Type: Poison
+Role: Atk
+Cost: 2
+HP: 7
+Atk: 2
+Def: 0
+EvoCost: 5
+EvoTo: Nidorino
+Ability: Rivalry (Deal +1 damage if target same gender, -1 if opposite)
+Skill: Horn Attack (Line(1): Deal 3 damage)
+
+033. Nidorino
+Type: Poison
+Role: Atk
+Cost: 2
+HP: 10
+Atk: 3
+Def: 0
+EvoCost: 7
+EvoTo: Nidoking
+EvoFrom: Nidoran♂
+Ability: Poison Point (When hit by melee, 30% chance Poison attacker for 4 turns)
+Skill: Poison Jab (Line(1): Deal 3 damage, 60% chance Poison for 4 turns)
+
+034. Nidoking
+Type: Poison/Ground
+Role: Atk
+Cost: 2
+HP: 13
+Atk: 5
+Def: 1
+EvoFrom: Nidorino
+Ability: Sheer Force (Skills with secondary effects deal +1 damage but lose effects)
+Skill: Megahorn (Line(2)(1): Deal 5 damage)
+
+035. Clefairy
+Type: Fairy
+Role: Support
+Cost: 2
+HP: 10
+Atk: 2
+Def: 1
+EvoCost: 6
+EvoTo: Clefable
+Ability: Magic Guard (Immune to indirect damage - Burn, Poison, Hail, Sand Storm, Leech)
+Skill: Moonlight (Self: Heal 4 HP, costs 2 Energy)
+
+036. Clefable
+Type: Fairy
+Role: Support
+Cost: 2
+HP: 13
+Atk: 3
+Def: 1
+EvoFrom: Clefairy
+Ability: Unaware (Ignore enemy stat modifiers when attacking)
+Skill: Metronome (Random: Use random skill from any Pokemon, costs 2 Energy)
+
+037. Vulpix
+Type: Fire
+Role: Support
+Cost: 3
+HP: 7
+Atk: 2
+Def: 1
+EvoCost: 6
+EvoTo: Ninetales
+Ability: Flash Fire (Immune to Fire damage, after Fire hit deal +1 Fire damage)
+Skill: Will-O-Wisp (Line(2)(1): Deal 1 damage, 30% inflict Burn for 3 turns)
+
+037. Vulpix
+Type: Fire
+Role: Support
+Cost: 3
+HP: 7
+Atk: 2
+Def: 1
+EvoCost: 6
+EvoTo: Alolan Ninetales
+Ability: Flash Fire (Immune to Fire damage, after Fire hit deal +1 Fire damage)
+Skill: Will-O-Wisp (Line(2)(1): 30% to inflict froze for 1 turn.
+
+038. Ninetales
+Type: Fire
+Role: Support
+Cost: 3
+HP: 11
+Atk: 4
+Def: 1
+EvoFrom: Vulpix
+Ability: Drought (When deployed, set Sunny Day for 5 turns)
+Skill: Flamethrower (Line(3)(1): Deal 4 damage, 40% chance Burn for 3 turns)
+
+
+038.2 Alolan Ninetales
+Type: Ice
+Role: Support
+Cost: 3
+HP: 11
+Atk: 4
+Def: 1
+EvoFrom: Vulpix
+Ability: Snow warning (When deploys set weather to Hail for 5 turn)
+Skill: Ice Beam (Line(3)(1): Deal 4 damage, 40% chance to inflict froze for 1 turns)
+Skill:Hail set weather to Hail for 5 turn duration
+
+039. Jigglypuff
+Type: Normal/Fairy
+Role: Support
+Cost: 1
+HP: 10
+Atk: 2
+Def: 0
+EvoCost: 5
+EvoTo: Wigglytuff
+Ability: Competitive (When stats lowered, gain +2 Atk for 2 turns)
+Skill: Sing (AoE(1): Adjacent enemies Sleep for 2 turns)
+
+040. Wigglytuff
+Type: Normal/Fairy
+Role: Support
+Cost: 1
+HP: 15
+Atk: 3
+Def: 1
+EvoFrom: Jigglypuff
+Ability: Cute Charm (When hit by melee, 30% chance inflict Infatuation - attacker cannot target this Pokemon for 2 turns)
+Skill: Hyper Voice (Cone(2): Deal 3 damage to all in cone)
+
+041. Zubat
+Type: Poison/Flying
+Role: Atk
+Cost: 1
+HP: 7
+Atk: 2
+Def: 0
+EvoCost: 5
+EvoTo: Golbat
+Ability: Inner Focus (Immune to Flinch)
+Skill: Leech Life (Line(1): Deal 2 damage, heal 1 HP)
+
+042. Golbat
+Type: Poison/Flying
+Role: Atk
+Cost: 1
+HP: 11
+Atk: 4
+Def: 1
+EvoFrom: Zubat
+Ability: Infiltrator (Ignore defensive modifiers on targets)
+Skill: Poison Fang (Line(1): Deal 3 damage, 70% chance Poison for 4 turns)
+
+043. Oddish
+Type: Grass/Poison
+Role: Support
+Cost: 1
+HP: 7
+Atk: 2
+Def: 1
+EvoCost: 5
+EvoTo: Gloom
+Ability: Chlorophyll (During Sunny Day, first Move costs 0 Energy)
+Skill: Absorb (Line(1): Deal 2 damage, heal 1 HP)
+
+044. Gloom
+Type: Grass/Poison
+Role: Support
+Cost: 1
+HP: 10
+Atk: 3
+Def: 1
+EvoCost: 7
+EvoTo: Vileplume
+EvoFrom: Oddish
+Ability: Stench (After attacking, 20% chance inflict Flinch)
+Skill: Poison Powder (Cone(1): 70% chance Poison for 4 turns)
+
+045. Vileplume
+Type: Grass/Poison
+Role: Support
+Cost: 1
+HP: 12
+Atk: 4
+Def: 1
+EvoFrom: Gloom
+Ability: Effect Spore (When hit by melee, 30% chance inflict Poison or Sleep for 2 turns)
+Skill: Petal Dance (AoE(1): Deal 3 damage to adjacent enemies, user Confused for 3 turns)
+
+046. Paras
+Type: Bug/Grass
+Role: Atk
+Cost: 1
+HP: 7
+Atk: 2
+Def: 0
+EvoCost: 5
+EvoTo: Parasect
+Ability: Dry Skin (Take +1 damage from Fire, during Rain Dance heal 1 HP/turn)
+Skill: Scratch (Line(1): Deal 2 damage)
+
+047. Parasect
+Type: Bug/Grass
+Role: Atk
+Cost: 1
+HP: 11
+Atk: 4
+Def: 1
+EvoFrom: Paras
+Ability: Damp (Prevents explosive/self-destruct skills by enemies)
+Skill: Spore (Target 1: Inflict Sleep for 2 turns, 100% chance)
+
+048. Venonat
+Type: Bug/Poison
+Role: Support
+Cost: 1
+HP: 8
+Atk: 2
+Def: 1
+EvoCost: 6
+EvoTo: Venomoth
+Ability: Compound Eyes (Status skills have +15% accuracy)
+Skill: Supersonic (Line(2): 70% chance Confuse for 3 turns)
+
+049. Venomoth
+Type: Bug/Poison
+Role: Support
+Cost: 1
+HP: 11
+Atk: 4
+Def: 1
+EvoFrom: Venonat
+Ability: Tinted Lens (Resisted hits deal normal damage)
+Skill: Silver Wind (Line(3): Deal 3 damage, 20% chance raise Atk and Def by 1)
+
+050. Diglett
+Type: Ground
+Role: Atk
+Cost: 1
+HP: 6
+Atk: 2
+Def: 0
+EvoCost: 5
+EvoTo: Dugtrio
+Ability: Arena Trap (Adjacent enemies cannot Move away)
+Skill: Mud-Slap (Line(1): Deal 2 damage, reduce target skill range by 1 next turn)
+
+051. Dugtrio
+Type: Ground
+Role: Atk
+Cost: 1
+HP: 9
+Atk: 4
+Def: 1
+EvoFrom: Diglett
+Ability: Sand Force (During Sand Storm, Ground attacks deal +1 damage)
+Skill: Earthquake (AoE(1): Deal 4 damage to adjacent enemies)
+
+052. Meowth
+Type: Normal
+Role: Atk
+Cost: 1
+HP: 7
+Atk: 2
+Def: 0
+EvoCost: 6
+EvoTo: Persian
+Ability: Pickup (At turn end, 15% chance find random consumable item)
+Skill: Pay Day (Line(1): Deal 2 damage, gain +1 Gold if defeats target)
+
+053. Persian
+Type: Normal
+Role: Atk
+Cost: 1
+HP: 10
+Atk: 4
+Def: 1
+EvoFrom: Meowth
+Ability: Technician (Skills with base damage ≤2 deal +1 damage)
+Skill: Slash (Line(1): Deal 4 damage, crit on 14+)
+
+054. Psyduck
+Type: Water
+Role: Support
+Cost: 1
+HP: 8
+Atk: 2
+Def: 1
+EvoCost: 6
+EvoTo: Golduck
+Ability: Damp (Prevents explosive skills by enemies)
+Skill: Confusion (Line(2): Deal 2 damage, 30% chance Confuse for 3 turns)
+
+055. Golduck
+Type: Water
+Role: Support
+Cost: 1
+HP: 12
+Atk: 4
+Def: 1
+EvoFrom: Psyduck
+Ability: Swift Swim (During Rain Dance, Move costs -1 Energy)
+Skill: Psychic (Line(3)(1): Deal 4 damage, lower target Def by 1)
+
+056. Mankey
+Type: Fighting
+Role: Atk
+Cost: 1
+HP: 7
+Atk: 3
+Def: 0
+EvoCost: 6
+EvoTo: Primeape
+Ability: Defiant (When stats lowered, gain +2 Atk)
+Skill: Karate Chop (Line(1): Deal 3 damage, crit on 15+)
+
+057. Primeape
+Type: Fighting
+Role: Atk
+Cost: 1
+HP: 11
+Atk: 5
+Def: 1
+EvoFrom: Mankey
+Ability: Anger Point (When hit by crit, gain +3 Atk for 2 turns)
+Skill: Close Combat (Line(1): Deal 6 damage, lower own Def by 1 for 2 turns)
+
+058. Growlithe
+Type: Fire
+Role: Atk
+Cost: 2
+HP: 9
+Atk: 3
+Def: 1
+EvoCost: 7
+EvoTo: Arcanine
+Ability: Intimidate (adjacent enemies get -1 Atk)
+Skill: Flame Wheel (Line(2)(1): Deal 3 damage, 40% chance Burn for 3 turns)
+
+059. Arcanine
+Type: Fire
+Role: Atk
+Cost: 2
+HP: 14
+Atk: 5
+Def: 1
+EvoFrom: Growlithe
+Ability: Justified (When hit by Dark attack, gain +2 Atk)
+Skill: Extreme Speed (Line(3)(1): Deal 4 damage, costs 0 Energy, once per turn)
+
+060. Poliwag
+Type: Water
+Role: Support
+Cost: 1
+HP: 7
+Atk: 2
+Def: 1
+EvoCost: 5
+EvoTo: Poliwhirl
+Ability: Water Absorb (Heal 3 HP when hit by Water attack)
+Skill: Bubble (Line(2)(1): Deal 2 damage, 30% chance reduce target Move by 1)
+
+061. Poliwhirl
+Type: Water
+Role: Support
+Cost: 1
+HP: 10
+Atk: 3
+Def: 1
+EvoCost: 7
+EvoTo: Poliwrath
+EvoFrom: Poliwag
+Ability: Damp (Prevents explosive skills by enemies)
+Skill: Hypnosis (Line(2): 80% chance Sleep for 2 turns)
+
+062. Poliwrath
+Type: Water/Fighting
+Role: Def
+Cost: 1
+HP: 14
+Atk: 4
+Def: 2
+EvoFrom: Poliwhirl
+Ability: Water Absorb (Heal 3 HP when hit by Water attack)
+Skill: Submission (Line(1): Deal 5 damage, user takes 1 recoil)
+
+063. Abra
+Type: Psychic
+Role: Support
+Cost: 2
+HP: 6
+Atk: 3
+Def: 0
+EvoCost: 4
+EvoTo: Kadabra
+Ability: Synchronize (When inflicted with status, inflict same status on attacker for same duration)
+Skill: Teleport (Self: Move to any empty cell, costs 2 Energy)
+
+064. Kadabra
+Type: Psychic
+Role: Support
+Cost: 2
+HP: 8
+Atk: 4
+Def: 1
+EvoCost: 7
+EvoTo: Alakazam
+EvoFrom: Abra
+Ability: Magic Guard (Immune to indirect damage)
+Skill: Confusion (Line(3)(1): Deal 3 damage, 30% chance Confuse for 3 turns)
+
+065. Alakazam
+Type: Psychic
+Role: Support
+Cost: 2
+HP: 10
+Atk: 5
+Def: 1
+EvoFrom: Kadabra
+Ability: Inner Focus (Immune to Flinch)
+Skill: Psychic (Line(3)(1): Deal 5 damage, lower target Def by 1)
+
+066. Machop
+Type: Fighting
+Role: Atk
+Cost: 1
+HP: 9
+Atk: 3
+Def: 0
+EvoCost: 6
+EvoTo: Machoke
+Ability: Guts (When afflicted with status, gain +2 Atk)
+Skill: Karate Chop (Line(1): Deal 3 damage, crit on 15+)
+
+067. Machoke
+Type: Fighting
+Role: Atk
+Cost: 1
+HP: 12
+Atk: 4
+Def: 1
+EvoCost: 8
+EvoTo: Machamp
+EvoFrom: Machop
+Ability: No Guard (All attacks cannot miss - ignore accuracy/evasion)
+Skill: Vital Throw (Line(1): Deal 4 damage, ignores Def modifiers)
+
+068. Machamp
+Type: Fighting
+Role: Atk
+Cost: 1
+HP: 15
+Atk: 5
+Def: 1
+EvoFrom: Machoke
+Ability: Steadfast (When hit by flinch-causing attack, gain +1 Move range for 1 turn)
+Skill: Close Combat (Line(1): Deal 5 damage, 100% chance Confuse for 3 turns, costs 3 Energy) Self inflict Def-2
+
+069. Bellsprout
+Type: Grass/Poison
+Role: Atk
+Cost: 1
+HP: 7
+Atk: 3
+Def: 0
+EvoCost: 5
+EvoTo: Weepinbell
+Ability: Chlorophyll (During Sunny Day, first Move costs 0 Energy)
+Skill: Vine Whip (Line(2)(1): Deal 3 damage)
+
+070. Weepinbell
+Type: Grass/Poison
+Role: Atk
+Cost: 1
+HP: 10
+Atk: 4
+Def: 0
+EvoCost: 7
+EvoTo: Victreebel
+EvoFrom: Bellsprout
+Ability: Gluttony (Can use consumable items at 50% HP)
+Skill: Razor Leaf (Cone(2): Deal 3 damage to all in cone)
+
+071. Victreebel
+Type: Grass/Poison
+Role: Atk
+Cost: 1
+HP: 12
+Atk: 5
+Def: 1
+EvoFrom: Weepinbell
+Ability: Chlorophyll (During Sunny Day, first Move costs 0 Energy)
+Skill: Leaf Blade (Line(2)(1): Deal 4 damage, crit on 14+)
+
+072. Tentacool
+Type: Water/Poison
+Role: Support
+Cost: 1
+HP: 7
+Atk: 2
+Def: 1
+EvoCost: 6
+EvoTo: Tentacruel
+Ability: Clear Body (Immune to stat reduction from enemy skills)
+Skill: Poison Sting (Line(1): Deal 2 damage, 50% chance Poison for 4 turns)
+
+073. Tentacruel
+Type: Water/Poison
+Role: Support
+Cost: 1
+HP: 12
+Atk: 4
+Def: 2
+EvoFrom: Tentacool
+Ability: Liquid Ooze (When enemy would heal from drain, they take damage instead)
+Skill: Toxic Spikes (AoE(1): Enemies entering adjacent cells Poisoned for 4 turns)
+
+074. Geodude
+Type: Rock/Ground
+Role: Def
+Cost: 1
+HP: 8
+Atk: 3
+Def: 2
+EvoCost: 5
+EvoTo: Graveler
+Ability: Rock Head (Immune to recoil damage)
+Skill: Rollout (Line(2)(1): Deal 3 damage, +1 damage for consecutive use)
+
+075. Graveler
+Type: Rock/Ground
+Role: Def
+Cost: 1
+HP: 11
+Atk: 4
+Def: 2
+EvoCost: 7
+EvoTo: Golem
+EvoFrom: Geodude
+Ability: Sturdy (Cannot be OHKO'd from full HP - survive at 1 HP)
+Skill: Rock Throw (Line(2)(1): Deal 3 damage)
+
+076. Golem
+Type: Rock/Ground
+Role: Def
+Cost: 1
+HP: 14
+Atk: 5
+Def: 3
+EvoFrom: Graveler
+Ability: Sand Veil (During Sand Storm, gain +1 Def)
+Skill: Earthquake (AoE(1): Deal 5 damage to adjacent enemies)
+
+077. Ponyta
+Type: Fire
+Role: Atk
+Cost: 1
+HP: 8
+Atk: 3
+Def: 1
+EvoCost: 6
+EvoTo: Rapidash
+Ability: Flash Fire (Immune to Fire damage, after Fire hit deal +1 Fire damage)
+Skill: Ember (Line(2)(1): Deal 2 damage, 40% chance Burn for 3 turns)
+
+078. Rapidash
+Type: Fire
+Role: Atk
+Cost: 1
+HP: 11
+Atk: 4
+Def: 1
+EvoFrom: Ponyta
+Ability: Flame Body (When hit by melee, 30% chance Burn attacker for 3 turns)
+Skill: Fire Spin (Line(2)(1): Deal 3 damage, target cannot Move next turn)
+
+079. Slowpoke
+Type: Water/Psychic
+Role: Support
+Cost: 1
+HP: 11
+Atk: 2
+Def: 1
+EvoCost: 7
+EvoTo: Slowbro
+Ability: Own Tempo (Immune to Confusion)
+Skill: Confusion (Line(2): Deal 2 damage, 30% chance Confuse for 3 turns)
+
+080. Slowbro
+Type: Water/Psychic
+Role: Def
+Cost: 1
+HP: 15
+Atk: 3
+Def: 2
+EvoFrom: Slowpoke
+Ability: Shell Armor (Immune to critical hits)
+Skill: Psychic (Line(3)(1): Deal 4 damage, lower target Def by 1)
+
+081. Magnemite
+Type: Electric/Steel
+Role: Support
+Cost: 1
+HP: 7
+Atk: 3
+Def: 1
+EvoCost: 6
+EvoTo: Magneton
+Ability: Sturdy (Cannot be OHKO'd from full HP)
+Skill: Thunder Shock (Line(2)(1): Deal 3 damage, 40% chance Paralyze for 3 turns)
+
+082. Magneton
+Type: Electric/Steel
+Role: Support
+Cost: 1
+HP: 10
+Atk: 4
+Def: 2
+EvoCost: 8
+EvoTo: Magnezone
+EvoFrom: Magnemite
+Ability: Magnet Pull (Adjacent Steel enemies cannot Move)
+Skill: Spark (Line(2)(1): Deal 3 damage, 50% chance Paralyze for 3 turns)
+
+083. Farfetch'd
+Type: Normal/Flying
+Role: Atk
+Cost: 2
+HP: 9
+Atk: 4
+Def: 1
+Ability: Defiant (When stats lowered, gain +2 Atk)
+Skill: Slash (Line(1): Deal 4 damage, crit on 14+)
+
+084. Doduo
+Type: Normal/Flying
+Role: Atk
+Cost: 1
+HP: 7
+Atk: 3
+Def: 0
+EvoCost: 5
+EvoTo: Dodrio
+Ability: Early Bird (Sleep duration reduced by 1 turn)
+Skill: Peck (Line(1): Deal 2 damage)
+
+085. Dodrio
+Type: Normal/Flying
+Role: Atk
+Cost: 1
+HP: 11
+Atk: 5
+Def: 1
+EvoFrom: Doduo
+Ability: Tangled Feet (When Confused, gain +1 Def)
+Skill: Tri Attack (Target = [3(Line(1)(1))]: Deal 2 damage to 3 targets, 10% chance Burn/Paralyze/Freeze for 3 turns)
+
+086. Seel
+Type: Water
+Role: Support
+Cost: 1
+HP: 9
+Atk: 2
+Def: 1
+EvoCost: 6
+EvoTo: Dewgong
+Ability: Thick Fat (Take -1 damage from Fire and Ice)
+Skill: Headbutt (Line(1): Deal 3 damage, 30% chance Flinch)
+
+087. Dewgong
+Type: Water/Ice
+Role: Support
+Cost: 1
+HP: 13
+Atk: 4
+Def: 2
+EvoFrom: Seel
+Ability: Ice Body (During Hail, heal 1 HP/turn)
+Skill: Aurora Beam (Line(3)(1): Deal 3 damage, 30% chance lower target Atk by 1)
+
+088. Grimer
+Type: Poison
+Role: Def
+Cost: 1
+HP: 9
+Atk: 2
+Def: 2
+EvoCost: 6
+EvoTo: Muk
+Ability: Stench (After attacking, 20% chance inflict Flinch)
+Skill: Poison Gas (Cone(1): 60% chance Poison for 4 turns)
+
+089. Muk
+Type: Poison
+Role: Def
+Cost: 1
+HP: 14
+Atk: 4
+Def: 2
+EvoFrom: Grimer
+Ability: Poison Touch (When hitting with melee, 30% chance Poison for 4 turns)
+Skill: Gunk Shot (Line(2)(1): Deal 4 damage, 70% chance Poison for 4 turns)
+
+090. Shellder
+Type: Water
+Role: Def
+Cost: 1
+HP: 8
+Atk: 2
+Def: 2
+EvoCost: 6
+EvoTo: Cloyster
+Ability: Shell Armor (Immune to critical hits)
+Skill: Icicle Spear (Line(2)(1): Deal 2 damage, hits twice)
+
+091. Cloyster
+Type: Water/Ice
+Role: Def
+Cost: 1
+HP: 11
+Atk: 4
+Def: 3
+EvoFrom: Shellder
+Ability: Skill Link (Multi-hit skills always hit max times)
+Skill: Spike Cannon (Line(3)(1): Deal 2 damage, hits 2-5 times)
+
+092. Gastly
+Type: Ghost/Poison
+Role: Support
+Cost: 2
+HP: 6
+Atk: 3
+Def: 1
+EvoCost: 5
+EvoTo: Haunter
+Ability: Levitate (Immune to Ground attacks)
+Skill: Lick (Line(1): Deal 2 damage, 40% chance Paralyze for 3 turns)
+
+093. Haunter
+Type: Ghost/Poison
+Role: Support
+Cost: 2
+HP: 9
+Atk: 4
+Def: 1
+EvoCost: 8
+EvoTo: Gengar
+EvoFrom: Gastly
+Ability: Levitate (Immune to Ground attacks)
+Skill: Shadow Punch (Line(2)(1): Deal 3 damage, cannot miss)
+
+094. Gengar
+Type: Ghost/Poison
+Role: Support
+Cost: 2
+HP: 11
+Atk: 5
+Def: 1
+EvoFrom: Haunter
+Ability: Cursed Body (When hit, 30% chance disable attacker's last skill for 2 turns)
+Skill: Shadow Ball (Line(3)(1): Deal 4 damage, 30% chance lower target Def by 1)
+
+095. Onix
+Type: Rock/Ground
+Role: Def
+Cost: 2
+HP: 10
+Atk: 3
+Def: 3
+EvoCost: 8
+EvoTo: Steelix
+Ability: Rock Head (Immune to recoil damage)
+Skill: Rock Throw (Line(2)(1): Deal 3 damage)
+
+096. Drowzee
+Type: Psychic
+Role: Support
+Cost: 1
+HP: 9
+Atk: 2
+Def: 1
+EvoCost: 6
+EvoTo: Hypno
+Ability: Insomnia (Immune to Sleep)
+Skill: Hypnosis (Line(2): 80% chance Sleep for 2 turns)
+
+097. Hypno
+Type: Psychic
+Role: Support
+Cost: 1
+HP: 13
+Atk: 3
+Def: 2
+EvoFrom: Drowzee
+Ability: Insomnia (Immune to Sleep)
+Skill: Dream Eater (Line(2): Drain 3 HP from sleeping target, fail if not asleep)
+
+098. Krabby
+Type: Water
+Role: Atk
+Cost: 1
+HP: 7
+Atk: 3
+Def: 1
+EvoCost: 6
+EvoTo: Kingler
+Ability: Hyper Cutter (Immune to Atk reduction)
+Skill: Crabhammer (Line(1): Deal 3 damage, crit on 14+)
+
+099. Kingler
+Type: Water
+Role: Atk
+Cost: 1
+HP: 11
+Atk: 5
+Def: 1
+EvoFrom: Krabby
+Ability: Shell Armor, Prevent the user to be hit by critical
+Skill: Guillotine (Line(1): Deal 8 damage, costs 3 Energy, 50% accuracy)
+
+100. Voltorb
+Type: Electric
+Role: Support
+Cost: 1
+HP: 7
+Atk: 3
+Def: 1
+EvoCost: 5
+EvoTo: Electrode
+Ability: Soundproof (Immune to sound-based skills)
+Skill: Sonic Boom (Line(2)(1): Deal fixed 2 damage, ignores Def)
+
+101. Electrode
+Type: Electric
+Role: Support
+Cost: 1
+HP: 10
+Atk: 4
+Def: 1
+EvoFrom: Voltorb
+Ability: Aftermath (When KO'd by melee, attacker takes 2 damage)
+Skill: Explosion (AoE(2): Deal 6 damage to all adjacent, user faints, costs 0 Energy)
+
+102. Exeggcute
+Type: Grass/Psychic
+Role: Support
+Cost: 2
+HP: 9
+Atk: 2
+Def: 1
+EvoCost: 7
+EvoTo: Exeggutor
+Ability: Chlorophyll (During Sunny Day, first Move costs 0 Energy)
+Skill: Sleep Powder (Cone(1): 60% chance Sleep for 2 turns)
+
+103. Exeggutor
+Type: Grass/Psychic
+Role: Support
+Cost: 2
+HP: 13
+Atk: 4
+Def: 2
+EvoFrom: Exeggcute
+Ability: Harvest (At turn end, 50% chance restore used Berry)
+Skill: Psychic (Line(3)(1): Deal 4 damage, lower target Def by 1)
+
+104. Cubone
+Type: Ground
+Role: Atk
+Cost: 2
+HP: 8
+Atk: 3
+Def: 1
+EvoCost: 7
+EvoTo: Marowak
+Ability: Rock Head (Immune to recoil damage)
+Skill: Bone Club (Line(2)(1): Deal 3 damage, 30% chance Flinch)
+
+105. Marowak
+Type: Ground
+Role: Atk
+Cost: 2
+HP: 11
+Atk: 4
+Def: 1
+EvoFrom: Cubone
+Ability: Battle Armor (Immune to critical hits)
+Skill: Bonemerang (Line(3)(1): Deal 3 damage twice)
+
+106. Hitmonlee
+Type: Fighting
+Role: Atk
+Cost: 2
+HP: 10
+Atk: 5
+Def: 1
+Ability: Limber (Immune to Paralysis)
+Skill: High Jump Kick (Line(2)(1): Deal 6 damage, if miss user takes 2 damage)
+
+107. Hitmonchan
+Type: Fighting
+Role: Atk
+Cost: 2
+HP: 10
+Atk: 4
+Def: 1
+Ability: Keen Eye (Immune to accuracy reduction)
+Skill: Mach Punch (Line(1): Deal 3 damage, costs 0 Energy, once per turn)
+
+108. Lickitung
+Type: Normal
+Role: Def
+Cost: 2
+HP: 13
+Atk: 3
+Def: 2
+Ability: Own Tempo (Immune to Confusion)
+Skill: Wrap (Line(1): Deal 2 damage/turn for 3 turns, target cannot Move)
+
+109. Koffing
+Type: Poison
+Role: Def
+Cost: 1
+HP: 8
+Atk: 2
+Def: 2
+EvoCost: 6
+EvoTo: Weezing
+Ability: Levitate (Immune to Ground attacks)
+Skill: Poison Gas (AoE(1): 50% chance Poison for 4 turns on adjacent enemies)
+
+110. Weezing
+Type: Poison
+Role: Def
+Cost: 1
+HP: 12
+Atk: 4
+Def: 2
+EvoFrom: Koffing
+Ability: Levitate (Immune to Ground attacks)
+Skill: Sludge Bomb (Line(2)(1): Deal 4 damage, 50% chance Poison for 4 turns)
+
+111. Rhyhorn
+Type: Ground/Rock
+Role: Def
+Cost: 2
+HP: 11
+Atk: 3
+Def: 2
+EvoCost: 7
+EvoTo: Rhydon
+Ability: Rock Head (Immune to recoil damage)
+Skill: Rock Blast (Line(2)(1): Deal 2 damage, hits 2-5 times)
+
+112. Rhydon
+Type: Ground/Rock
+Role: Def
+Cost: 2
+HP: 15
+Atk: 5
+Def: 2
+EvoFrom: Rhyhorn
+Ability: Solid Rock (Reduce super effective damage by 1)
+Skill: Earthquake (AoE(1): Deal 5 damage to adjacent enemies)
+
+113. Chansey
+Type: Normal
+Role: Support
+Cost: 3
+HP: 10
+Atk: 2
+Def: 1
+EvoCost: 10
+EvoTo: Blissey
+Ability: Natural Cure (At turn end, cure any status)
+and also add that it take 3 more damage from normal attack
+Skill: Soft-Boiled (Ally: Heal 2 HP, costs 2 Energy)
+
+114. Tangela
+Type: Grass
+Role: Def
+Cost: 2
+HP: 10
+Atk: 3
+Def: 2
+EvoCost: 8
+EvoTo: Tangrowth
+Ability: Regenerator (At turn end, heal 1 HP)
+Skill: Vine Whip (Line(2)(1): Deal 3 damage, 30% chance reduce target Move by 1)
+
+115. Kangaskhan
+Type: Normal
+Role: Atk
+Cost: 3
+HP: 14
+Atk: 4
+Def: 1
+Ability: Early Bird (Sleep duration reduced by 1 turn)
+Skill: Dizzy Punch (Line(1): Deal 4 damage, 30% chance Confuse for 3 turns)
+
+116. Horsea
+Type: Water
+Role: Support
+Cost: 1
+HP: 7
+Atk: 3
+Def: 1
+EvoCost: 6
+EvoTo: Seadra
+Ability: Sniper (Critical hits deal +1 damage, crit on 16+)
+Skill: Water Gun (Line(2)(1): Deal 2 damage)
+
+117. Seadra
+Type: Water
+Role: Support
+Cost: 1
+HP: 10
+Atk: 4
+Def: 1
+EvoCost: 8
+EvoTo: Kingdra
+EvoFrom: Horsea
+Ability: Poison Point (When hit by melee, 30% chance Poison attacker for 4 turns)
+Skill: Dragon Breath (Line(2)(1): Deal 3 damage, 50% chance Paralyze for 3 turns)
+
+118. Goldeen
+Type: Water
+Role: Atk
+Cost: 1
+HP: 8
+Atk: 3
+Def: 0
+EvoCost: 6
+EvoTo: Seaking
+Ability: Water Veil (Immune to Burn)
+Skill: Horn Attack (Line(1): Deal 3 damage)
+
+119. Seaking
+Type: Water
+Role: Atk
+Cost: 1
+HP: 12
+Atk: 4
+Def: 1
+EvoFrom: Goldeen
+Ability: Water Veil (Immune to Burn)
+Skill: Waterfall (Line(2)(1): Deal 4 damage, 30% chance Flinch)
+
+120. Staryu
+Type: Water
+Role: Support
+Cost: 1
+HP: 7
+Atk: 3
+Def: 1
+EvoCost: 6
+EvoTo: Starmie
+Ability: Natural Cure (At turn end, cure any status)
+Skill: Swift (Line(3)(1): Deal 3 damage, cannot miss)
+
+121. Starmie
+Type: Water/Psychic
+Role: Support
+Cost: 1
+HP: 11
+Atk: 4
+Def: 2
+EvoFrom: Staryu
+Ability: Illuminate (Enemies within range 2 cannot hide - visible in Fog/Sand)
+Skill: Psychic (Line(3)(1): Deal 4 damage, lower target Def by 1)
+
+122. Mr. Mime
+Type: Psychic/Fairy
+Role: Support
+Cost: 2
+HP: 9
+Atk: 3
+Def: 2
+Ability: Soundproof (Immune to sound-based skills)
+Skill: Barrier (Self: Gain +2 Def for 3 turns)
+
+123. Scyther
+Type: Bug/Flying
+Role: Atk
+Cost: 2
+HP: 10
+Atk: 4
+Def: 1
+EvoCost: 8
+EvoTo: Scizor
+Ability: Technician (Skills with base damage ≤2 deal +1 damage)
+Skill: X-Scissor (Line(2)(1): Deal 4 damage, crit on 14+)
+
+124. Jynx
+Type: Ice/Psychic
+Role: Support
+Cost: 2
+HP: 11
+Atk: 4
+Def: 1
+Ability: Dry Skin (Take +1 damage from Fire, during Rain Dance heal 1 HP/turn)
+Skill: Lovely Kiss (Line(1): 90% chance Sleep for 2 turns)
+
+125. Electabuzz
+Type: Electric
+Role: Atk
+Cost: 2
+HP: 10
+Atk: 4
+Def: 1
+EvoCost: 8
+EvoTo: Electivire
+Ability: Static (When hit by melee, 30% chance Paralyze attacker for 3 turns)
+Skill: Thunder Punch (Line(1): Deal 4 damage, 40% chance Paralyze for 3 turns)
+
+126. Magmar
+Type: Fire
+Role: Atk
+Cost: 2
+HP: 10
+Atk: 4
+Def: 1
+EvoCost: 8
+EvoTo: Magmortar
+Ability: Flame Body (When hit by melee, 30% chance Burn attacker for 3 turns)
+Skill: Fire Punch (Line(1): Deal 4 damage, 40% chance Burn for 3 turns)
+
+127. Pinsir
+Type: Bug
+Role: Atk
+Cost: 2
+HP: 11
+Atk: 5
+Def: 1
+Ability: Hyper Cutter (Immune to Atk reduction)
+Skill: Guillotine (Line(1): Deal 6 damage, costs 3 Energy, 50% accuracy)
+
+128. Tauros
+Type: Normal
+Role: Atk
+Cost: 2
+HP: 12
+Atk: 4
+Def: 1
+Ability: Intimidate (adjacent enemies get -1 Atk)
+Skill: Take Down (Line(2)(1): Deal 5 damage, user takes 1 recoil)
+
+129. Magikarp
+Type: Water
+Role: Support
+Cost: 1
+HP: 5
+Atk: 1
+Def: 1
+EvoCost: 20
+EvoTo: Gyarados
+Ability: Swift Swim (During Rain Dance, Move costs -1 Energy)
+Skill: Splash (Self: Do nothing, gain +1 EXP)
+
+130. Gyarados
+Type: Water/Flying
+Role: Atk
+Cost: 1
+HP: 14
+Atk: 5
+Def: 1
+EvoFrom: Magikarp
+Ability: Intimidate (adjacent enemies get -1 Atk)
+Skill: Hydro Pump (Line(3)(1): Deal 5 damage, costs 3 Energy)
+
+131. Lapras
+Type: Water/Ice
+Role: Support
+Cost: 3
+HP: 16
+Atk: 4
+Def: 2
+Ability: Water Absorb (Heal 3 HP when hit by Water attack)
+Skill: Ice Beam (Line(3)(1): Deal 4 damage, 40% chance Freeze for 2 turns)
+
+132. Ditto
+Type: Normal
+Role: Support
+Cost: 2
+HP: 8
+Atk: 2
+Def: 1
+Ability: Imposter (When deployed, transform into Pokemon across, copying stats/skills for 3 turns)
+Skill: Transform (Self: Copy target's stats (HP fixed at 8) /skills/ability for 3 turns)
+
+133. Eevee
+Type: Normal
+Role: Support
+Cost: 3
+HP: 9
+Atk: 3
+Def: 1
+EvoCost: 6
+EvoTo: Vaporeon/Jolteon/Flareon
+Ability: Adaptability (Atk +1)
+Skill: Take Down (Line(1): Deal 3 damage but self damage 1)
+
+134. Vaporeon
+Type: Water
+Role: Def
+Cost: 3
+HP: 12
+Atk: 3
+Def: 2
+EvoFrom: Eevee
+Ability: Water Absorb (Heal 3 HP when hit by Water attack)
+Skill: Aurora Beam (Line(3)(1): Deal 3 damage, 30% chance lower target Atk by 1)
+
+135. Jolteon
+Type: Electric
+Role: Atk
+Cost: 3
+HP: 12
+Atk: 4
+Def: 1
+EvoFrom: Eevee
+Ability: Volt Absorb (Heal 3 HP when hit by Electric attack)
+Skill: Thunder (Line(3)(1): Deal 4 damage, 50% chance Paralyze for 3 turns)
+
+136. Flareon
+Type: Fire
+Role: Atk
+Cost: 3
+HP: 10
+Atk: 5
+Def: 1
+EvoFrom: Eevee
+Ability: Flash Fire (Immune to Fire, after Fire hit deal +1 Fire damage)
+Skill: Fire Blast (Line(3)(1): Deal 5 damage, 50% chance Burn for 3 turns)
+
+137. Porygon
+Type: Normal
+Role: Support
+Cost: 2
+HP: 10
+Atk: 3
+Def: 1
+EvoCost: 8
+EvoTo: Porygon2
+Ability: Trace (Copy ability of last enemy that attacked this Pokemon)
+Skill: Tri Attack (Line(2)(1): Deal 3 damage, 20% chance Burn/Paralyze/Freeze for 3 turns)
+
+138. Omanyte
+Type: Rock/Water
+Role: Def
+Cost: 2
+HP: 8
+Atk: 3
+Def: 2
+EvoCost: 7
+EvoTo: Omastar
+Ability: Shell Armor (Immune to critical hits)
+Skill: Water Gun (Line(2)(1): Deal 2 damage)
+
+139. Omastar
+Type: Rock/Water
+Role: Def
+Cost: 2
+HP: 12
+Atk: 4
+Def: 3
+EvoFrom: Omanyte
+Ability: Swift Swim (During Rain Dance, Move costs -1 Energy)
+Skill: Ancient Power (Line(2)(1): Deal 3 damage, 20% chance raise all stats by 1)
+
+140. Kabuto
+Type: Rock/Water
+Role: Def
+Cost: 2
+HP: 8
+Atk: 3
+Def: 2
+EvoCost: 7
+EvoTo: Kabutops
+Ability: Battle Armor (Immune to critical hits)
+Skill: Scratch (Line(1): Deal 2 damage)
+
+141. Kabutops
+Type: Rock/Water
+Role: Atk
+Cost: 2
+HP: 11
+Atk: 5
+Def: 1
+EvoFrom: Kabuto
+Ability: Swift Swim (During Rain Dance, Move costs -1 Energy)
+Skill: Slash (Line(2)(1): Deal 4 damage, crit on 14+)
+
+142. Aerodactyl
+Type: Rock/Flying
+Role: Atk
+Cost: 3
+HP: 12
+Atk: 5
+Def: 1
+Ability: Unnerve | when this unit on the field consumable that are berry can't be use.
+Skill: Wing Attack (Line(3)(1): Deal 4 damage)
+
+143. Snorlax
+Type: Normal
+Role: Def
+Cost: 4
+HP: 20
+Atk: 4
+Def: 2
+Ability: Thick Fat (Take -1 damage from Fire and Ice)
+Skill: Body Slam (Line(1): Deal 4 damage, 40% chance Paralyze for 3 turns)
+
+144. Articuno
+Type: Ice/Flying
+Url: https://assets.pokemon.com/assets/cms2/img/pokedex/detail/144.png
+Role: Support
+Cost: 5
+HP: 14
+Atk: 4
+Def (In-Game): 2
+Legendary: true
+HatchGroup: birds
+Ability: Snow Cloak (If in Hail There a 20% chance to dodge any attack hit it)
+Skill 1: Blizzard (AoE(2): Deal 4 damage, 50% chance Freeze for 2 turns)
+Skill 2: Snow Scape (Self: Ice Type Pokémon get +! Def for 2 turn)
+Skill 3: Powder Snow (All: Deal 1 Damage to every pokemon, 10% chance to freeze it (Ice type can't be freeze))
+
+145. Zapdos
+Type: Electric/Flying
+Role: Atk
+Cost: 5
+HP: 13
+Atk: 5
+Def: 1
+Legendary: true
+HatchGroup: birds
+Ability: Static (When Hitted or Hit enemies pokemon there a 30% chance to inflict paralyse for 3 turn)
+Skill 1: Thunder | Cone 3 (Target 2 Deal 5 Damage)
+Skill 2:Zap Cannon | line 4 (Deal 6 Damage)
+Skill 3:Charge (Next attack damage +2)
+
+146. Moltres
+Type: Fire/Flying
+Role: Atk
+Cost: 5
+HP: 13
+Atk: 5
+Def: 1
+Legendary: true
+HatchGroup: birds
+Ability: Flame Body (When Hitted or Hit enemies pokemon there a 30% chance to inflict burn for 3 turn)
+Skill 1: Heat Wave (Cone 3) Deal 5 damage.
+Skill 2:Overheat (Aoe 2) Deal 6 Damage but self damage for 4. (Cooldown 2 Turn)
+Skill 3:Sky Attack (Self) Once use the Unit will be in a Untargetable state. The Unit can't use any more move till next turn.
+	Next Turn. Selected Target to attack. the unit will be move infront of that unit. and deal 6 Damage. Both user and target can't do anything in this turn. (Cooldown 3 Turn)
+147. Dratini
+Type: Dragon
+Role: Atk
+Cost: 3
+HP: 8
+Atk: 3
+Def: 0
+EvoCost: 7
+EvoTo: Dragonair
+Ability: Shed Skin (At turn end, 30% chance cure any status)
+Skill: Twister (Line(2)(1): Deal 3 damage, 30% chance Flinch)
+
+148. Dragonair
+Type: Dragon
+Role: Atk
+Cost: 3
+HP: 11
+Atk: 4
+Def: 1
+EvoCost: 8
+EvoTo: Dragonite
+EvoFrom: Dratini
+Ability: Marvel Scale (When afflicted with status, gain +2 Def)
+Skill: Dragon Breath (Line(2)(1): Deal 3 damage, 50% chance Paralyze for 3 turns)
+
+149. Dragonite
+Type: Dragon/Flying
+Role: Atk
+Cost: 3
+HP: 14
+Atk: 5
+Def: 1
+EvoCost: 9
+EvoFrom: Dragonair
+Ability: Multiscale (When at full HP, reduce incoming damage by 3)
+Skill: Outrage For 3 Turn. Hitting the nearest unit (no range) for 5 damage. (both ally and enemies)
+
+150. Mewtwo
+Type: Psychic
+Role: Atk
+Cost: 5
+HP: 16
+Atk: 6
+Def: 1
+Legendary: true
+HatchGroup: psychic
+Ability: Pressure (Once a turn. The opponent attack cost 1 more enerygy) (Can't be stack)
+Skill 1 :  Psychic (Cone(3)(1): Choose 2 Target in range and Deal 6 damage
+SKill 2 : Recover(Self):Recover 4 HP to self. cooldown 2 turn.
+Skill 3 : Psycutter(Line(3)(1):Deal 5 Damage and addtional 1 per enemies defense.
+
+151. Mew
+Type: Psychic
+Role: Support
+Cost: 5
+HP: 14
+Atk: 4
+Def: 2
+Legendary: true
+HatchGroup: psychic
+Ability: Synchronize (When inflicted with status, inflict same status on attacker and +1 turn duration to that status.)
+Skill 1: Transform (Self: Copy Target Stats. (Exclude HP | Fixed at 14) , Ability and Skill for 3 turn. (Can't Tranforms into other legendary)
+(#The Skill of that pokemon will be overwrite Tranfroms , but it that pokemon have more than one skill, the other Skill 2 and 3 will be overwrite too.)
+Skill 2:Life Dew (Heal All Ally regard of range for 2 point) (Once a game)
+Skill 3:Reflect Type : Target one of enemies pokemon and change the type of the user to be matching it.
