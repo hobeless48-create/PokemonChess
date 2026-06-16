@@ -32,6 +32,7 @@ import { FieldTrackers } from "./components/FieldTrackers";
 import { StatsCard } from "./components/StatsCard";
 import { SkillsAndLog } from "./components/SkillsAndLog";
 import { Modals } from "./components/Modals";
+import { Rules } from "./components/Rules";
 import { Pokedex } from "./components/Pokedex";
 
 function canInflictStatusBase(p: PokemonEntity, status: string, terrainType: string | null = null): boolean {
@@ -197,6 +198,7 @@ export default function App() {
   const [turnNotice, setTurnNotice] = useState<number | null>(null);
   const [hoveredCell, setHoveredCell] = useState<{ col: number; row: number } | null>(null);
   const [typeChartOpen, setTypeChartOpen] = useState<boolean>(false);
+  const [rulesOpen, setRulesOpen] = useState<boolean>(false);
 
   // Chance popup visual state
   const [chancePopup, setChancePopup] = useState<{
@@ -734,6 +736,13 @@ export default function App() {
       if (key === "c") {
         e.preventDefault();
         setTypeChartOpen(prev => !prev);
+        return;
+      }
+
+      // RULES (H)
+      if (key === "h") {
+        e.preventDefault();
+        setRulesOpen(prev => !prev);
         return;
       }
 
@@ -5768,6 +5777,12 @@ export default function App() {
                 📊 TYPE CHART (C)
               </button>
               <button
+                onClick={() => setRulesOpen(!rulesOpen)}
+                className="action-btn px-4 py-2 bg-[#0f3460] border border-slate-700 hover:bg-[#1a4a7a] rounded-lg text-xs font-bold uppercase transition shrink-0 outline-none cursor-pointer text-white"
+              >
+                📜 RULES (H)
+              </button>
+              <button
                 disabled={p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber}
                 onClick={handleEndTurn}
                 className={`action-btn end px-5 py-2 bg-[#ef5350] text-white transition font-black text-xs uppercase rounded-lg shadow-md shadow-[#ef5350]/15 shrink-0 outline-none ${p2pStatus === "connected" && myPlayerNumber !== 0 && gameState.currentPlayer !== myPlayerNumber
@@ -5886,6 +5901,9 @@ export default function App() {
         typeChartOpen={typeChartOpen}
         onToggleTypeChart={() => setTypeChartOpen(!typeChartOpen)}
       />
+
+      {/* Rules Popup */}
+      <Rules open={rulesOpen} onClose={() => setRulesOpen(false)} />
 
       {/* Eevee Evolution Modal */}
       {(() => {
