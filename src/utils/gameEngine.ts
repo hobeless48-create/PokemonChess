@@ -32,7 +32,7 @@ export function getPokemonTypes(p: PokemonEntity): string[] {
   const t1 = p.reflectedType || db.t1;
   const t2 = p.reflectedType ? null : db.t2;
   const types: string[] = [t1];
-  if (t2 && t2 !== "None") {
+  if (t2 && t2 !== "None" && t2 !== null) {
     types.push(t2);
   }
   return types;
@@ -526,8 +526,30 @@ export function parseSkillShape(db: PokemonDBEntry, p: PokemonEntity, skillIdx?:
   return { type: 'combo', parts: parsedParts, targetCount };
 }
 
+const SKILL_SHAPE_CACHE = new Map<string, ParsedShape>();
+
 export function parseSkillShapeObj(skill: Skill, p: PokemonEntity): ParsedShape {
+  if (skill.shapeType) {
+    if (skill.shapeType === 'all') return { type: 'all', targetCount: skill.targetCount || null };
+    const rot = p.rotation || 0;
+    const dirs = skill.dirs ? skill.dirs.map(d => {
+      const baseDir = normalizeDir(d, p.player);
+      return ((baseDir - 1 + rot) % 4) + 1;
+    }) : undefined;
+    return {
+      type: skill.shapeType,
+      range: skill.range,
+      dirs,
+      radius: skill.range,
+      targetCount: skill.targetCount || null
+    };
+  }
+
   const desc = skill.skillDesc || '';
+  const cacheKey = `${desc}_rot_${p.rotation || 0}_p_${p.player}`;
+  if (SKILL_SHAPE_CACHE.has(cacheKey)) {
+    return SKILL_SHAPE_CACHE.get(cacheKey)!;
+  }
   if (desc.trim().toLowerCase() === 'all') return { type: 'all', targetCount: null };
 
   const m = desc.match(/Target\s*=\s*\[(\d+)\((.+)\)\]/i);
@@ -589,9 +611,12 @@ export function parseSkillShapeObj(skill: Skill, p: PokemonEntity): ParsedShape 
     }
   });
 
-  if (parsedParts.length === 0) return { type: null, targetCount };
-  if (parsedParts.length === 1) return { ...parsedParts[0], targetCount };
-  return { type: 'combo', parts: parsedParts, targetCount };
+  let res: ParsedShape = { type: null, targetCount };
+  if (parsedParts.length === 1) res = { ...parsedParts[0], targetCount };
+  else if (parsedParts.length > 1) res = { type: 'combo', parts: parsedParts, targetCount };
+
+  SKILL_SHAPE_CACHE.set(cacheKey, res);
+  return res;
 }
 
 export function getSkillShapeCellsObj(
@@ -692,7 +717,25 @@ export function getSkillData(db: PokemonDBEntry, skillIdx?: number, customSkills
     skillCost: db.skillCost,
     statusChance: db.statusChance,
     statusChanceValue: db.statusChanceValue,
-    skillEffect: db.skillEffect
+    skillEffect: db.skillEffect,
+    pushAmount: db.pushAmount,
+    pullAmount: db.pullAmount,
+    drainAmount: db.drainAmount,
+    specialDuration: db.specialDuration,
+    cooldown: db.cooldown,
+    limit: db.limit,
+    skillCooldown: db.skillCooldown,
+    skillLimit: db.skillLimit,
+    special: db.special,
+    skillHealTarget: db.skillHealTarget,
+    skillHeal: db.skillHeal,
+    selfDamage: db.selfDamage,
+    aoe: db.aoe,
+    accuracy: db.accuracy,
+    summonConfig: db.summonConfig,
+    shapeType: db.shapeType,
+    range: db.range,
+    dirs: db.dirs
   };
 }
 
@@ -1130,7 +1173,7 @@ export function getSkillCells(
     const pd = pedAt(c.col, c.row, pedestals);
 
     if (effectTarget === 'ally') {
-      if (t && t.player === p.player) {
+      if (t && t.player === p.player && !t.fainted) {
          acc.push({ col: c.col, row: c.row, type: 'atk' });
       } else if (!t && !pd) {
          acc.push({ col: c.col, row: c.row, type: 'skill-preview' });
@@ -1246,22 +1289,22 @@ export function predictDamage(
     
     let pedDmg = 0;
     if (skillIdx === undefined) {
-      pedDmg = Math.min(1, Math.max(0, Math.floor(rawAtk / 2) - 1));
+      pedDmg = Math.min(1, Math.max(0, Math.floor(rawAtk / 2)));
     } else {
       const dbEntry = DB[actor.species];
-      const skill = getSkillData(dbEntry, skillIdx);
+      const skill = getSkillData(dbEntry, skillIdx, actor.customSkills);
       let rawDmg = 0;
       if (skillIdx === 0) {
         rawDmg = skill.skillDmg ? rawAtk : 0;
       } else {
-        const isAtkBase = typeof skill.skillDmg === "string" && skill.skillDmg.toLowerCase() === "atk";
+        const isAtkBase = typeof skill.skillDmg === "string" && skill.skillDmg.toLowerCase().includes("atk");
         if (isAtkBase) {
           rawDmg = rawAtk;
         } else {
-          rawDmg = typeof skill.skillDmg === "number" ? skill.skillDmg : (parseInt(skill.skillDmg || "0", 10) || 0);
+          const strDmg = String(skill.skillDmg || "0");
+          rawDmg = typeof skill.skillDmg === "number" ? skill.skillDmg : (parseInt(strDmg.replace(/[^0-9]/g, ''), 10) || 0);
         }
       }
-      if (actor.status === "burn") rawDmg = Math.max(0, rawDmg - 1);
       pedDmg = Math.min(1, Math.max(0, rawDmg - 1));
     }
     
@@ -1408,7 +1451,7 @@ export function predictDamage(
     }
 
     if (skill.skillName === "Sucker Punch") {
-      if (actor.damageReceivedLastTurn && actor.damageReceivedLastTurn > 0) {
+      if (tg.hasAttacked || tg.hasUsedSkill) {
         rawDmg += 2;
       }
     }

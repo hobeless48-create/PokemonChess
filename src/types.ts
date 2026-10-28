@@ -53,9 +53,30 @@ export interface Skill {
     aoeCondition?: string;
   };
   customRadiusOffsets?: { dc: number; dr: number }[];
+  shapeType?: 'line' | 'cone' | 'aoe' | 'all';
+  range?: number;
+  dirs?: number[];
 }
 
-export interface PokemonDBEntry {
+export interface SummonConfig {
+  species: string;
+  isMini: boolean;
+  isStatic: boolean;
+  hp?: number;
+  atk?: number;
+  def?: number;
+  duration?: number;
+  shape?: string;
+  customSkill?: Skill;
+  hasAoe?: boolean;
+  aoeEffect?: string;
+  aoeRange?: number;
+  aoeDmg?: number;
+  aoeHeal?: number;
+  aoeCondition?: string;
+}
+
+export interface PokemonDBEntry extends Partial<Skill> {
   dex: number;
   t1: string;
   t2: string;
@@ -69,11 +90,6 @@ export interface PokemonDBEntry {
   img: string;
   skills: Skill[];
   customMoveOffsets?: { dc: number; dr: number }[];
-  skillName?: string;
-  skillDesc?: string;
-  skillDmg?: number | string;
-  skillRaw?: string;
-  skillCost?: number;
   base?: boolean;
   legendary?: boolean;
   evoCost?: number | null;
@@ -82,30 +98,8 @@ export interface PokemonDBEntry {
   color?: string;
   hatchCost?: number;
   hatchGroup?: string;
-  drainAmount?: number;
-  specialDuration?: number;
-  cooldown?: number;
-  limit?: number;
-  skillCooldown?: number;
-  skillLimit?: number;
-  special?: string;
-  skillHealTarget?: string;
-  skillHeal?: number;
-  selfDamage?: number;
-  statusChance?: string;
-  statusChanceValue?: number;
-  aoe?: number;
-  skillEffect?: {
-    target: string;
-    stat: string;
-    amount: number;
-    duration: number;
-  };
   isSummon?: boolean;
-  accuracy?: number;
-  pushAmount?: number;
-  pullAmount?: number;
-  summonConfig?: any;
+  summonConfig?: SummonConfig;
 }
 
 export interface StatModifier {
@@ -240,6 +234,7 @@ export interface Hazard {
 
 export interface GameState {
   turn: number;
+  turnSeq?: number;
   phase: number;
   currentPlayer: number; // 1 or 2
   energy: { [player: number]: number };

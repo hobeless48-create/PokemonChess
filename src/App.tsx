@@ -407,12 +407,18 @@ export default function App() {
         break;
 
       case "setup_sync":
-        if (data.player === 1) {
-          setPeerP1Slots(data.slots);
-          setPeerP1Placements(data.placements);
-        } else if (data.player === 2) {
-          setPeerP2Slots(data.slots);
-          setPeerP2Placements(data.placements);
+        if (data.placements && Array.isArray(data.placements)) {
+          const isValidP1 = data.placements.every((p: any) => p.row >= 0 && p.row <= 2 && p.col >= 0 && p.col <= 10);
+          const isValidP2 = data.placements.every((p: any) => p.row >= 8 && p.row <= 10 && p.col >= 0 && p.col <= 10);
+          if (data.player === 1 && isValidP1) {
+            setPeerP1Slots(data.slots);
+            setPeerP1Placements(data.placements);
+          } else if (data.player === 2 && isValidP2) {
+            setPeerP2Slots(data.slots);
+            setPeerP2Placements(data.placements);
+          } else {
+            console.warn("Invalid deployment zone coordinates received in P2P setup_sync");
+          }
         }
         break;
 
@@ -432,6 +438,15 @@ export default function App() {
         break;
 
       case "game_state_sync":
+        if (
+          data.gameState &&
+          typeof data.gameState.turnSeq === "number" &&
+          typeof gameState.turnSeq === "number" &&
+          data.gameState.turnSeq < gameState.turnSeq
+        ) {
+          console.warn("Dropped stale P2P game state sync packet");
+          break;
+        }
         isSyncingRef.current = true;
         const prevPlayer = gameState.currentPlayer;
         const nextPlayer = data.gameState.currentPlayer;
@@ -1540,22 +1555,26 @@ export default function App() {
             customBar: getCustomBarForSpecies("Zygarde 10%")
           };
 
-          list.push(zyg10);
-          actor.zyg10Spawned = true;
-          list.forEach(other => {
-            if (other.player === actor.player && other.species === "Zygarde Reassembly Unit") {
-              other.zyg10Spawned = true;
+          const updatedList = list.map(pk => {
+            if (pk.id === actor.id || (pk.player === actor.player && pk.species === "Zygarde Reassembly Unit")) {
+              return { ...pk, zyg10Spawned: true, activeAbilityUsed: pk.id === actor.id ? true : pk.activeAbilityUsed };
             }
+            return pk;
           });
-          actor.activeAbilityUsed = true;
+
+          const nextPokemonList = [...updatedList, zyg10];
           addLog(`🟢 Zygarde 10% spawned next to Reassembly Unit at ${String.fromCharCode(65 + col)}${row + 1}!`, "heal");
 
-          setGameState(prev => ({
-            ...prev,
-            pokemon: list,
-            actionMode: null,
-            highlightedCells: []
-          }));
+          setGameState(prev => {
+            const nextState = {
+              ...prev,
+              pokemon: nextPokemonList,
+              actionMode: null,
+              highlightedCells: []
+            };
+            sendP2PMessage({ type: "game_state_sync", gameState: nextState });
+            return nextState;
+          });
           return;
         }
 

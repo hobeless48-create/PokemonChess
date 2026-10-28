@@ -1,98 +1,43 @@
-# ♟️ Pokémon Chess - Peer-to-Peer Multiplayer Guide
+# Pokémon Chess
 
-A tactical board game built with React, Vite, and custom CSS, now updated with a **zero-configuration Peer-to-Peer (P2P) multiplayer mode** using WebRTC.
+A browser based tactical Pokémon chess game built with React, TypeScript, and Vite. Play locally or connect two browsers with PeerJS WebRTC multiplayer.
 
----
+## Requirements
 
-## 🚀 Running the Game Locally
+- Node.js 20 or newer
+- npm (included with Node.js)
+- A modern browser; multiplayer needs an internet connection for PeerJS signaling
 
-### Prerequisites
-*   [Node.js](https://nodejs.org/) (v16+) installed.
+## Run locally
 
-### Steps
-1.  **Clone or extract** the project files to your system.
-2.  Open your terminal in the project directory.
-3.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
-4.  **Launch the development server:**
-    ```bash
-    npm run dev
-    ```
-5.  Open your browser and navigate to the address shown in the terminal (usually `http://localhost:3000`).
+Open PowerShell in this folder and run:
 
----
+```powershell
+npm install
+npm run dev
+```
 
-## 🌐 How Peer-to-Peer (P2P) Works
+Open the URL printed by Vite (normally `http://localhost:3000`). No API key is needed for local play.
 
-This game uses **PeerJS** to establish a direct WebRTC data channel between players' browsers. 
-*   **No Dedicated Server Needed:** Signaling and matchmaking are handled by PeerJS's public signaling cloud server.
-*   **Direct Browser Connection:** Once connected, game actions and state updates travel directly from one browser tab to another with near-zero latency.
+## Start a multiplayer match
 
----
+1. Open the game in both browsers.
+2. On the first browser, choose **Host Game** and share the displayed peer ID.
+3. On the second browser, enter that ID and choose **Join**.
+4. Set up each roster and choose **Ready to Battle**. The match begins when both players are ready.
 
-## 👥 How to Connect and Play
+## Production build
 
-You can test this locally by opening two different tabs of `http://localhost:3000` (or sharing with a friend).
+```powershell
+npm run build
+```
 
-### Step 1: Host a Game (Player 1)
-1.  On the **Setup Screen**, go to the **P2P Online Multiplayer** panel.
-2.  Click **Host Game**.
-3.  The panel will display your unique ID: `pchess-XXXX`.
-4.  Click the **Copy** button to copy this ID to your clipboard.
-5.  Send this ID to the other player.
+Vite writes the static site to `docs/`. The configured base path is `/PokemonChess/`, which matches the GitHub Pages repository URL. Keep the generated `docs/` output when publishing through GitHub Pages.
 
-### Step 2: Join a Game (Player 2)
-1.  Go to the **P2P Online Multiplayer** panel.
-2.  Paste the host's ID into the **Host Peer ID** input box.
-3.  Click **Join**.
-4.  Once connected, the status banner will update:
-    *   Host gets: `Connected! You are Player 1 (Blue)`.
-    *   Guest gets: `Connected! You are Player 2 (Red)`.
+## Configuration and project files
 
-### Step 3: Setup & Roster Lock-in
-1.  **Roster Sync:** As you select Pokémon and place them on the grid, they will sync to the other player's screen in real-time. Input restrictions prevent you from editing your opponent's team.
-2.  **Ready Toggle:** When your team setup is complete and budget is valid, click **Ready to Battle**.
-3.  **Launch Match:** Once both players have toggled Ready, the Host's system automatically starts the match and sends the starting board state to the Guest, transitioning both screens to the active game board.
-
----
-
-## 📡 Sharing the Game with Another Player
-
-To play with a friend on another device, you need to share access to the game application:
-
-### Option A: Play on the Same Local Network (LAN/Wi-Fi)
-If both you and your friend are connected to the same Wi-Fi network, you do not need to host it online:
-1.  Run `npm run dev` on the host computer.
-2.  Look at VITE's output in the terminal under the **Network** line (e.g. `http://192.168.1.118:3000`).
-3.  Have your friend open their browser and navigate to that Network URL.
-4.  Follow the **How to Connect and Play** steps above.
-
-### Option B: Share Online via Local Tunnel (Fastest)
-If you want to play over the internet without deploying:
-1.  Run `npm run dev` locally.
-2.  In a separate terminal, use a local tunnel tool like `ngrok` or `localtunnel` to expose your local port `3000`:
-    *   *Using Localtunnel:* `npx localtunnel --port 3000`
-    *   *Using Ngrok:* `ngrok http 3000`
-3.  Send the generated public URL to your friend.
-4.  Both open the URL, host/join via Peer ID, and play!
-
-### Option C: Production Deployment
-To deploy the game permanently online:
-1.  **Build production bundle:**
-    ```bash
-    npm run build
-    ```
-2.  Upload the compiled `dist/` directory to static hosting services like **Vercel**, **Netlify**, or **GitHub Pages**.
-3.  Both players open the deployed website link and connect via the Peer ID panel.
-
----
-
-## 🎮 Multiplayer Gameplay Mechanics
-
-*   **Turn Lockout:** Action inputs (clicks, moves, attacks, skills, shop, equips) are restricted to the active player's turn.
-*   **Opponent Turn Overlay:** The passive player sees a frosted blur overlay saying `"Opponent's Turn"` to clarify turn state.
-*   **Keyboard Hotkeys:** Global keybinds (`E` to end turn, `B` for backpack, `F` for shop, `1-6` for selections) are automatically blocked during the opponent's turn.
-*   **State & Roll Sync:** Every movement, log message, and status chance d20 animation popup is synchronized between both screens.
-*   **Fallback Safety:** If a player disconnects or clicks **Leave Online**, the game falls back to local hotseat mode automatically so you can finish the match on a single screen without losing your progress.
+- `src/` contains the game and UI.
+- `public/` contains static assets.
+- `GAME_DOCUMENTATION.md` describes game rules and mechanics.
+- `vite.config.ts` configures the GitHub Pages base path and build output.
+- `.env.example` documents optional hosting environment values. Do not put real credentials in committed files.

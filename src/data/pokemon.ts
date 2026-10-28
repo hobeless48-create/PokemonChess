@@ -23,6 +23,12 @@ function S(name: string, desc: string, dmg: number = 0, extra: Partial<Skill> = 
     if (extra.selfDamage) {
       parts.push(`User takes ${extra.selfDamage} recoil damage.`);
     }
+    if (extra.pushAmount) {
+      parts.push(`Pushes target ${extra.pushAmount} tile(s).`);
+    }
+    if (extra.pullAmount) {
+      parts.push(`Pulls target ${extra.pullAmount} tile(s).`);
+    }
 
     // Explicit explanations for the custom legendary and beast skills
     if (name === "Tidal Bell" || name === "Tidal bell") {
@@ -47,11 +53,44 @@ function S(name: string, desc: string, dmg: number = 0, extra: Partial<Skill> = 
     defaultRaw = `${name} (${desc}): ${parts.join(" ")}`;
   }
 
+  let shapeType: 'line' | 'cone' | 'aoe' | 'all' | undefined = extra.shapeType;
+  let range: number | undefined = extra.range;
+  let dirs: number[] | undefined = extra.dirs;
+
+  if (!shapeType && desc) {
+    if (desc.trim().toLowerCase() === 'all') {
+      shapeType = 'all';
+    } else {
+      const lineM = desc.match(/Line\((\d+)\)(?:\(([0-9,]+)\))?/i);
+      if (lineM) {
+        shapeType = 'line';
+        range = parseInt(lineM[1], 10);
+        dirs = lineM[2] ? lineM[2].split(',').map(n => parseInt(n, 10)) : [1];
+      } else {
+        const coneM = desc.match(/Cone\((\d+)\)(?:\(([0-9,]+)\))?/i);
+        if (coneM) {
+          shapeType = 'cone';
+          range = parseInt(coneM[1], 10);
+          dirs = coneM[2] ? coneM[2].split(',').map(n => parseInt(n, 10)) : [3];
+        } else {
+          const aoeM = desc.match(/AoE\((\d+)\)(?:\((\d+)\))?/i);
+          if (aoeM) {
+            shapeType = 'aoe';
+            range = parseInt(aoeM[1], 10);
+          }
+        }
+      }
+    }
+  }
+
   return {
     skillName: name,
     skillDesc: desc,
     skillDmg: dmg,
     skillRaw: defaultRaw,
+    shapeType,
+    range,
+    dirs,
     ...extra
   };
 }
